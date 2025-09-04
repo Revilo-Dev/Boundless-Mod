@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "particle": "runic:block/etching_table_side",
+    "down": "runic:block/etching_table_bottom",
+    "up": "runic:block/etching_table_top",
+    "north": "runic:block/etching_table_front",
+    "east": "runic:block/etching_table_side",
+    "south": "runic:block/etching_table_front",
+    "west": "runic:block/etching_table_side"
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "creativetab.runicmod.runic_items": "RUNIC",
+
+  "item.runic.rune": " Blank Rune",
+  "item.runic.expansion_rune": "Expansion Rune",
+  "item.runic.enhanced_rune": "Enhancement Rune",
+
+  "block.runic.etching_table": "Etching Table",
+
+
+
+
+
+
+  "enchantment.runic.lightning_aspect": "Lighting Aspect",
+  "enchantment.runic.poison_aspect": "Poison Aspect",
+  "enchantment.runic.slowness_aspect": "Slowness Aspect",
+  "enchantment.runic.weakness_aspect": "Weakening Aspect",
+  "enchantment.runic.swiftstrike": "Swift Strike",
+  "enchantment.runic.swift": "Swift",
+
+
+  "enchantment.minecraft.infinity": "Ethereal",
+  "enchantment.minecraft.unbreaking": "Unbreaking",
+
+
+  "tooltip.runic.blank_rune": "Transfer Enhancements With An Etching Table",
+
+
+
+
+  "tooltip.runic.aqua_affinity": "Increases underwater mining speed",
+  "tooltip.runic.bane_of_arthropods": "Deal more damage to arthropod type enemies",
+  "tooltip.runic.binding_curse": "Item cannot be unequipped",
+  "tooltip.runic.blast_protection": "Reduces explosion type damage",
+  "tooltip.runic.breach": "Reduces armour effectiveness",
+  "tooltip.runic.channeling": "Strikes lightning during thunderstorms",
+  "tooltip.runic.depth_strider": "Increases underwater movement speed",
+  "tooltip.runic.efficiency": "Increases mining speed",
+  "tooltip.runic.feather_falling": "Reduces fall damage",
+  "tooltip.runic.fire_aspect": "Sets targets on alight on hit",
+  "tooltip.runic.fire_protection": "Reduces fire damage and burn time",
+  "tooltip.runic.flame": "Sets arrows on fire",
+  "tooltip.runic.fortune": "Increases block drops",
+  "tooltip.runic.frost_walker": "Turns water into ice",
+  "tooltip.runic.impaling": "Extra damage against aquatic type mobs",
+  "tooltip.runic.infinity": "50/50 chance to not consume an arrow ",
+  "tooltip.runic.knockback": "Increases knockback distance",
+  "tooltip.runic.looting": "Increases loot drops",
+  "tooltip.runic.loyalty": "Returns after being thrown",
+  "tooltip.runic.luck_of_the_sea": "Increases rarity of fishing loot",
+  "tooltip.runic.lure": "Decreases time to catch fish",
+  "tooltip.runic.mending": "Uses XP to repair the item",
+  "tooltip.runic.multishot": "Shoot an extra 2 arrows",
+  "tooltip.runic.piercing": "Arrows pass through multiple mobs",
+  "tooltip.runic.power": "Increases arrow damage",
+  "tooltip.runic.projectile_protection": "Increased damage reduction against ranged weapons",
+  "tooltip.runic.protection": "Increased damage reduction against mele weapons",
+  "tooltip.runic.punch": "Increases arrow knockback",
+  "tooltip.runic.quick_charge": "Reduces reload time",
+  "tooltip.runic.respiration": "Extends underwater breathing time",
+  "tooltip.runic.riptide": "Propels the player when thrown in water or rain",
+  "tooltip.runic.sharpness": "+1 Attack damage per level",
+  "tooltip.runic.silk_touch": "Mined blocks drop themselves",
+  "tooltip.runic.smite": "Deal extra damage against undead enemies",
+  "tooltip.runic.soul_speed": "Increased movement speed on soul blocks",
+  "tooltip.runic.sweeping_edge": "Increases sweeping attack damage and radius",
+  "tooltip.runic.swift_sneak": "Increases sneaking speed",
+  "tooltip.runic.thorns": "Deals a percentage of damage back to the attacker",
+  "tooltip.runic.unbreaking": "Increases item durability",
+  "tooltip.runic.vanishing_curse": "The item will vanish on death",
+  "tooltip.runic.wind_burst": "Summons a wind charge on attack",
+  "tooltip.runic.density": "Deal more damage the higher you fall",
+
+  "tooltip.runic.swift": "Increases your movement speed",
+  "tooltip.runic.swift_strike": "+% cooldown reduction",
+  "tooltip.runic.lightning_aspect": "% chance to summon lightning on hit",
+  "tooltip.runic.weakness_aspect": "% chance to weaken enemy on hit",
+  "tooltip.runic.slowness_aspect": "% chance to slowdown enemy on hit",
+  "tooltip.runic.poison_aspect": "% chance to poison enemy on hit"
+
+
+
+
+
+
+}

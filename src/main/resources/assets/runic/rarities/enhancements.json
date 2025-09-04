@@ -1,0 +1,71 @@
+{
+  "default": "common",
+  "entries": {
+
+    "minecraft:protection": "common",
+    "minecraft:fire_protection": "common",
+    "minecraft:blast_protection": "common",
+    "minecraft:projectile_protection": "common",
+
+
+    "minecraft:thorns": "epic",
+    "minecraft:respiration": "common",
+    "minecraft:aqua_affinity": "uncommon",
+    "minecraft:depth_strider": "rare",
+    "minecraft:frost_walker": "rare",
+    "minecraft:soul_speed": "epic",
+    "minecraft:swift_sneak": "epic",
+    "minecraft:feather_falling": "uncommon",
+
+
+    "minecraft:sharpness": "epic",
+    "minecraft:smite": "common",
+    "minecraft:bane_of_arthropods": "uncommon",
+    "minecraft:knockback": "common",
+    "minecraft:fire_aspect": "epic",
+    "minecraft:looting": "uncommon",
+    "minecraft:sweeping_edge": "rare",
+    "runic:lightning_aspect": "legendary",
+    "runic:poison_aspect": "rare",
+    "runic:slowness_aspect": "epic",
+    "runic:weakness_aspect": "epic",
+    "runic:swiftstrike": "rare",
+
+
+    "minecraft:efficiency": "common",
+    "minecraft:silk_touch": "epic",
+    "minecraft:fortune": "uncommon",
+    "runic:smelting": "uncommon",
+
+
+    "minecraft:unbreaking": "uncommon",
+    "minecraft:mending": "legendary",
+    "minecraft:vanishing_curse": "cursed",
+    "minecraft:binding_curse": "cursed",
+
+
+    "minecraft:power": "uncommon",
+    "minecraft:punch": "common",
+    "minecraft:flame": "rare",
+    "minecraft:infinity": "legendary",
+
+
+    "minecraft:multishot": "epic",
+    "minecraft:piercing": "epic",
+    "minecraft:quick_charge": "uncommon",
+
+
+    "minecraft:impaling": "rare",
+    "minecraft:riptide": "rare",
+    "minecraft:loyalty": "legendary",
+    "minecraft:channeling": "epic",
+
+
+    "minecraft:luck_of_the_sea": "rare",
+    "minecraft:lure": "rare",
+
+    "minecraft:breach": "legendary",
+    "minecraft:density": "legendary",
+    "minecraft:wind_burst": "epic"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "#": {
+      "tag": "minecraft:planks"
+    },
+    "@": {
+      "item": "minecraft:iron_ingot"
+    },
+    "$": {
+      "item": "minecraft:diamond"
+    }
+  },
+  "pattern": [
+    "@@@",
+    "#$#",
+    "###"
+  ],
+  "result": {
+    "count": 1,
+    "id": "runic:etching_table"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": { "layer0": "runic:item/rune/enhanced_rune" },
+  "overrides": [
+    { "predicate": { "runic:rune_model": 1.0 },  "model": "runic:item/rune/minecraft/protection" },
+    { "predicate": { "runic:rune_model": 2.0 },  "model": "runic:item/rune/minecraft/fire_protection" },
+    { "predicate": { "runic:rune_model": 3.0 },  "model": "runic:item/rune/minecraft/blast_protection" },
+    { "predicate": { "runic:rune_model": 4.0 },  "model": "runic:item/rune/minecraft/projectile_protection" },
+    { "predicate": { "runic:rune_model": 5.0 },  "model": "runic:item/rune/minecraft/thorns" },
+    { "predicate": { "runic:rune_model": 6.0 },  "model": "runic:item/rune/minecraft/respiration" },
+    { "predicate": { "runic:rune_model": 7.0 },  "model": "runic:item/rune/minecraft/aqua_affinity" },
+    { "predicate": { "runic:rune_model": 8.0 },  "model": "runic:item/rune/minecraft/depth_strider" },
+    { "predicate": { "runic:rune_model": 9.0 },  "model": "runic:item/rune/minecraft/frost_walker" },
+    { "predicate": { "runic:rune_model": 10.0 }, "model": "runic:item/rune/minecraft/soul_speed" },
+    { "predicate": { "runic:rune_model": 11.0 }, "model": "runic:item/rune/minecraft/feather_falling" },
+
+    { "predicate": { "runic:rune_model": 12.0 }, "model": "runic:item/rune/minecraft/sharpness" },
+    { "predicate": { "runic:rune_model": 13.0 }, "model": "runic:item/rune/minecraft/smite" },
+    { "predicate": { "runic:rune_model": 14.0 }, "model": "runic:item/rune/minecraft/bane_of_arthropods" },
+    { "predicate": { "runic:rune_model": 15.0 }, "model": "runic:item/rune/minecraft/knockback" },
+    { "predicate": { "runic:rune_model": 16.0 }, "model": "runic:item/rune/minecraft/fire_aspect" },
+    { "predicate": { "runic:rune_model": 17.0 }, "model": "runic:item/rune/minecraft/looting" },
+    { "predicate": { "runic:rune_model": 18.0 }, "model": "runic:item/rune/minecraft/sweeping_edge" },
+
+    { "predicate": { "runic:rune_model": 19.0 }, "model": "runic:item/rune/runic/lightning_aspect" },
+    { "predicate": { "runic:rune_model": 20.0 }, "model": "runic:item/rune/runic/poison_aspect" },
+    { "predicate": { "runic:rune_model": 21.0 }, "model": "runic:item/rune/runic/slowness_aspect" },
+    { "predicate": { "runic:rune_model": 22.0 }, "model": "runic:item/rune/runic/weakness_aspect" },
+    { "predicate": { "runic:rune_model": 23.0 }, "model": "runic:item/rune/runic/swift_strike" },
+
+    { "predicate": { "runic:rune_model": 24.0 }, "model": "runic:item/rune/minecraft/efficiency" },
+    { "predicate": { "runic:rune_model": 25.0 }, "model": "runic:item/rune/minecraft/silk_touch" },
+    { "predicate": { "runic:rune_model": 26.0 }, "model": "runic:item/rune/minecraft/fortune" },
+    { "predicate": { "runic:rune_model": 27.0 }, "model": "runic:item/rune/minecraft/unbreaking" },
+    { "predicate": { "runic:rune_model": 28.0 }, "model": "runic:item/rune/minecraft/mending" },
+    { "predicate": { "runic:rune_model": 29.0 }, "model": "runic:item/rune/minecraft/vanishing" },
+    { "predicate": { "runic:rune_model": 30.0 }, "model": "runic:item/rune/minecraft/binding" },
+
+    { "predicate": { "runic:rune_model": 31.0 }, "model": "runic:item/rune/minecraft/power" },
+    { "predicate": { "runic:rune_model": 32.0 }, "model": "runic:item/rune/minecraft/punch" },
+    { "predicate": { "runic:rune_model": 33.0 }, "model": "runic:item/rune/minecraft/flame" },
+    { "predicate": { "runic:rune_model": 34.0 }, "model": "runic:item/rune/minecraft/infinity" },
+    { "predicate": { "runic:rune_model": 35.0 }, "model": "runic:item/rune/minecraft/multishot" },
+    { "predicate": { "runic:rune_model": 36.0 }, "model": "runic:item/rune/minecraft/piercing" },
+    { "predicate": { "runic:rune_model": 37.0 }, "model": "runic:item/rune/minecraft/quick_charge" },
+
+    { "predicate": { "runic:rune_model": 38.0 }, "model": "runic:item/rune/minecraft/impaling" },
+    { "predicate": { "runic:rune_model": 39.0 }, "model": "runic:item/rune/minecraft/riptide" },
+    { "predicate": { "runic:rune_model": 40.0 }, "model": "runic:item/rune/minecraft/loyalty" },
+    { "predicate": { "runic:rune_model": 41.0 }, "model": "runic:item/rune/minecraft/channeling" },
+
+    { "predicate": { "runic:rune_model": 42.0 }, "model": "runic:item/rune/minecraft/luck_of_the_sea" },
+    { "predicate": { "runic:rune_model": 43.0 }, "model": "runic:item/rune/minecraft/lure" },
+
+    { "predicate": { "runic:rune_model": 44.0 }, "model": "runic:item/rune/minecraft/breach" },
+    { "predicate": { "runic:rune_model": 45.0 }, "model": "runic:item/rune/minecraft/density" },
+    { "predicate": { "runic:rune_model": 46.0 }, "model": "runic:item/rune/minecraft/wind_burst" },
+    { "predicate": { "runic:rune_model": 47.0 }, "model": "runic:item/rune/minecraft/swift_sneak" },
+    { "predicate": { "runic:rune_model": 48.0 }, "model": "runic:item/rune/runic/swift" },
+
+    { "predicate": { "runic:rune_model": 49.0 }, "model": "runic:item/rune/runic/smelting" }
+  ]
+}

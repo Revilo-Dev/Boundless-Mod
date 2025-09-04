@@ -1,0 +1,17 @@
+{
+  "type": "runic:multi_enchant_injector",
+  "conditions": [],
+  "enchants": [
+    "runic:swift",
+    "runic:lightning_aspect",
+    "runic:poison_aspect",
+    "runic:slowness_aspect",
+    "runic:weakness_aspect",
+    "runic:swiftstrike",
+    "runic:smelting"
+  ],
+  "chance": 0.30,
+  "min_level": 1,
+  "max_level": 2,
+  "only_vanilla": true
+}
