@@ -1,0 +1,59 @@
+{
+  "items": {
+     "aether:zanite_helmet": 5,
+    "aether:zanite_chestplate": 4,
+    "aether:zanite_leggings": 4,
+    "aether:zanite_boots": 5,
+
+    "aether:gravitite_helmet": 6,
+    "aether:gravitite_chestplate": 5,
+    "aether:gravitite_leggings": 5,
+    "aether:gravitite_boots": 6,
+
+    "aether:phoenix_helmet": 7,
+    "aether:phoenix_chestplate": 6,
+    "aether:phoenix_leggings": 6,
+    "aether:phoenix_boots": 7,
+
+    "aether:obsidian_helmet": 7,
+    "aether:obsidian_chestplate": 6,
+    "aether:obsidian_leggings": 6,
+    "aether:obsidian_boots": 7,
+
+    "aether:valkyrie_helmet": 7,
+    "aether:valkyrie_chestplate": 6,
+    "aether:valkyrie_leggings": 6,
+    "aether:valkyrie_boots": 7,
+
+    "aether:skyroot_sword": 2,
+    "aether:skyroot_pickaxe": 1,
+    "aether:skyroot_axe": 1,
+    "aether:skyroot_shovel": 1,
+    "aether:skyroot_hoe": 1,
+
+    "aether:holystone_sword": 3,
+    "aether:holystone_pickaxe": 2,
+    "aether:holystone_axe": 2,
+    "aether:holystone_shovel": 2,
+    "aether:holystone_hoe": 2,
+
+    "aether:zanite_sword": 5,
+    "aether:zanite_pickaxe": 4,
+    "aether:zanite_axe": 4,
+    "aether:zanite_shovel": 4,
+    "aether:zanite_hoe": 4,
+
+    "aether:gravitite_sword": 6,
+    "aether:gravitite_pickaxe": 5,
+    "aether:gravitite_axe": 5,
+    "aether:gravitite_shovel": 5,
+    "aether:gravitite_hoe": 5,
+
+    "aether:valkyrie_lance": 7,
+    "aether:flaming_sword": 7,
+    "aether:holy_sword": 7,
+    "aether:lightning_sword": 7,
+    "aether:hammer_of_notch": 8,
+    "aether:phoenix_bow": 6
+  }
+}
