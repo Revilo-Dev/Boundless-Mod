@@ -1,0 +1,9 @@
+{
+  "items": {
+    "create:copper_diving_helmet": 4,
+    "create:copper_diving_boots": 4,
+
+    "create:netherite_diving_helmet": 6,
+    "create:netherite_diving_boots": 6
+  }
+}

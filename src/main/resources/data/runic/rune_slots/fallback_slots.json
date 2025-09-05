@@ -1,0 +1,22 @@
+{
+  "defaults": {
+    "helmet": 4,
+    "chestplate": 5,
+    "leggings": 5,
+    "boots": 4,
+
+    "sword": 4,
+    "pickaxe": 4,
+    "axe": 4,
+    "shovel": 4,
+    "hoe": 4,
+
+    "bow": 4,
+    "crossbow": 4,
+    "shield": 3,
+    "trident": 4,
+    "elytra": 5,
+    "fishing_rod": 4,
+    "mace": 4
+  }
+}

@@ -1,6 +1,8 @@
 {
   "parent": "minecraft:item/generated",
-  "textures": { "layer0": "runic:item/rune/enhanced_rune" },
+  "textures": {
+    "layer0": "runic:item/rune/enhanced_rune"
+  },
   "overrides": [
     { "predicate": { "runic:rune_model": 1.0 },  "model": "runic:item/rune/minecraft/protection" },
     { "predicate": { "runic:rune_model": 2.0 },  "model": "runic:item/rune/minecraft/fire_protection" },

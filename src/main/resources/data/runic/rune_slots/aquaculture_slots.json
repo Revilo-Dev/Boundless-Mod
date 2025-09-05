@@ -1,0 +1,28 @@
+{
+  "items": {
+    "aquaculture:wooden_fishing_rod": 1,
+    "aquaculture:iron_fishing_rod": 3,
+    "aquaculture:gold_fishing_rod": 5,
+    "aquaculture:diamond_fishing_rod": 4,
+    "aquaculture:neptunium_fishing_rod": 4,
+
+    "aquaculture:wooden_fillet_knife": 1,
+    "aquaculture:stone_fillet_knife": 2,
+    "aquaculture:iron_fillet_knife": 3,
+    "aquaculture:gold_fillet_knife": 5,
+    "aquaculture:diamond_fillet_knife": 4,
+
+    "aquaculture:neptunium_sword": 5,
+    "aquaculture:neptunium_pickaxe": 4,
+    "aquaculture:neptunium_axe": 4,
+    "aquaculture:neptunium_shovel": 4,
+    "aquaculture:neptunium_hoe": 4,
+
+    "aquaculture:neptunium_fillet_knife": 5,
+    "aquaculture:neptunium_bow": 5,
+    "aquaculture:neptunium_helmet": 6,
+    "aquaculture:neptunium_chestplate": 5,
+    "aquaculture:neptunium_leggings": 5,
+    "aquaculture:neptunium_boots": 6
+  }
+}

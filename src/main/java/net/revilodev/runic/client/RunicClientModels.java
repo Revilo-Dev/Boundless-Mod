@@ -2,24 +2,15 @@ package net.revilodev.runic.client;
 
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.item.ItemProperties;
-import net.minecraft.client.resources.model.ModelResourceLocation;
-import net.minecraft.core.Holder;
-import net.minecraft.core.Registry;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
-import net.minecraft.world.item.enchantment.EnchantmentHelper;
-import net.minecraft.world.item.enchantment.Enchantments;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
-import net.neoforged.neoforge.client.event.ModelEvent;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
+import net.minecraft.core.Holder;
 import net.revilodev.runic.RunicMod;
+import net.revilodev.runic.item.ModItems;
 
-@SuppressWarnings("deprecation") // suppress warnings for ItemProperties.register + Enchantments.* constants
 public final class RunicClientModels {
     private RunicClientModels() {}
 
@@ -27,142 +18,93 @@ public final class RunicClientModels {
         return ResourceLocation.fromNamespaceAndPath(RunicMod.MOD_ID, path);
     }
 
-    private static ResourceLocation rl(String s) {
-        return ResourceLocation.parse(s);
+    /** Called from RunicMod.ClientModEvents#onClientSetup */
+    public static void init() {
+        RunicMod.LOGGER.info("[Runic] Registering rune_model predicate for {}", ModItems.ENHANCED_RUNE.getId());
+        ItemProperties.register(ModItems.ENHANCED_RUNE.get(), id("rune_model"), RunicClientModels::runePredicate);
     }
 
-    // Register additional models for runes
-    @SubscribeEvent
-    public static void registerAdditional(ModelEvent.RegisterAdditional e) {
-        final String[] models = new String[]{
-                // ARMOR
-                "item/rune/minecraft/protection","item/rune/minecraft/fire_protection","item/rune/minecraft/blast_protection",
-                "item/rune/minecraft/projectile_protection","item/rune/minecraft/thorns","item/rune/minecraft/respiration",
-                "item/rune/minecraft/aqua_affinity","item/rune/minecraft/depth_strider","item/rune/minecraft/frost_walker",
-                "item/rune/minecraft/soul_speed","item/rune/minecraft/feather_falling",
-                // WEAPON
-                "item/rune/minecraft/sharpness","item/rune/minecraft/smite","item/rune/minecraft/bane_of_arthropods",
-                "item/rune/minecraft/knockback","item/rune/minecraft/fire_aspect","item/rune/minecraft/looting",
-                "item/rune/minecraft/sweeping_edge",
-                // CUSTOM
-                "item/rune/runic/lightning_aspect","item/rune/runic/poison_aspect","item/rune/runic/slowness_aspect",
-                "item/rune/runic/weakness_aspect","item/rune/runic/swift_strike","item/rune/runic/swift",
-                // TOOL
-                "item/rune/minecraft/efficiency","item/rune/minecraft/silk_touch","item/rune/minecraft/fortune",
-                "item/rune/minecraft/unbreaking","item/rune/minecraft/mending","item/rune/minecraft/vanishing_curse",
-                "item/rune/minecraft/binding_curse",
-                // BOW/CROSSBOW
-                "item/rune/minecraft/power","item/rune/minecraft/punch","item/rune/minecraft/flame","item/rune/minecraft/infinity",
-                "item/rune/minecraft/multishot","item/rune/minecraft/piercing","item/rune/minecraft/quick_charge",
-                // TRIDENT
-                "item/rune/minecraft/impaling","item/rune/minecraft/riptide","item/rune/minecraft/loyalty","item/rune/minecraft/channeling",
-                // FISHING
-                "item/rune/minecraft/luck_of_the_sea","item/rune/minecraft/lure",
-                // 1.21+
-                "item/rune/minecraft/breach","item/rune/minecraft/density","item/rune/minecraft/wind_burst","item/rune/minecraft/swift_sneak",
-                // CUSTOM utility
-                "item/rune/runic/smelting"
-        };
-        for (String path : models) {
-            e.register(ModelResourceLocation.inventory(ResourceLocation.fromNamespaceAndPath("runic", path)));
-        }
-    }
-
-    // Client setup for item property overrides
-    @SubscribeEvent
-    public static void onClientSetup(FMLClientSetupEvent e) {
-        e.enqueueWork(() -> {
-            ResourceLocation ENHANCED_RUNE_ID = rl("runic:enhanced_rune");
-            Item enhancedRune = BuiltInRegistries.ITEM.get(ENHANCED_RUNE_ID);
-            ItemProperties.register(enhancedRune, id("rune_model"), RunicClientModels::runePredicate);
-        });
-    }
-
-    // Predicate: choose correct model override based on enchantments
     private static float runePredicate(ItemStack stack, ClientLevel level, LivingEntity entity, int seed) {
-        if (level == null) return 0.0F;
+        if (stack.isEmpty()) return 0.0F;
 
-        Registry<Enchantment> reg = level.registryAccess()
-                .registryOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT);
+        // Get stored or direct enchantments
+        ItemEnchantments enchants = stack.getOrDefault(net.minecraft.core.component.DataComponents.STORED_ENCHANTMENTS, ItemEnchantments.EMPTY);
+        if (enchants.isEmpty()) {
+            enchants = stack.getOrDefault(net.minecraft.core.component.DataComponents.ENCHANTMENTS, ItemEnchantments.EMPTY);
+        }
+        if (enchants.isEmpty()) return 0.0F;
 
-        int idx = 1;
-
-        // Armor enchants
-        if (has(reg.getHolderOrThrow(Enchantments.PROTECTION), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.FIRE_PROTECTION), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.BLAST_PROTECTION), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.PROJECTILE_PROTECTION), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.THORNS), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.RESPIRATION), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.AQUA_AFFINITY), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.DEPTH_STRIDER), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.FROST_WALKER), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.SOUL_SPEED), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.FEATHER_FALLING), stack)) return idx; idx++;
-
-        // Weapon enchants
-        if (has(reg.getHolderOrThrow(Enchantments.SHARPNESS), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.SMITE), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.BANE_OF_ARTHROPODS), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.KNOCKBACK), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.FIRE_ASPECT), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.LOOTING), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.SWEEPING_EDGE), stack)) return idx; idx++;
-
-        // Custom aspects
-        if (has(reg, rl("runic:lightning_aspect"), stack)) return idx; idx++;
-        if (has(reg, rl("runic:poison_aspect"), stack)) return idx; idx++;
-        if (has(reg, rl("runic:slowness_aspect"), stack)) return idx; idx++;
-        if (has(reg, rl("runic:weakness_aspect"), stack)) return idx; idx++;
-        if (has(reg, rl("runic:swiftstrike"), stack)) return idx; idx++;
-
-        // Tools
-        if (has(reg.getHolderOrThrow(Enchantments.EFFICIENCY), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.SILK_TOUCH), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.FORTUNE), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.UNBREAKING), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.MENDING), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.VANISHING_CURSE), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.BINDING_CURSE), stack)) return idx; idx++;
-
-        // Bow / Crossbow
-        if (has(reg.getHolderOrThrow(Enchantments.POWER), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.PUNCH), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.FLAME), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.INFINITY), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.MULTISHOT), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.PIERCING), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.QUICK_CHARGE), stack)) return idx; idx++;
-
-        // Trident
-        if (has(reg.getHolderOrThrow(Enchantments.IMPALING), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.RIPTIDE), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.LOYALTY), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.CHANNELING), stack)) return idx; idx++;
-
-        // Fishing
-        if (has(reg.getHolderOrThrow(Enchantments.LUCK_OF_THE_SEA), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.LURE), stack)) return idx; idx++;
-
-        // 1.21+ vanilla
-        if (has(reg.getHolderOrThrow(Enchantments.BREACH), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.DENSITY), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.WIND_BURST), stack)) return idx; idx++;
-        if (has(reg.getHolderOrThrow(Enchantments.SWIFT_SNEAK), stack)) return idx; idx++;
-        if (has(reg, rl("runic:swift"), stack)) return idx; idx++;
-
-        // Custom utility
-        if (has(reg, rl("runic:smelting"), stack)) return idx;
+        // Take the first enchantment
+        for (var entry : enchants.entrySet()) {
+            Holder<Enchantment> ench = entry.getKey();
+            String path = ench.unwrapKey().map(k -> k.location().getPath()).orElse("");
+            return mapEnchantToIndex(path);
+        }
 
         return 0.0F;
     }
 
-    private static boolean has(Holder<Enchantment> ench, ItemStack stack) {
-        return EnchantmentHelper.getItemEnchantmentLevel(ench, stack) > 0;
-    }
+    private static float mapEnchantToIndex(String path) {
+        return switch (path) {
+            case "protection" -> 1.0F;
+            case "fire_protection" -> 2.0F;
+            case "blast_protection" -> 3.0F;
+            case "projectile_protection" -> 4.0F;
+            case "thorns" -> 5.0F;
+            case "respiration" -> 6.0F;
+            case "aqua_affinity" -> 7.0F;
+            case "depth_strider" -> 8.0F;
+            case "frost_walker" -> 9.0F;
+            case "soul_speed" -> 10.0F;
+            case "feather_falling" -> 11.0F;
 
-    private static boolean has(Registry<Enchantment> reg, ResourceLocation id, ItemStack stack) {
-        ResourceKey<Enchantment> key = ResourceKey.create(net.minecraft.core.registries.Registries.ENCHANTMENT, id);
-        return reg.getHolder(key).map(h -> EnchantmentHelper.getItemEnchantmentLevel(h, stack) > 0).orElse(false);
+            case "sharpness" -> 12.0F;
+            case "smite" -> 13.0F;
+            case "bane_of_arthropods" -> 14.0F;
+            case "knockback" -> 15.0F;
+            case "fire_aspect" -> 16.0F;
+            case "looting" -> 17.0F;
+            case "sweeping_edge" -> 18.0F;
+
+            case "lightning_aspect" -> 19.0F;
+            case "poison_aspect" -> 20.0F;
+            case "slowness_aspect" -> 21.0F;
+            case "weakness_aspect" -> 22.0F;
+            case "swiftstrike" -> 23.0F;
+
+            case "efficiency" -> 24.0F;
+            case "silk_touch" -> 25.0F;
+            case "fortune" -> 26.0F;
+            case "unbreaking" -> 27.0F;
+            case "mending" -> 28.0F;
+            case "vanishing" -> 29.0F;
+            case "binding" -> 30.0F;
+
+            case "power" -> 31.0F;
+            case "punch" -> 32.0F;
+            case "flame" -> 33.0F;
+            case "infinity" -> 34.0F;
+            case "multishot" -> 35.0F;
+            case "piercing" -> 36.0F;
+            case "quick_charge" -> 37.0F;
+
+            case "impaling" -> 38.0F;
+            case "riptide" -> 39.0F;
+            case "loyalty" -> 40.0F;
+            case "channeling" -> 41.0F;
+
+            case "luck_of_the_sea" -> 42.0F;
+            case "lure" -> 43.0F;
+
+            case "breach" -> 44.0F;
+            case "density" -> 45.0F;
+            case "wind_burst" -> 46.0F;
+            case "swift_sneak" -> 47.0F;
+
+            case "swift" -> 48.0F;
+            case "smelting" -> 49.0F;
+
+            default -> 0.0F;
+        };
     }
 }

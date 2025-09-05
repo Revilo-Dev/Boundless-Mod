@@ -1,72 +1,72 @@
 {
   "items": {
 
-    "minecraft:leather_helmet": 2,
+    "minecraft:leather_helmet": 3,
     "minecraft:leather_chestplate": 2,
     "minecraft:leather_leggings": 2,
-    "minecraft:leather_boots": 2,
+    "minecraft:leather_boots": 3,
 
-    "minecraft:golden_helmet": 5,
+    "minecraft:golden_helmet": 6,
     "minecraft:golden_chestplate": 5,
     "minecraft:golden_leggings": 5,
-    "minecraft:golden_boots": 5,
+    "minecraft:golden_boots": 6,
 
-    "minecraft:chainmail_helmet": 4,
+    "minecraft:chainmail_helmet": 5,
     "minecraft:chainmail_chestplate": 4,
     "minecraft:chainmail_leggings": 4,
-    "minecraft:chainmail_boots": 4,
+    "minecraft:chainmail_boots": 5,
 
-    "minecraft:iron_helmet": 4,
+    "minecraft:iron_helmet": 5,
     "minecraft:iron_chestplate": 4,
     "minecraft:iron_leggings": 4,
-    "minecraft:iron_boots": 4,
+    "minecraft:iron_boots": 5,
 
-    "minecraft:diamond_helmet": 5,
+    "minecraft:diamond_helmet": 6,
     "minecraft:diamond_chestplate": 5,
     "minecraft:diamond_leggings": 5,
-    "minecraft:diamond_boots": 5,
+    "minecraft:diamond_boots": 6,
 
-    "minecraft:netherite_helmet": 6,
+    "minecraft:netherite_helmet": 7,
     "minecraft:netherite_chestplate": 6,
     "minecraft:netherite_leggings": 6,
-    "minecraft:netherite_boots": 6,
+    "minecraft:netherite_boots": 7,
 
 
-    "minecraft:wooden_sword": 1,
+    "minecraft:wooden_sword": 2,
     "minecraft:wooden_pickaxe": 1,
     "minecraft:wooden_axe": 1,
     "minecraft:wooden_shovel": 1,
     "minecraft:wooden_hoe": 1,
 
-    "minecraft:stone_sword": 2,
+    "minecraft:stone_sword": 3,
     "minecraft:stone_pickaxe": 2,
     "minecraft:stone_axe": 2,
     "minecraft:stone_shovel": 2,
     "minecraft:stone_hoe": 2,
 
 
-    "minecraft:iron_sword": 3,
+    "minecraft:iron_sword": 4,
     "minecraft:iron_pickaxe": 3,
     "minecraft:iron_axe": 3,
     "minecraft:iron_shovel": 3,
     "minecraft:iron_hoe": 3,
 
 
-    "minecraft:golden_sword": 5,
+    "minecraft:golden_sword": 6,
     "minecraft:golden_pickaxe": 5,
     "minecraft:golden_axe": 5,
     "minecraft:golden_shovel": 5,
     "minecraft:golden_hoe": 5,
 
 
-    "minecraft:diamond_sword": 4,
+    "minecraft:diamond_sword": 5,
     "minecraft:diamond_pickaxe": 4,
     "minecraft:diamond_axe": 4,
     "minecraft:diamond_shovel": 4,
     "minecraft:diamond_hoe": 4,
 
 
-    "minecraft:netherite_sword": 5,
+    "minecraft:netherite_sword": 6,
     "minecraft:netherite_pickaxe": 5,
     "minecraft:netherite_axe": 5,
     "minecraft:netherite_shovel": 5,

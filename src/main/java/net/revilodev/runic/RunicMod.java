@@ -6,6 +6,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -13,6 +14,7 @@ import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.revilodev.runic.Enhancements.ModEnhancementEffects;
 import net.revilodev.runic.block.ModBlocks;
+import net.revilodev.runic.client.RunicClientModels;
 import net.revilodev.runic.item.ModCreativeModeTabs;
 import net.revilodev.runic.item.ModItems;
 import net.revilodev.runic.loot.ModLootModifiers;
@@ -33,6 +35,7 @@ public class RunicMod {
 
         // client-only listeners
         modEventBus.addListener(ClientModEvents::onRegisterScreens);
+        modEventBus.addListener(ClientModEvents::onClientSetup);
 
         // deferred registers
         ModCreativeModeTabs.register(modEventBus);
@@ -49,6 +52,8 @@ public class RunicMod {
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {}
+
+
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.INGREDIENTS) {
@@ -69,5 +74,9 @@ public class RunicMod {
         public static void onRegisterScreens(RegisterMenuScreensEvent event) {
             event.register(ModMenuTypes.ETCHING_TABLE.get(), EtchingTableScreen::new);
         }
+        public static void onClientSetup(FMLClientSetupEvent event) {
+            RunicClientModels.init();
+        }
+
     }
 }
