@@ -40,8 +40,8 @@ public class EtchingTableScreen extends AbstractContainerScreen<EtchingTableMenu
         int x = (this.width - this.imageWidth) / 2;
         int y = (this.height - this.imageHeight) / 2;
 
-        // base texture
-        gg.blit(TEX, x, y, 0, 0, this.imageWidth, this.imageHeight);
+        // Explicitly pass the actual PNG size (176x166) so it doesn’t get cut off
+        gg.blit(TEX, x, y, 0, 0, this.imageWidth, this.imageHeight, 176, 166);
 
         // 3D item preview in the black box
         ItemStack toPreview = this.menu.getSlot(2).getItem(); // slot 2 = result slot
@@ -64,7 +64,6 @@ public class EtchingTableScreen extends AbstractContainerScreen<EtchingTableMenu
         super.render(gg, mouseX, mouseY, partialTick);
         this.renderTooltip(gg, mouseX, mouseY);
     }
-
 
     @Override
     protected void renderLabels(GuiGraphics gg, int mouseX, int mouseY) {

@@ -14,23 +14,24 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
-import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.revilodev.runic.RunicMod;
 
-@EventBusSubscriber(modid = RunicMod.MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT) // ok to keep; deprecation is harmless for now
+@SuppressWarnings("deprecation") // suppress warnings for ItemProperties.register + Enchantments.* constants
 public final class RunicClientModels {
-
     private RunicClientModels() {}
 
     private static ResourceLocation id(String path) {
         return ResourceLocation.fromNamespaceAndPath(RunicMod.MOD_ID, path);
     }
-    private static ResourceLocation rl(String s) { return ResourceLocation.parse(s); } // <- ensure this exists
 
+    private static ResourceLocation rl(String s) {
+        return ResourceLocation.parse(s);
+    }
+
+    // Register additional models for runes
     @SubscribeEvent
     public static void registerAdditional(ModelEvent.RegisterAdditional e) {
         final String[] models = new String[]{
@@ -67,16 +68,17 @@ public final class RunicClientModels {
         }
     }
 
+    // Client setup for item property overrides
     @SubscribeEvent
     public static void onClientSetup(FMLClientSetupEvent e) {
         e.enqueueWork(() -> {
-            // Lookup the item directly from the frozen registry — no .get() / .value() needed
             ResourceLocation ENHANCED_RUNE_ID = rl("runic:enhanced_rune");
             Item enhancedRune = BuiltInRegistries.ITEM.get(ENHANCED_RUNE_ID);
             ItemProperties.register(enhancedRune, id("rune_model"), RunicClientModels::runePredicate);
         });
     }
 
+    // Predicate: choose correct model override based on enchantments
     private static float runePredicate(ItemStack stack, ClientLevel level, LivingEntity entity, int seed) {
         if (level == null) return 0.0F;
 
@@ -85,7 +87,7 @@ public final class RunicClientModels {
 
         int idx = 1;
 
-        // ----- ARMOR -----
+        // Armor enchants
         if (has(reg.getHolderOrThrow(Enchantments.PROTECTION), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.FIRE_PROTECTION), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.BLAST_PROTECTION), stack)) return idx; idx++;
@@ -98,7 +100,7 @@ public final class RunicClientModels {
         if (has(reg.getHolderOrThrow(Enchantments.SOUL_SPEED), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.FEATHER_FALLING), stack)) return idx; idx++;
 
-        // ----- WEAPON -----
+        // Weapon enchants
         if (has(reg.getHolderOrThrow(Enchantments.SHARPNESS), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.SMITE), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.BANE_OF_ARTHROPODS), stack)) return idx; idx++;
@@ -107,14 +109,14 @@ public final class RunicClientModels {
         if (has(reg.getHolderOrThrow(Enchantments.LOOTING), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.SWEEPING_EDGE), stack)) return idx; idx++;
 
-        // ----- CUSTOM “ASPECTS” -----
+        // Custom aspects
         if (has(reg, rl("runic:lightning_aspect"), stack)) return idx; idx++;
         if (has(reg, rl("runic:poison_aspect"), stack)) return idx; idx++;
         if (has(reg, rl("runic:slowness_aspect"), stack)) return idx; idx++;
         if (has(reg, rl("runic:weakness_aspect"), stack)) return idx; idx++;
         if (has(reg, rl("runic:swiftstrike"), stack)) return idx; idx++;
 
-        // ----- TOOLS -----
+        // Tools
         if (has(reg.getHolderOrThrow(Enchantments.EFFICIENCY), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.SILK_TOUCH), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.FORTUNE), stack)) return idx; idx++;
@@ -123,7 +125,7 @@ public final class RunicClientModels {
         if (has(reg.getHolderOrThrow(Enchantments.VANISHING_CURSE), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.BINDING_CURSE), stack)) return idx; idx++;
 
-        // ----- BOW / CROSSBOW -----
+        // Bow / Crossbow
         if (has(reg.getHolderOrThrow(Enchantments.POWER), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.PUNCH), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.FLAME), stack)) return idx; idx++;
@@ -132,24 +134,24 @@ public final class RunicClientModels {
         if (has(reg.getHolderOrThrow(Enchantments.PIERCING), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.QUICK_CHARGE), stack)) return idx; idx++;
 
-        // ----- TRIDENT -----
+        // Trident
         if (has(reg.getHolderOrThrow(Enchantments.IMPALING), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.RIPTIDE), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.LOYALTY), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.CHANNELING), stack)) return idx; idx++;
 
-        // ----- FISHING -----
+        // Fishing
         if (has(reg.getHolderOrThrow(Enchantments.LUCK_OF_THE_SEA), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.LURE), stack)) return idx; idx++;
 
-        // ----- 1.21+ VANILLA -----
+        // 1.21+ vanilla
         if (has(reg.getHolderOrThrow(Enchantments.BREACH), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.DENSITY), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.WIND_BURST), stack)) return idx; idx++;
         if (has(reg.getHolderOrThrow(Enchantments.SWIFT_SNEAK), stack)) return idx; idx++;
         if (has(reg, rl("runic:swift"), stack)) return idx; idx++;
 
-        // ----- CUSTOM UTILITY -----
+        // Custom utility
         if (has(reg, rl("runic:smelting"), stack)) return idx;
 
         return 0.0F;

@@ -16,9 +16,9 @@ import net.revilodev.runic.RunicMod;
 public final class BlacklistStrippingEvents {
     private BlacklistStrippingEvents() {}
 
-    /** Strip blacklisted enchants when a dropped item is picked up. */
+    /** Strip blacklisted enchants when a dropped item is picked up (before inventory add). */
     @SubscribeEvent
-    public static void onItemPickup(ItemEntityPickupEvent event) {
+    public static void onItemPickup(ItemEntityPickupEvent.Pre event) {
         ItemEntity itemEntity = event.getItemEntity();
         ItemStack stack = itemEntity.getItem();
         if (EnchantBlacklist.strip(stack)) {

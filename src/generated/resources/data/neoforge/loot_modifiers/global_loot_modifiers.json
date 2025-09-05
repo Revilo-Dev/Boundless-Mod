@@ -1,0 +1,7 @@
+{
+  "entries": [
+    "runic:remove_enchanted_books",
+    "runic:rune_rarity_injector"
+  ],
+  "replace": false
+}
