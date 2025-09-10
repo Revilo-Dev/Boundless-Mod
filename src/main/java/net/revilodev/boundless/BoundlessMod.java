@@ -9,7 +9,7 @@ import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
-import net.revilodev.boundless.client.QuestButton;
+import net.revilodev.boundless.client.QuestPanelClient;
 import org.slf4j.Logger;
 
 @Mod(BoundlessMod.MOD_ID)
@@ -21,8 +21,11 @@ public class BoundlessMod {
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::addCreative);
 
-        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(QuestButton::onScreenInit);
-        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(QuestButton::onScreenRender);
+        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenInit);
+        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenClosing);
+        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPost);
+        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPre);
+
 
         // global events
         NeoForge.EVENT_BUS.register(this);
