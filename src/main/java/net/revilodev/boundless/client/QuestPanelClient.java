@@ -5,7 +5,6 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.ImageButton;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
-import net.minecraft.client.gui.screens.recipebook.RecipeBookComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 
@@ -26,7 +25,8 @@ public final class QuestPanelClient {
 
     private static final Map<Screen, State> STATES = new WeakHashMap<>();
     private static Field LEFT_FIELD;
-    private static Field RECIPE_BUTTON_FIELD;
+
+    private static boolean lastQuestOpen = false;
 
     public static void onScreenInit(ScreenEvent.Init.Post e) {
         Screen s = e.getScreen();
@@ -45,12 +45,21 @@ public final class QuestPanelClient {
         st.btn = btn;
         e.addListener(btn);
         reposition(inv, st);
+
+        if (lastQuestOpen) {
+            st.open = true;
+            if (st.originalLeft == null) st.originalLeft = getLeft(inv);
+            int centered = computeCenteredLeft(inv);
+            setLeft(inv, centered);
+        }
     }
 
     public static void onScreenClosing(ScreenEvent.Closing e) {
         State st = STATES.remove(e.getScreen());
         if (st == null) return;
-        if (st.open && st.originalLeft != null) setLeft(st.inv, st.originalLeft);
+        if (st.open && st.originalLeft != null) {
+            setLeft(st.inv, st.originalLeft);
+        }
     }
 
     public static void onScreenRenderPre(ScreenEvent.Render.Pre e) {
@@ -61,12 +70,20 @@ public final class QuestPanelClient {
         if (st.open) {
             int centered = computeCenteredLeft(inv);
             setLeft(inv, centered);
-            repositionRecipeBook(inv, st);
         }
+
         reposition(inv, st);
 
-        if (st.btn != null) {
-            st.btn.active = !getRecipeBook(inv).isVisible();
+        // Visibility rules
+        if (st.open) {
+            if (st.btn != null) st.btn.visible = true;
+            toggleRecipeButtonVisibility(inv, false);
+        } else if (isRecipePanelOpen(inv)) {
+            if (st.btn != null) st.btn.visible = false;
+            toggleRecipeButtonVisibility(inv, true);
+        } else {
+            if (st.btn != null) st.btn.visible = true;
+            toggleRecipeButtonVisibility(inv, true);
         }
     }
 
@@ -75,11 +92,7 @@ public final class QuestPanelClient {
         State st = STATES.get(s);
         if (st == null || !(s instanceof InventoryScreen inv)) return;
 
-        if (!st.open) {
-            ImageButton rb = getRecipeButton(inv);
-            if (rb != null) rb.active = true;
-            return;
-        }
+        if (!st.open) return;
 
         int panelX = inv.getGuiLeft() - PANEL_W - 2;
         int panelY = inv.getGuiTop();
@@ -90,18 +103,13 @@ public final class QuestPanelClient {
 
     private static void toggle(State st) {
         st.open = !st.open;
+        lastQuestOpen = st.open;
         if (st.open) {
             if (st.originalLeft == null) st.originalLeft = getLeft(st.inv);
             int centered = computeCenteredLeft(st.inv);
             setLeft(st.inv, centered);
-            repositionRecipeBook(st.inv, st);
-            ImageButton rb = getRecipeButton(st.inv);
-            if (rb != null) rb.active = false;
-        } else {
-            if (st.originalLeft != null) setLeft(st.inv, st.originalLeft);
-            repositionRecipeBook(st.inv, st);
-            ImageButton rb = getRecipeButton(st.inv);
-            if (rb != null) rb.active = true;
+        } else if (st.originalLeft != null) {
+            setLeft(st.inv, st.originalLeft);
         }
         reposition(st.inv, st);
     }
@@ -120,31 +128,19 @@ public final class QuestPanelClient {
         st.btn.setPosition(x, y);
     }
 
-    private static void repositionRecipeBook(InventoryScreen inv, State st) {
-        try {
-            int dx = getLeft(inv) - (st.originalLeft == null ? getLeft(inv) : st.originalLeft);
-            ImageButton rb = getRecipeButton(inv);
-            if (rb != null) {
-                rb.setX(inv.getGuiLeft() + inv.getXSize() - 20 + dx);
-                rb.setY(inv.getGuiTop() + 5);
+    private static void toggleRecipeButtonVisibility(InventoryScreen inv, boolean visible) {
+        for (var child : inv.children()) {
+            if (child instanceof ImageButton btn) {
+                if (btn.getWidth() == 20 && btn.getHeight() == 18) {
+                    btn.visible = visible;
+                }
             }
-        } catch (Throwable ignored) {}
-    }
-
-    private static RecipeBookComponent getRecipeBook(InventoryScreen inv) {
-        return inv.getRecipeBookComponent();
-    }
-
-    private static ImageButton getRecipeButton(InventoryScreen inv) {
-        try {
-            if (RECIPE_BUTTON_FIELD == null) {
-                RECIPE_BUTTON_FIELD = RecipeBookComponent.class.getDeclaredField("recipeButton");
-                RECIPE_BUTTON_FIELD.setAccessible(true);
-            }
-            return (ImageButton) RECIPE_BUTTON_FIELD.get(inv.getRecipeBookComponent());
-        } catch (Throwable t) {
-            return null;
         }
+    }
+
+    private static boolean isRecipePanelOpen(InventoryScreen inv) {
+        int centeredLeft = (inv.width - inv.getXSize()) / 2;
+        return inv.getGuiLeft() > centeredLeft + 10;
     }
 
     private static Integer getLeft(InventoryScreen inv) {

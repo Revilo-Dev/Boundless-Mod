@@ -27,6 +27,7 @@ public class BoundlessMod {
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPre);
 
 
+
         // global events
         NeoForge.EVENT_BUS.register(this);
 
