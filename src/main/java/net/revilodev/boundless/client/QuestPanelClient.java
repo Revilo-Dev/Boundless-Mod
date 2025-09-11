@@ -3,10 +3,13 @@ package net.revilodev.boundless.client;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.ImageButton;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.revilodev.boundless.quest.QuestData;
 
 import java.lang.reflect.Field;
 import java.util.Map;
@@ -16,7 +19,7 @@ public final class QuestPanelClient {
     private static final ResourceLocation BTN_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_button.png");
     private static final ResourceLocation BTN_TEX_HOVER =
-            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_book_hovered.png");
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_button_hovered.png");
     private static final ResourceLocation PANEL_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/quest_panel.png");
 
@@ -32,18 +35,25 @@ public final class QuestPanelClient {
         Screen s = e.getScreen();
         if (!(s instanceof InventoryScreen inv)) return;
 
+        QuestData.loadClient(false);
+
         State st = STATES.computeIfAbsent(s, k -> new State(inv));
         int btnX = inv.getGuiLeft() + 125;
         int btnY = inv.getGuiTop() + 61;
 
         QuestToggleButton btn = new QuestToggleButton(
-                btnX, btnY,
-                BTN_TEX,
-                BTN_TEX_HOVER,
-                () -> toggle(st)
+                btnX, btnY, BTN_TEX, BTN_TEX_HOVER, () -> toggle(st)
         );
         st.btn = btn;
+
+        // add background first so it renders under list/details/back
+        if (st.bg == null) {
+            st.bg = new PanelBackground(0, 0, PANEL_W, PANEL_H);
+            e.addListener(st.bg);
+        }
         e.addListener(btn);
+
+        createOrUpdateWidgets(e, inv, st);
         reposition(inv, st);
 
         if (lastQuestOpen) {
@@ -51,6 +61,7 @@ public final class QuestPanelClient {
             if (st.originalLeft == null) st.originalLeft = getLeft(inv);
             int centered = computeCenteredLeft(inv);
             setLeft(inv, centered);
+            updateVisibility(st);
         }
     }
 
@@ -73,32 +84,25 @@ public final class QuestPanelClient {
         }
 
         reposition(inv, st);
-
-        // Visibility rules
-        if (st.open) {
-            if (st.btn != null) st.btn.visible = true;
-            toggleRecipeButtonVisibility(inv, false);
-        } else if (isRecipePanelOpen(inv)) {
-            if (st.btn != null) st.btn.visible = false;
-            toggleRecipeButtonVisibility(inv, true);
-        } else {
-            if (st.btn != null) st.btn.visible = true;
-            toggleRecipeButtonVisibility(inv, true);
-        }
+        updateVisibility(st);
+        handleRecipeButtonRules(inv, st);
     }
 
-    public static void onScreenRenderPost(ScreenEvent.Render.Post e) {
-        Screen s = e.getScreen();
-        State st = STATES.get(s);
-        if (st == null || !(s instanceof InventoryScreen inv)) return;
+    public static void onScreenRenderPost(ScreenEvent.Render.Post e) {}
 
-        if (!st.open) return;
-
-        int panelX = inv.getGuiLeft() - PANEL_W - 2;
-        int panelY = inv.getGuiTop();
-        RenderSystem.enableBlend();
-        GuiGraphics gg = e.getGuiGraphics();
-        gg.blit(PANEL_TEX, panelX, panelY, 0, 0, PANEL_W, PANEL_H, PANEL_W, PANEL_H);
+    private static void createOrUpdateWidgets(ScreenEvent.Init.Post e, InventoryScreen inv, State st) {
+        if (st.list == null) {
+            st.list = new QuestListWidget(0, 0, 127, PANEL_H - 20, q -> openDetails(st, q));
+            st.list.setQuests(QuestData.all());
+            e.addListener(st.list);
+        }
+        if (st.details == null) {
+            st.details = new QuestDetailsPanel(0, 0, 127, PANEL_H - 20, () -> closeDetails(st));
+            e.addListener(st.details);
+            e.addListener(st.details.backButton());
+        }
+        setPanelChildBounds(inv, st);
+        updateVisibility(st);
     }
 
     private static void toggle(State st) {
@@ -112,6 +116,7 @@ public final class QuestPanelClient {
             setLeft(st.inv, st.originalLeft);
         }
         reposition(st.inv, st);
+        updateVisibility(st);
     }
 
     private static int computeCenteredLeft(InventoryScreen inv) {
@@ -121,11 +126,45 @@ public final class QuestPanelClient {
         return (screenW - total) / 2 + PANEL_W + 2;
     }
 
+    private static int computePanelX(InventoryScreen inv) {
+        return inv.getGuiLeft() - PANEL_W - 2;
+    }
+
+    private static void setPanelChildBounds(InventoryScreen inv, State st) {
+        int bgx = computePanelX(inv);
+        int bgy = inv.getGuiTop();
+
+        int px = bgx + 10;
+        int py = bgy + 10;
+        int pw = 127;
+        int ph = PANEL_H - 20;
+
+        if (st.bg != null) st.bg.setBounds(bgx, bgy, PANEL_W, PANEL_H);
+        if (st.list != null) st.list.setBounds(px, py, pw, ph);
+        if (st.details != null) st.details.setBounds(px, py, pw, ph);
+        if (st.details != null) st.details.backButton().setPosition(px, py + ph - st.details.backButton().getHeight() - 4);
+    }
+
     private static void reposition(InventoryScreen inv, State st) {
-        if (st.btn == null) return;
-        int x = inv.getGuiLeft() + 125;
-        int y = inv.getGuiTop() + 61;
-        st.btn.setPosition(x, y);
+        if (st.btn != null) {
+            int x = inv.getGuiLeft() + 125;
+            int y = inv.getGuiTop() + 61;
+            st.btn.setPosition(x, y);
+        }
+        setPanelChildBounds(inv, st);
+    }
+
+    private static void handleRecipeButtonRules(InventoryScreen inv, State st) {
+        if (st.open) {
+            if (st.btn != null) st.btn.visible = true;
+            toggleRecipeButtonVisibility(inv, false);
+        } else if (isRecipePanelOpen(inv)) {
+            if (st.btn != null) st.btn.visible = false;
+            toggleRecipeButtonVisibility(inv, true);
+        } else {
+            if (st.btn != null) st.btn.visible = true;
+            toggleRecipeButtonVisibility(inv, true);
+        }
     }
 
     private static void toggleRecipeButtonVisibility(InventoryScreen inv, boolean visible) {
@@ -173,11 +212,53 @@ public final class QuestPanelClient {
         throw new NoSuchFieldException("leftPos");
     }
 
+    private static void openDetails(State st, QuestData.Quest quest) {
+        if (st.details == null) return;
+        st.details.setQuest(quest);
+        st.showingDetails = true;
+        updateVisibility(st);
+    }
+
+    private static void closeDetails(State st) {
+        st.showingDetails = false;
+        updateVisibility(st);
+    }
+
+    private static void updateVisibility(State st) {
+        boolean listVisible = st.open && !st.showingDetails;
+        boolean detailsVisible = st.open && st.showingDetails;
+
+        if (st.bg != null) st.bg.visible = st.open;
+        if (st.list != null) { st.list.visible = listVisible; st.list.active = listVisible; }
+        if (st.details != null) { st.details.visible = detailsVisible; st.details.active = detailsVisible; }
+        if (st.details != null) { st.details.backButton().visible = detailsVisible; st.details.backButton().active = detailsVisible; }
+    }
+
+    private static final class PanelBackground extends AbstractWidget {
+        public PanelBackground(int x, int y, int w, int h) {
+            super(x, y, w, h, Component.empty());
+        }
+        public void setBounds(int x, int y, int w, int h) {
+            this.setX(x); this.setY(y); this.width = w; this.height = h;
+        }
+        protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
+            RenderSystem.disableBlend();
+            gg.blit(PANEL_TEX, getX(), getY(), 0, 0, width, height, width, height);
+        }
+        public boolean mouseClicked(double mouseX, double mouseY, int button) { return false; }
+        protected void updateWidgetNarration(net.minecraft.client.gui.narration.NarrationElementOutput n) {}
+    }
+
     private static final class State {
         final InventoryScreen inv;
         QuestToggleButton btn;
+        PanelBackground bg;
+        QuestListWidget list;
+        QuestDetailsPanel details;
+        boolean showingDetails;
         boolean open;
         Integer originalLeft;
+
         State(InventoryScreen inv) { this.inv = inv; }
     }
 }
