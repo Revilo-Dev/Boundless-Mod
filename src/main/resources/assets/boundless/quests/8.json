@@ -1,11 +1,11 @@
+
+
+
 {
-  "id": "getting_started",
+  "id": "getti1324223n3ed",
   "name": "Getting Started",
   "icon": "minecraft:wooden_pickaxe",
   "description": "Punch a tree to gather wood.",
-  "dependencies": "",
-  "optional": "false",
-  "type": "collection",
-  "completion": { "item": "minecraft:wood", "count": 1 },
+  "dependencies": ["intro"],
   "reward": { "item": "minecraft:apple", "count": 3 }
 }

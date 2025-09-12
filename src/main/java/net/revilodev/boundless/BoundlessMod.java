@@ -25,28 +25,15 @@ public class BoundlessMod {
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenClosing);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPost);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPre);
+        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseScrolled);
 
-
-
-        // global events
         NeoForge.EVENT_BUS.register(this);
-
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {}
 
-
-
-    private void addCreative(BuildCreativeModeTabContentsEvent event) {
-
-    }
+    private void addCreative(BuildCreativeModeTabContentsEvent event) {}
 
     @SubscribeEvent
-    public void onServerStarting(ServerStartingEvent event) {
-        // server start logic
-    }
-
-    public static class ClientModEvents {
-
-    }
+    public void onServerStarting(ServerStartingEvent event) {}
 }

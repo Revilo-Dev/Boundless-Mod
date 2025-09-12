@@ -46,7 +46,6 @@ public final class QuestPanelClient {
         );
         st.btn = btn;
 
-        // add background first so it renders under list/details/back
         if (st.bg == null) {
             st.bg = new PanelBackground(0, 0, PANEL_W, PANEL_H);
             e.addListener(st.bg);
@@ -89,6 +88,28 @@ public final class QuestPanelClient {
     }
 
     public static void onScreenRenderPost(ScreenEvent.Render.Post e) {}
+
+    // NEW: handle wheel scroll cleanly
+    public static void onMouseScrolled(ScreenEvent.MouseScrolled.Pre e) {
+        Screen s = e.getScreen();
+        State st = STATES.get(s);
+        if (st == null || !(s instanceof InventoryScreen inv)) return;
+        if (!st.open || st.list == null || !st.list.visible) return;
+
+        int px = computePanelX(inv) + 10;
+        int py = inv.getGuiTop() + 10;
+        int pw = 127;
+        int ph = PANEL_H - 20;
+
+        double mx = e.getMouseX();
+        double my = e.getMouseY();
+        if (mx < px || mx > px + pw || my < py || my > py + ph) return;
+
+        double dY = e.getScrollDeltaY();
+        boolean used = st.list.mouseScrolled(mx, my, dY);
+        if (!used) used = st.list.mouseScrolled(mx, my, 0.0, dY);
+        if (used) e.setCanceled(true);
+    }
 
     private static void createOrUpdateWidgets(ScreenEvent.Init.Post e, InventoryScreen inv, State st) {
         if (st.list == null) {

@@ -25,7 +25,7 @@ public final class QuestListWidget extends AbstractWidget {
 
     private float scrollY = 0f;
     private final int rowHeight = 27;
-    private final int rowPad = 0;
+    private final int rowPad = 2;
 
     public QuestListWidget(int x, int y, int width, int height, Consumer<QuestData.Quest> onClick) {
         super(x, y, width, height, net.minecraft.network.chat.Component.empty());
@@ -48,7 +48,7 @@ public final class QuestListWidget extends AbstractWidget {
 
     private int contentHeight() {
         if (quests.isEmpty()) return 0;
-        return quests.size() * rowHeight + (quests.size() - 1) * rowPad;
+        return quests.size() * (rowHeight + rowPad);
     }
 
     protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
@@ -76,22 +76,38 @@ public final class QuestListWidget extends AbstractWidget {
         }
 
         gg.disableScissor();
+
+        int content = contentHeight();
+        if (content > this.height) {
+            float ratio = (float) this.height / content;
+            int barHeight = Math.max(10, (int) (this.height * ratio));
+            int barY = getY() + (int) ((this.height - barHeight) * (scrollY / (content - this.height)));
+            gg.fill(getX() + width + 4, barY, getX() + width + 6, barY + barHeight, 0xFF808080);
+        }
     }
 
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
-        if (!this.visible || !this.isMouseOver(mouseX, mouseY)) return false;
-
+        if (!this.visible || !this.active) return false;
         int content = contentHeight();
         int view = this.height;
         if (content <= view) return false;
-
         float max = content - view;
         scrollY = Mth.clamp(scrollY - (float) (delta * 12), 0f, max);
         return true;
     }
 
+    public boolean mouseScrolled(double mouseX, double mouseY, double deltaX, double deltaY) {
+        if (!this.visible || !this.active) return false;
+        int content = contentHeight();
+        int view = this.height;
+        if (content <= view) return false;
+        float max = content - view;
+        scrollY = Mth.clamp(scrollY - (float) (deltaY * 12), 0f, max);
+        return true;
+    }
+
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (!this.visible || !this.isMouseOver(mouseX, mouseY)) return false;
+        if (!this.visible || !this.active || !this.isMouseOver(mouseX, mouseY)) return false;
         if (button != 0) return false;
 
         int localY = (int)(mouseY - this.getY() + scrollY);
