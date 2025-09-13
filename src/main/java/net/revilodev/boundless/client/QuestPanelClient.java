@@ -34,27 +34,19 @@ public final class QuestPanelClient {
     public static void onScreenInit(ScreenEvent.Init.Post e) {
         Screen s = e.getScreen();
         if (!(s instanceof InventoryScreen inv)) return;
-
         QuestData.loadClient(false);
-
         State st = STATES.computeIfAbsent(s, k -> new State(inv));
         int btnX = inv.getGuiLeft() + 125;
         int btnY = inv.getGuiTop() + 61;
-
-        QuestToggleButton btn = new QuestToggleButton(
-                btnX, btnY, BTN_TEX, BTN_TEX_HOVER, () -> toggle(st)
-        );
+        QuestToggleButton btn = new QuestToggleButton(btnX, btnY, BTN_TEX, BTN_TEX_HOVER, () -> toggle(st));
         st.btn = btn;
-
         if (st.bg == null) {
             st.bg = new PanelBackground(0, 0, PANEL_W, PANEL_H);
             e.addListener(st.bg);
         }
         e.addListener(btn);
-
         createOrUpdateWidgets(e, inv, st);
         reposition(inv, st);
-
         if (lastQuestOpen) {
             st.open = true;
             if (st.originalLeft == null) st.originalLeft = getLeft(inv);
@@ -76,12 +68,10 @@ public final class QuestPanelClient {
         Screen s = e.getScreen();
         State st = STATES.get(s);
         if (st == null || !(s instanceof InventoryScreen inv)) return;
-
         if (st.open) {
             int centered = computeCenteredLeft(inv);
             setLeft(inv, centered);
         }
-
         reposition(inv, st);
         updateVisibility(st);
         handleRecipeButtonRules(inv, st);
@@ -89,22 +79,18 @@ public final class QuestPanelClient {
 
     public static void onScreenRenderPost(ScreenEvent.Render.Post e) {}
 
-    // NEW: handle wheel scroll cleanly
     public static void onMouseScrolled(ScreenEvent.MouseScrolled.Pre e) {
         Screen s = e.getScreen();
         State st = STATES.get(s);
         if (st == null || !(s instanceof InventoryScreen inv)) return;
         if (!st.open || st.list == null || !st.list.visible) return;
-
         int px = computePanelX(inv) + 10;
         int py = inv.getGuiTop() + 10;
         int pw = 127;
         int ph = PANEL_H - 20;
-
         double mx = e.getMouseX();
         double my = e.getMouseY();
         if (mx < px || mx > px + pw || my < py || my > py + ph) return;
-
         double dY = e.getScrollDeltaY();
         boolean used = st.list.mouseScrolled(mx, my, dY);
         if (!used) used = st.list.mouseScrolled(mx, my, 0.0, dY);
@@ -121,6 +107,7 @@ public final class QuestPanelClient {
             st.details = new QuestDetailsPanel(0, 0, 127, PANEL_H - 20, () -> closeDetails(st));
             e.addListener(st.details);
             e.addListener(st.details.backButton());
+            e.addListener(st.details.completeButton());
         }
         setPanelChildBounds(inv, st);
         updateVisibility(st);
@@ -154,16 +141,17 @@ public final class QuestPanelClient {
     private static void setPanelChildBounds(InventoryScreen inv, State st) {
         int bgx = computePanelX(inv);
         int bgy = inv.getGuiTop();
-
         int px = bgx + 10;
         int py = bgy + 10;
         int pw = 127;
         int ph = PANEL_H - 20;
-
         if (st.bg != null) st.bg.setBounds(bgx, bgy, PANEL_W, PANEL_H);
         if (st.list != null) st.list.setBounds(px, py, pw, ph);
-        if (st.details != null) st.details.setBounds(px, py, pw, ph);
-        if (st.details != null) st.details.backButton().setPosition(px, py + ph - st.details.backButton().getHeight() - 4);
+        if (st.details != null) {
+            st.details.setBounds(px, py, pw, ph);
+            st.details.backButton().setPosition(px, py + ph - st.details.backButton().getHeight() - 4);
+            st.details.completeButton().setPosition(px + (pw - st.details.completeButton().getWidth()) / 2, py + ph - st.details.completeButton().getHeight() - 4);
+        }
     }
 
     private static void reposition(InventoryScreen inv, State st) {
@@ -248,11 +236,16 @@ public final class QuestPanelClient {
     private static void updateVisibility(State st) {
         boolean listVisible = st.open && !st.showingDetails;
         boolean detailsVisible = st.open && st.showingDetails;
-
         if (st.bg != null) st.bg.visible = st.open;
         if (st.list != null) { st.list.visible = listVisible; st.list.active = listVisible; }
-        if (st.details != null) { st.details.visible = detailsVisible; st.details.active = detailsVisible; }
-        if (st.details != null) { st.details.backButton().visible = detailsVisible; st.details.backButton().active = detailsVisible; }
+        if (st.details != null) {
+            st.details.visible = detailsVisible;
+            st.details.active = detailsVisible;
+            st.details.backButton().visible = detailsVisible;
+            st.details.backButton().active = detailsVisible;
+            st.details.completeButton().visible = detailsVisible;
+            st.details.completeButton().active = detailsVisible;
+        }
     }
 
     private static final class PanelBackground extends AbstractWidget {
@@ -279,7 +272,6 @@ public final class QuestPanelClient {
         boolean showingDetails;
         boolean open;
         Integer originalLeft;
-
         State(InventoryScreen inv) { this.inv = inv; }
     }
 }

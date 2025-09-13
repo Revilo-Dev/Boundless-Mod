@@ -1,8 +1,11 @@
 {
   "id": "gettin3ed",
-  "name": "Getting Started",
-  "icon": "minecraft:wooden_pickaxe",
-  "description": "Punch a tree to gather wood.",
-  "dependencies": ["intro"],
-  "reward": { "item": "minecraft:apple", "count": 3 }
+  "name": "Diamonds",
+  "icon": "minecraft:diamond",
+  "description": "Obtain a diamond",
+  "dependencies": "",
+  "optional": "false",
+  "type": "collection",
+  "completion": { "item": "minecraft:diamond", "count": 1 },
+  "reward": { "item": "minecraft:obsidian", "count": 5 }
 }

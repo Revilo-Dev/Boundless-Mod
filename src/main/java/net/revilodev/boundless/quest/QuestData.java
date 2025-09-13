@@ -4,6 +4,7 @@ import com.google.gson.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.util.GsonHelper;
@@ -22,7 +23,8 @@ public final class QuestData {
     private static final String ROOT = "quests";
 
     private static final Map<String, Quest> QUESTS = new LinkedHashMap<>();
-    private static boolean loadedOnce = false;
+    private static boolean loadedClient = false;
+    private static boolean loadedServer = false;
 
     public static final class Quest {
         public final String id;
@@ -31,15 +33,19 @@ public final class QuestData {
         public final String description;
         public final List<String> dependencies;
         public final Reward reward;
+        public final String type;
+        public final Completion completion;
 
         public Quest(String id, String name, String icon, String description,
-                     List<String> dependencies, Reward reward) {
+                     List<String> dependencies, Reward reward, String type, Completion completion) {
             this.id = Objects.requireNonNull(id);
             this.name = name == null ? id : name;
             this.icon = icon == null ? "minecraft:book" : icon;
             this.description = description == null ? "" : description;
             this.dependencies = dependencies == null ? List.of() : List.copyOf(dependencies);
             this.reward = reward;
+            this.type = type == null ? "collection" : type;
+            this.completion = completion;
         }
 
         public Optional<Item> iconItem() {
@@ -62,15 +68,20 @@ public final class QuestData {
         }
     }
 
-    public static synchronized void loadClient(boolean forceReload) {
-        if (loadedOnce && !forceReload) return;
+    public static final class Completion {
+        public final String item;
+        public final int count;
+
+        public Completion(String item, int count) {
+            this.item = item;
+            this.count = Math.max(1, count);
+        }
+    }
+
+    private static synchronized void load(ResourceManager rm, boolean forceReload) {
+        if ((loadedClient || loadedServer) && !forceReload && !QUESTS.isEmpty()) return;
         QUESTS.clear();
-
-        Minecraft mc = Minecraft.getInstance();
-        ResourceManager rm = mc.getResourceManager();
-
         Map<ResourceLocation, Resource> files = rm.listResources(ROOT, path -> path.getPath().endsWith(".json"));
-
         for (Map.Entry<ResourceLocation, Resource> entry : files.entrySet()) {
             ResourceLocation file = entry.getKey();
             try {
@@ -97,17 +108,29 @@ public final class QuestData {
                         for (JsonElement d : obj.getAsJsonArray("dependencies")) {
                             if (d.isJsonPrimitive()) deps.add(d.getAsString());
                         }
+                    } else if (obj.has("dependencies") && obj.get("dependencies").isJsonPrimitive()) {
+                        String s = obj.get("dependencies").getAsString();
+                        if (!s.isBlank()) deps.add(s);
                     }
 
                     Reward reward = null;
                     if (obj.has("reward") && obj.get("reward").isJsonObject()) {
                         JsonObject rObj = obj.getAsJsonObject("reward");
-                        String item = optString(rObj, "item");
-                        int count = rObj.has("count") ? rObj.get("count").getAsInt() : 1;
-                        if (item != null && !item.isBlank()) reward = new Reward(item, count);
+                        String rItem = optString(rObj, "item");
+                        int rCount = rObj.has("count") ? rObj.get("count").getAsInt() : 1;
+                        if (rItem != null && !rItem.isBlank()) reward = new Reward(rItem, rCount);
                     }
 
-                    Quest q = new Quest(id, name, icon, description, deps, reward);
+                    String type = optString(obj, "type");
+                    Completion completion = null;
+                    if (obj.has("completion") && obj.get("completion").isJsonObject()) {
+                        JsonObject cObj = obj.getAsJsonObject("completion");
+                        String cItem = optString(cObj, "item");
+                        int cCount = cObj.has("count") ? cObj.get("count").getAsInt() : 1;
+                        if (cItem != null && !cItem.isBlank()) completion = new Completion(cItem, cCount);
+                    }
+
+                    Quest q = new Quest(id, name, icon, description, deps, reward, type, completion);
                     QUESTS.put(q.id, q);
                 }
             } catch (IOException ex) {
@@ -116,20 +139,38 @@ public final class QuestData {
                 BoundlessMod.LOGGER.error("Bad quest json {}: {}", file, ex.toString());
             }
         }
-
-        loadedOnce = true;
         BoundlessMod.LOGGER.info("Loaded {} quest(s).", QUESTS.size());
+    }
+
+    public static synchronized void loadClient(boolean forceReload) {
+        if (loadedClient && !forceReload && !QUESTS.isEmpty()) return;
+        ResourceManager rm = Minecraft.getInstance().getResourceManager();
+        load(rm, forceReload);
+        loadedClient = true;
+    }
+
+    public static synchronized void loadServer(MinecraftServer server, boolean forceReload) {
+        if (loadedServer && !forceReload && !QUESTS.isEmpty()) return;
+        var resources = server.getServerResources();
+        ResourceManager rm = resources.resourceManager();
+        load(rm, forceReload);
+        loadedServer = true;
     }
 
     public static boolean isEmpty() { return QUESTS.isEmpty(); }
 
     public static Collection<Quest> all() {
-        if (!loadedOnce) loadClient(false);
+        if (!loadedClient) loadClient(false);
         return Collections.unmodifiableCollection(QUESTS.values());
     }
 
     public static Optional<Quest> byId(String id) {
-        if (!loadedOnce) loadClient(false);
+        if (!loadedClient) loadClient(false);
+        return Optional.ofNullable(QUESTS.get(id));
+    }
+
+    public static Optional<Quest> byIdServer(MinecraftServer server, String id) {
+        if (!loadedServer) loadServer(server, false);
         return Optional.ofNullable(QUESTS.get(id));
     }
 

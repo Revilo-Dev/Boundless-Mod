@@ -10,6 +10,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.revilodev.boundless.quest.QuestData;
+import net.revilodev.boundless.quest.QuestTracker;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,36 +48,36 @@ public final class QuestListWidget extends AbstractWidget {
     }
 
     private int contentHeight() {
-        if (quests.isEmpty()) return 0;
-        return quests.size() * (rowHeight + rowPad);
+        if (mc.player == null) return 0;
+        int visible = 0;
+        for (QuestData.Quest q : quests) {
+            if (QuestTracker.isVisible(q, mc.player)) visible++;
+        }
+        return visible * (rowHeight + rowPad);
     }
 
     protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
         if (!this.visible) return;
-
         RenderSystem.enableBlend();
         gg.enableScissor(getX(), getY(), getX() + width, getY() + height);
-
         int yOff = this.getY() - Mth.floor(scrollY);
-
-        for (int i = 0; i < quests.size(); i++) {
-            int top = yOff + i * (rowHeight + rowPad);
+        int drawn = 0;
+        for (QuestData.Quest q : quests) {
+            if (mc.player == null) continue;
+            if (!QuestTracker.isVisible(q, mc.player)) continue;
+            int top = yOff + drawn * (rowHeight + rowPad);
+            drawn++;
             if (top > this.getY() + this.height) break;
             if (top + rowHeight < this.getY()) continue;
-
             gg.blit(ROW_TEX, this.getX(), top, 0, 0, 127, 27, 127, 27);
-
-            Item iconItem = quests.get(i).iconItem().orElse(null);
+            Item iconItem = q.iconItem().orElse(null);
             if (iconItem != null) {
                 gg.renderItem(new ItemStack(iconItem), this.getX() + 6, top + 5);
             }
-
-            String name = quests.get(i).name;
+            String name = q.name;
             gg.drawString(mc.font, name, this.getX() + 30, top + 9, 0xFFFFFF, false);
         }
-
         gg.disableScissor();
-
         int content = contentHeight();
         if (content > this.height) {
             float ratio = (float) this.height / content;
@@ -109,13 +110,17 @@ public final class QuestListWidget extends AbstractWidget {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (!this.visible || !this.active || !this.isMouseOver(mouseX, mouseY)) return false;
         if (button != 0) return false;
-
+        if (mc.player == null) return false;
         int localY = (int)(mouseY - this.getY() + scrollY);
         int idx = localY / (rowHeight + rowPad);
-        if (idx >= 0 && idx < quests.size()) {
-            QuestData.Quest q = quests.get(idx);
-            if (onClick != null) onClick.accept(q);
-            return true;
+        int visibleIndex = 0;
+        for (QuestData.Quest q : quests) {
+            if (!QuestTracker.isVisible(q, mc.player)) continue;
+            if (visibleIndex == idx) {
+                if (onClick != null) onClick.accept(q);
+                return true;
+            }
+            visibleIndex++;
         }
         return false;
     }

@@ -3,5 +3,10 @@
   "name": "starting off",
   "icon": "minecraft:gold_block",
   "description": "Punch a tree to gather wood.",
-  "reward": { "item": "minecraft:apple", "count": 5 }
+  "dependencies": "",
+  "optional": "false",
+  "type": "collection",
+  "completion": { "item": "minecraft:wood", "count": 1 },
+  "reward": { "item": "minecraft:apple", "count": 3 }
+
 }
