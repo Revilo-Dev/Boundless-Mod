@@ -17,7 +17,7 @@ public final class QuestTracker {
 
     private static QuestWorldState state(Player player) {
         if (player == null) return null;
-        if (player.level() instanceof ServerLevel server) return QuestWorldState.get(server);
+        if (player.level() instanceof ServerLevel server) return QuestWorldState.get(server.getServer());
         return null;
     }
 
@@ -77,5 +77,9 @@ public final class QuestTracker {
 
     public static void clientSetStatus(String questId, Status status) {
         CLIENT_STATES.put(questId, status);
+    }
+
+    public static void clientClear() {
+        CLIENT_STATES.clear();
     }
 }

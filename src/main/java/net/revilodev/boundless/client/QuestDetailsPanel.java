@@ -121,8 +121,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
     }
 
     private static final class CompleteButton extends AbstractButton {
-        private static final ResourceLocation TEX =
+        private static final ResourceLocation TEX_NORMAL =
                 ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_complete_button.png");
+        private static final ResourceLocation TEX_HOVER =
+                ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_complete_button_highlighted.png");
+        private static final ResourceLocation TEX_DISABLED =
+                ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_complete_button_disabled.png");
         private final Runnable onPress;
         public CompleteButton(int x, int y, Runnable onPress) {
             super(x, y, 80, 20, Component.translatable("quest.boundless.complete"));
@@ -134,7 +138,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
             this.visible = false;
         }
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-            gg.blit(TEX, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
+            ResourceLocation tex = !this.active ? TEX_DISABLED : (isHoveredOrFocused() ? TEX_HOVER : TEX_NORMAL);
+            gg.blit(tex, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
             var font = Minecraft.getInstance().font;
             int textW = font.width(getMessage());
             int textX = getX() + (this.width - textW) / 2;

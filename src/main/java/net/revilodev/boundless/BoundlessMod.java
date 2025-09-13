@@ -9,6 +9,7 @@ import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.revilodev.boundless.client.QuestPanelClient;
 import net.revilodev.boundless.command.BoundlessCommands;
@@ -43,4 +44,11 @@ public class BoundlessMod {
 
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {}
+
+    @SubscribeEvent
+    public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer sp) {
+            BoundlessNetwork.syncPlayer(sp);
+        }
+    }
 }

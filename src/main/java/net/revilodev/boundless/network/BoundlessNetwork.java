@@ -12,6 +12,9 @@ import net.neoforged.neoforge.network.registration.HandlerThread;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestTracker;
+import net.revilodev.boundless.quest.QuestWorldState;
+
+import java.util.Map;
 
 public final class BoundlessNetwork {
     public record RedeemPayload(String questId) implements CustomPacketPayload {
@@ -33,10 +36,17 @@ public final class BoundlessNetwork {
         public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
+    public record ClearClientPayload() implements CustomPacketPayload {
+        public static final Type<ClearClientPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "quest_clear_client"));
+        public static final StreamCodec<ByteBuf, ClearClientPayload> STREAM_CODEC = StreamCodec.of((buf, v) -> {}, buf -> new ClearClientPayload());
+        public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
     public static void register(final RegisterPayloadHandlersEvent event) {
         PayloadRegistrar reg = event.registrar("1").executesOn(HandlerThread.MAIN);
         reg.playToServer(RedeemPayload.TYPE, RedeemPayload.STREAM_CODEC, BoundlessNetwork::handleRedeem);
         reg.playToClient(SyncStatusPayload.TYPE, SyncStatusPayload.STREAM_CODEC, BoundlessNetwork::handleSync);
+        reg.playToClient(ClearClientPayload.TYPE, ClearClientPayload.STREAM_CODEC, BoundlessNetwork::handleClear);
     }
 
     private static void handleRedeem(final RedeemPayload payload, final IPayloadContext ctx) {
@@ -60,5 +70,17 @@ public final class BoundlessNetwork {
                 QuestTracker.clientSetStatus(payload.questId(), QuestTracker.Status.valueOf(payload.status()));
             } catch (IllegalArgumentException ignored) {}
         });
+    }
+
+    private static void handleClear(final ClearClientPayload payload, final IPayloadContext ctx) {
+        ctx.enqueueWork(QuestTracker::clientClear);
+    }
+
+    public static void syncPlayer(net.minecraft.server.level.ServerPlayer sp) {
+        PacketDistributor.sendToPlayer(sp, new ClearClientPayload());
+        QuestWorldState st = QuestWorldState.get(sp.server);
+        for (Map.Entry<String, String> e : st.all().entrySet()) {
+            PacketDistributor.sendToPlayer(sp, new SyncStatusPayload(e.getKey(), e.getValue()));
+        }
     }
 }
