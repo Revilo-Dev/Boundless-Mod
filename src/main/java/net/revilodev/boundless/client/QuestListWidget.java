@@ -19,6 +19,8 @@ import java.util.function.Consumer;
 public final class QuestListWidget extends AbstractWidget {
     private static final ResourceLocation ROW_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_widget.png");
+    private static final ResourceLocation ROW_TEX_DISABLED =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_widget_disabled.png");
 
     private final Minecraft mc;
     private final List<QuestData.Quest> quests = new ArrayList<>();
@@ -69,7 +71,9 @@ public final class QuestListWidget extends AbstractWidget {
             drawn++;
             if (top > this.getY() + this.height) break;
             if (top + rowHeight < this.getY()) continue;
-            gg.blit(ROW_TEX, this.getX(), top, 0, 0, 127, 27, 127, 27);
+            boolean depsMet = QuestTracker.dependenciesMet(q, mc.player);
+            ResourceLocation tex = depsMet ? ROW_TEX : ROW_TEX_DISABLED;
+            gg.blit(tex, this.getX(), top, 0, 0, 127, 27, 127, 27);
             Item iconItem = q.iconItem().orElse(null);
             if (iconItem != null) {
                 gg.renderItem(new ItemStack(iconItem), this.getX() + 6, top + 5);

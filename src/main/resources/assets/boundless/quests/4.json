@@ -1,8 +1,17 @@
 {
-  "id": "getetin3ed",
-  "name": "Getting Started",
-  "icon": "minecraft:wooden_pickaxe",
-  "description": "Punch a tree to gather wood.",
-  "dependencies": ["intro"],
-  "reward": { "item": "minecraft:apple", "count": 3 }
+  "id": "undead_hunter",
+  "name": "Undead Hunter",
+  "icon": "minecraft:zombie_head",
+  "description": "Kill 10 zombies and 10 skeletons",
+  "dependencies": "",
+  "optional": "true",
+  "type": "kill",
+  "completion": {
+    "entity": "minecraft:zombie", "count": 10,
+    "entity": "minecraft:skeleton", "count": 10
+  },
+  "reward": {
+    "item": "minecraft:enchanted_golden_apple", "count": 1,
+    "item": "minecraft:diamond_sword", "count": 1
+  }
 }

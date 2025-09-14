@@ -8,6 +8,7 @@ import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -32,7 +33,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
         this.back.visible = false;
         this.back.active = false;
         this.complete = new CompleteButton(getX(), getY(), () -> {
-            if (quest != null && mc.player != null && QuestTracker.isReady(quest, mc.player)) {
+            if (quest != null && mc.player != null && QuestTracker.isReady(quest, mc.player) && QuestTracker.dependenciesMet(quest, mc.player)) {
                 PacketDistributor.sendToServer(new BoundlessNetwork.RedeemPayload(quest.id));
                 QuestTracker.clientSetStatus(quest.id, QuestTracker.Status.REDEEMED);
                 if (this.onBack != null) this.onBack.run();
@@ -94,7 +95,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
             }
             cursorY[0] += 2;
         }
-        if (quest.type.equals("collection") && quest.completion != null && mc.player != null) {
+        if ((quest.type.equals("collection") || quest.type.equals("submission")) && quest.completion != null && mc.player != null) {
             ResourceLocation rl = ResourceLocation.parse(quest.completion.item);
             Item target = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
             if (target != null) {
@@ -102,7 +103,20 @@ public final class QuestDetailsPanel extends AbstractWidget {
                 int found = QuestTracker.getCollected(quest, mc.player);
                 boolean ready = found >= need;
                 int color = ready ? 0x55FF55 : 0xFF5555;
-                String p = "Collect: " + target.getDescription().getString() + " " + found + "/" + need;
+                String label = quest.type.equals("submission") ? "Submit: " : "Collect: ";
+                String p = label + target.getDescription().getString() + " " + found + "/" + need;
+                gg.drawWordWrap(mc.font, Component.literal(p), x + 4, cursorY[0], w - 8, color);
+                cursorY[0] += mc.font.wordWrapHeight(p, w - 8) + 6;
+            }
+        } else if (quest.type.equals("kill") && quest.completion != null && quest.completion.entity != null && mc.player != null) {
+            ResourceLocation rl = ResourceLocation.parse(quest.completion.entity);
+            EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.getOptional(rl).orElse(null);
+            if (type != null) {
+                int need = quest.completion.count;
+                int found = QuestTracker.getKills(quest, mc.player);
+                boolean ready = found >= need;
+                int color = ready ? 0x55FF55 : 0xFF5555;
+                String p = "Kill: " + type.getDescription().getString() + " " + found + "/" + need;
                 gg.drawWordWrap(mc.font, Component.literal(p), x + 4, cursorY[0], w - 8, color);
                 cursorY[0] += mc.font.wordWrapHeight(p, w - 8) + 6;
             }
@@ -119,7 +133,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
         boolean red = QuestTracker.getStatus(quest, mc.player) == QuestTracker.Status.REDEEMED;
         boolean rej = QuestTracker.getStatus(quest, mc.player) == QuestTracker.Status.REJECTED;
         boolean done = red || rej;
-        complete.active = !done && quest != null && mc.player != null && QuestTracker.isReady(quest, mc.player);
+        boolean depsMet = mc.player != null && QuestTracker.dependenciesMet(quest, mc.player);
+        complete.active = !done && depsMet && quest != null && mc.player != null && QuestTracker.isReady(quest, mc.player);
         complete.visible = !done;
         reject.setOptionalAllowed(quest.optional);
         reject.active = !done && quest.optional;

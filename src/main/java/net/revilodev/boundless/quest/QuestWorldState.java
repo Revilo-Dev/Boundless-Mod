@@ -2,7 +2,6 @@ package net.revilodev.boundless.quest;
 
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
 
@@ -12,16 +11,11 @@ import java.util.Map;
 public class QuestWorldState extends SavedData {
     private final Map<String, String> states = new HashMap<>();
 
-    public static QuestWorldState get(MinecraftServer server) {
-        ServerLevel overworld = server.overworld();
-        return overworld.getDataStorage().computeIfAbsent(
+    public static QuestWorldState get(ServerLevel level) {
+        return level.getDataStorage().computeIfAbsent(
                 new SavedData.Factory<>(QuestWorldState::new, QuestWorldState::load),
                 "boundless_quests"
         );
-    }
-
-    public static QuestWorldState get(ServerLevel level) {
-        return get(level.getServer());
     }
 
     private QuestWorldState() {}
@@ -56,12 +50,12 @@ public class QuestWorldState extends SavedData {
         }
     }
 
-    public Map<String, String> all() {
-        return new HashMap<>(states);
-    }
-
     public void reset() {
         states.clear();
         setDirty();
+    }
+
+    public Map<String, String> snapshot() {
+        return Map.copyOf(states);
     }
 }

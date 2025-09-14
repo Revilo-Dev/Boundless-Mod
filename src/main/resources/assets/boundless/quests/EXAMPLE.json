@@ -1,0 +1,38 @@
+{
+  "//ID": "A unique identifier for this quest. This should be a string that clearly identifies the quest",
+  "id": "",
+
+  "//NAME": "The display name of the quest that players will see",
+  "name": "",
+
+  "//ICON": "The icon shown for the quest in the UI. Use the format 'namespace:asset_name'",
+  "icon": "minecraft:",
+
+  "//DESCRIPTION": "This tells the player what they need to do or provides context",
+  "description": "",
+
+  "//DEPENDENCIES": "A list of quest IDs that must be completed before this quest can be started or completed. If there are no dependencies",
+  "dependencies": "",
+
+  "//OPTIONAL": "Set to 'true' if the quest is optional, and 'false' if it is mandatory. It's not recommended to mark quests with dependencies as optional.",
+  "optional": "true",
+
+  "//TYPE": "Defines the category: 'collection' (gather items), 'submission' (turn in items), 'kill' (defeat mobs)",
+  "type": "collection",
+
+  "//COMPLETION": "The specific goal required to complete the quest. This object must link to the 'type' of quest.",
+  "completion": {
+    "item": "",
+    "count": 0,
+    "entity": "",
+    "count": 1
+  },
+
+  "//REWARD": "Defines the rewards the player receives. This can be a single reward or multiple rewards",
+  "reward": {
+    "item": "",
+    "count": 0
+  },
+
+  "//TIP": "Quests should be named in the order you want them to appear eg, 01, 02, 03; as quests are listed from lowest to highest value"
+}
