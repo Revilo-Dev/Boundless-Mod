@@ -23,6 +23,7 @@ public final class QuestData {
     private static final String ROOT = "quests";
 
     private static final Map<String, Quest> QUESTS = new LinkedHashMap<>();
+    private static final Map<String, Category> CATEGORIES = new LinkedHashMap<>();
     private static boolean loadedClient = false;
     private static boolean loadedServer = false;
 
@@ -36,9 +37,11 @@ public final class QuestData {
         public final Rewards rewards;
         public final String type;
         public final Completion completion;
+        public final String category;
 
         public Quest(String id, String name, String icon, String description,
-                     List<String> dependencies, boolean optional, Rewards rewards, String type, Completion completion) {
+                     List<String> dependencies, boolean optional, Rewards rewards, String type, Completion completion,
+                     String category) {
             this.id = Objects.requireNonNull(id);
             this.name = name == null ? id : name;
             this.icon = icon == null ? "minecraft:book" : icon;
@@ -48,6 +51,7 @@ public final class QuestData {
             this.rewards = rewards;
             this.type = type == null ? "collection" : type;
             this.completion = completion;
+            this.category = category == null || category.isBlank() ? "misc" : category;
         }
 
         public Optional<Item> iconItem() {
@@ -101,12 +105,65 @@ public final class QuestData {
         public boolean isEntity() { return "entity".equals(kind); }
     }
 
+    public static final class Category {
+        public final String id;
+        public final String icon;
+        public final String name;
+        public final int order;
+
+        public Category(String id, String icon, String name, int order) {
+            this.id = id;
+            this.icon = icon == null || icon.isBlank() ? "minecraft:book" : icon;
+            this.name = name == null || name.isBlank() ? id : name;
+            this.order = order;
+        }
+
+        public Optional<Item> iconItem() {
+            try {
+                ResourceLocation rl = ResourceLocation.parse(icon);
+                return Optional.ofNullable(BuiltInRegistries.ITEM.get(rl));
+            } catch (Exception ignored) {
+                return Optional.empty();
+            }
+        }
+    }
+
     private static synchronized void load(ResourceManager rm, boolean forceReload) {
         if ((loadedClient || loadedServer) && !forceReload && !QUESTS.isEmpty()) return;
         QUESTS.clear();
+        CATEGORIES.clear();
+
+        Map<ResourceLocation, Resource> catFilesA = rm.listResources(ROOT + "/categories", p -> p.getPath().endsWith(".json"));
+        Map<ResourceLocation, Resource> catFilesB = rm.listResources(ROOT + "/catagories", p -> p.getPath().endsWith(".json"));
+        Map<ResourceLocation, Resource> catFiles = new LinkedHashMap<>();
+        catFiles.putAll(catFilesA);
+        catFiles.putAll(catFilesB);
+        for (Map.Entry<ResourceLocation, Resource> entry : catFiles.entrySet()) {
+            try (Reader raw = entry.getValue().openAsReader(); Reader reader = new BufferedReader(raw)) {
+                JsonElement el = GsonHelper.fromJson(GSON, reader, JsonElement.class);
+                if (el == null || !el.isJsonObject()) continue;
+                JsonObject obj = el.getAsJsonObject();
+                String id = optString(obj, "id");
+                String icon = optString(obj, "icon");
+                String cname = optString(obj, "name");
+                int order = 0;
+                if (obj.has("order")) {
+                    JsonPrimitive prim = obj.getAsJsonPrimitive("order");
+                    if (prim.isNumber()) order = prim.getAsInt();
+                    else try { order = Integer.parseInt(prim.getAsString()); } catch (NumberFormatException ignored) {}
+                }
+                if (id != null && !id.isBlank()) {
+                    CATEGORIES.put(id, new Category(id, icon, cname, order));
+                }
+            } catch (Exception ex) {
+                BoundlessMod.LOGGER.error("Bad category json {}: {}", entry.getKey(), ex.toString());
+            }
+        }
+
         Map<ResourceLocation, Resource> files = rm.listResources(ROOT, path -> path.getPath().endsWith(".json"));
         for (Map.Entry<ResourceLocation, Resource> entry : files.entrySet()) {
-            ResourceLocation file = entry.getKey();
+            String path = entry.getKey().getPath();
+            if (path.contains("/categories/") || path.contains("/catagories/")) continue;
             try {
                 Resource resObj = entry.getValue();
                 try (Reader raw = resObj.openAsReader(); Reader reader = new BufferedReader(raw)) {
@@ -116,10 +173,10 @@ public final class QuestData {
 
                     String id = optString(obj, "id");
                     if (id == null || id.isBlank()) {
-                        String p = file.getPath();
+                        String p = entry.getKey().getPath();
                         int lastSlash = p.lastIndexOf('/');
-                        String name = (lastSlash >= 0 ? p.substring(lastSlash + 1) : p);
-                        id = name.endsWith(".json") ? name.substring(0, name.length() - 5) : name;
+                        String n = (lastSlash >= 0 ? p.substring(lastSlash + 1) : p);
+                        id = n.endsWith(".json") ? n.substring(0, n.length() - 5) : n;
                     }
 
                     String name = optString(obj, "name");
@@ -142,16 +199,22 @@ public final class QuestData {
                     String type = optString(obj, "type");
                     Completion completion = parseCompletion(obj.get("completion"), type);
 
-                    Quest q = new Quest(id, name, icon, description, deps, optional, rewards, type, completion);
+                    String category = optString(obj, "category");
+
+                    Quest q = new Quest(id, name, icon, description, deps, optional, rewards, type, completion, category);
                     QUESTS.put(q.id, q);
                 }
             } catch (IOException ex) {
-                BoundlessMod.LOGGER.error("Error reading quest json {}: {}", file, ex.toString());
+                BoundlessMod.LOGGER.error("Error reading quest json {}: {}", entry.getKey(), ex.toString());
             } catch (Exception ex) {
-                BoundlessMod.LOGGER.error("Bad quest json {}: {}", file, ex.toString());
+                BoundlessMod.LOGGER.error("Bad quest json {}: {}", entry.getKey(), ex.toString());
             }
         }
-        BoundlessMod.LOGGER.info("Loaded {} quest(s).", QUESTS.size());
+
+        if (!CATEGORIES.containsKey("all")) {
+            CATEGORIES.put("all", new Category("all", "minecraft:book", "All", Integer.MIN_VALUE));
+        }
+        BoundlessMod.LOGGER.info("Loaded {} quest(s), {} category(ies).", QUESTS.size(), CATEGORIES.size());
     }
 
     private static List<String> parseDependencies(JsonObject obj) {
@@ -206,7 +269,7 @@ public final class QuestData {
         if (el.isJsonArray()) {
             for (JsonElement e : el.getAsJsonArray()) {
                 if (!e.isJsonObject()) continue;
-                parseTargetObject(e.getAsJsonObject(), out, type);
+                parseTargetObject(e.getAsJsonObject(), out);
             }
             return new Completion(out);
         }
@@ -215,7 +278,7 @@ public final class QuestData {
             if (obj.has("targets") && obj.get("targets").isJsonArray()) {
                 for (JsonElement e : obj.getAsJsonArray("targets")) {
                     if (!e.isJsonObject()) continue;
-                    parseTargetObject(e.getAsJsonObject(), out, type);
+                    parseTargetObject(e.getAsJsonObject(), out);
                 }
                 return new Completion(out);
             }
@@ -255,7 +318,7 @@ public final class QuestData {
         return new Completion(List.of());
     }
 
-    private static void parseTargetObject(JsonObject o, List<Target> out, String type) {
+    private static void parseTargetObject(JsonObject o, List<Target> out) {
         if (o.has("item")) {
             String item = optString(o, "item");
             int count = o.has("count") ? o.get("count").getAsInt() : 1;
@@ -297,6 +360,19 @@ public final class QuestData {
     public static Optional<Quest> byIdServer(MinecraftServer server, String id) {
         if (!loadedServer) loadServer(server, false);
         return Optional.ofNullable(QUESTS.get(id));
+    }
+
+    public static List<Category> categoriesOrdered() {
+        if (!loadedClient) loadClient(false);
+        if (!CATEGORIES.containsKey("all")) CATEGORIES.put("all", new Category("all", "minecraft:book", "All", Integer.MIN_VALUE));
+        List<Category> list = new ArrayList<>(CATEGORIES.values());
+        list.sort(Comparator.comparingInt(c -> c.order));
+        list.sort((a, b) -> {
+            if ("all".equals(a.id)) return -1;
+            if ("all".equals(b.id)) return 1;
+            return Integer.compare(a.order, b.order);
+        });
+        return list;
     }
 
     private static String optString(JsonObject o, String key) {

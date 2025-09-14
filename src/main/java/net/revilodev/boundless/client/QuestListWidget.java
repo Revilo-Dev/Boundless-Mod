@@ -5,6 +5,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.Item;
@@ -30,8 +31,10 @@ public final class QuestListWidget extends AbstractWidget {
     private final int rowHeight = 27;
     private final int rowPad = 2;
 
+    private String selectedCategory = "all";
+
     public QuestListWidget(int x, int y, int width, int height, Consumer<QuestData.Quest> onClick) {
-        super(x, y, width, height, net.minecraft.network.chat.Component.empty());
+        super(x, y, width, height, Component.empty());
         this.mc = Minecraft.getInstance();
         this.onClick = onClick;
     }
@@ -42,6 +45,14 @@ public final class QuestListWidget extends AbstractWidget {
         scrollY = 0f;
     }
 
+    public void setSelectedCategory(String id) {
+        if (id == null || id.isBlank()) id = "all";
+        if (!id.equals(this.selectedCategory)) {
+            this.selectedCategory = id;
+            this.scrollY = 0f;
+        }
+    }
+
     public void setBounds(int x, int y, int w, int h) {
         this.setX(x);
         this.setY(y);
@@ -49,10 +60,27 @@ public final class QuestListWidget extends AbstractWidget {
         this.height = h;
     }
 
+    private boolean categoryMatches(QuestData.Quest q) {
+        if ("all".equals(selectedCategory)) return true;
+        return q.category.equals(selectedCategory);
+    }
+
+    private boolean dependenciesMet(QuestData.Quest q) {
+        if (mc.player == null) return false;
+        if (q.dependencies.isEmpty()) return true;
+        for (String depId : q.dependencies) {
+            QuestData.Quest dep = QuestData.byId(depId).orElse(null);
+            if (dep == null) return false;
+            if (QuestTracker.getStatus(dep, mc.player) != QuestTracker.Status.REDEEMED) return false;
+        }
+        return true;
+    }
+
     private int contentHeight() {
         if (mc.player == null) return 0;
         int visible = 0;
         for (QuestData.Quest q : quests) {
+            if (!categoryMatches(q)) continue;
             if (QuestTracker.isVisible(q, mc.player)) visible++;
         }
         return visible * (rowHeight + rowPad);
@@ -66,13 +94,14 @@ public final class QuestListWidget extends AbstractWidget {
         int drawn = 0;
         for (QuestData.Quest q : quests) {
             if (mc.player == null) continue;
+            if (!categoryMatches(q)) continue;
             if (!QuestTracker.isVisible(q, mc.player)) continue;
             int top = yOff + drawn * (rowHeight + rowPad);
             drawn++;
             if (top > this.getY() + this.height) break;
             if (top + rowHeight < this.getY()) continue;
-            boolean depsMet = QuestTracker.dependenciesMet(q, mc.player);
-            ResourceLocation tex = depsMet ? ROW_TEX : ROW_TEX_DISABLED;
+            boolean depsOk = dependenciesMet(q);
+            ResourceLocation tex = depsOk ? ROW_TEX : ROW_TEX_DISABLED;
             gg.blit(tex, this.getX(), top, 0, 0, 127, 27, 127, 27);
             Item iconItem = q.iconItem().orElse(null);
             if (iconItem != null) {
@@ -119,6 +148,7 @@ public final class QuestListWidget extends AbstractWidget {
         int idx = localY / (rowHeight + rowPad);
         int visibleIndex = 0;
         for (QuestData.Quest q : quests) {
+            if (!categoryMatches(q)) continue;
             if (!QuestTracker.isVisible(q, mc.player)) continue;
             if (visibleIndex == idx) {
                 if (onClick != null) onClick.accept(q);
