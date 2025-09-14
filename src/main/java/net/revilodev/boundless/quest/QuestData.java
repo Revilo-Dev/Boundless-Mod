@@ -35,9 +35,10 @@ public final class QuestData {
         public final Reward reward;
         public final String type;
         public final Completion completion;
+        public final boolean optional;
 
         public Quest(String id, String name, String icon, String description,
-                     List<String> dependencies, Reward reward, String type, Completion completion) {
+                     List<String> dependencies, Reward reward, String type, Completion completion, boolean optional) {
             this.id = Objects.requireNonNull(id);
             this.name = name == null ? id : name;
             this.icon = icon == null ? "minecraft:book" : icon;
@@ -46,6 +47,7 @@ public final class QuestData {
             this.reward = reward;
             this.type = type == null ? "collection" : type;
             this.completion = completion;
+            this.optional = optional;
         }
 
         public Optional<Item> iconItem() {
@@ -113,6 +115,16 @@ public final class QuestData {
                         if (!s.isBlank()) deps.add(s);
                     }
 
+                    boolean optional = false;
+                    if (obj.has("optional")) {
+                        JsonElement o = obj.get("optional");
+                        if (o.isJsonPrimitive() && o.getAsJsonPrimitive().isBoolean()) {
+                            optional = o.getAsBoolean();
+                        } else if (o.isJsonPrimitive() && o.getAsJsonPrimitive().isString()) {
+                            optional = "true".equalsIgnoreCase(o.getAsString());
+                        }
+                    }
+
                     Reward reward = null;
                     if (obj.has("reward") && obj.get("reward").isJsonObject()) {
                         JsonObject rObj = obj.getAsJsonObject("reward");
@@ -130,7 +142,7 @@ public final class QuestData {
                         if (cItem != null && !cItem.isBlank()) completion = new Completion(cItem, cCount);
                     }
 
-                    Quest q = new Quest(id, name, icon, description, deps, reward, type, completion);
+                    Quest q = new Quest(id, name, icon, description, deps, reward, type, completion, optional);
                     QUESTS.put(q.id, q);
                 }
             } catch (IOException ex) {

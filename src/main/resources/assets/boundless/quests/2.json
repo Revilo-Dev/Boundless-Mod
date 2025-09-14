@@ -1,10 +1,10 @@
 {
-  "id": "gettin3ed",
+  "id": "diamonds",
   "name": "Diamonds",
   "icon": "minecraft:diamond",
   "description": "Obtain a diamond",
-  "dependencies": "",
-  "optional": "false",
+  "dependencies": "getting_started",
+  "optional": "true",
   "type": "collection",
   "completion": { "item": "minecraft:diamond", "count": 1 },
   "reward": { "item": "minecraft:obsidian", "count": 5 }

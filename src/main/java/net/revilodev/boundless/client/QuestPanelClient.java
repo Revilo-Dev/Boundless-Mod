@@ -108,6 +108,7 @@ public final class QuestPanelClient {
             e.addListener(st.details);
             e.addListener(st.details.backButton());
             e.addListener(st.details.completeButton());
+            e.addListener(st.details.rejectButton());
         }
         setPanelChildBounds(inv, st);
         updateVisibility(st);
@@ -147,11 +148,7 @@ public final class QuestPanelClient {
         int ph = PANEL_H - 20;
         if (st.bg != null) st.bg.setBounds(bgx, bgy, PANEL_W, PANEL_H);
         if (st.list != null) st.list.setBounds(px, py, pw, ph);
-        if (st.details != null) {
-            st.details.setBounds(px, py, pw, ph);
-            st.details.backButton().setPosition(px, py + ph - st.details.backButton().getHeight() - 4);
-            st.details.completeButton().setPosition(px + (pw - st.details.completeButton().getWidth()) / 2, py + ph - st.details.completeButton().getHeight() - 4);
-        }
+        if (st.details != null) st.details.setBounds(px, py, pw, ph);
     }
 
     private static void reposition(InventoryScreen inv, State st) {
@@ -211,7 +208,7 @@ public final class QuestPanelClient {
         Class<?> cur = c;
         while (cur != null) {
             try {
-                Field f = cur.getDeclaredField("leftPos");
+                java.lang.reflect.Field f = cur.getDeclaredField("leftPos");
                 f.setAccessible(true);
                 return f;
             } catch (NoSuchFieldException ignored) {
@@ -245,6 +242,8 @@ public final class QuestPanelClient {
             st.details.backButton().active = detailsVisible;
             st.details.completeButton().visible = detailsVisible;
             st.details.completeButton().active = detailsVisible;
+            st.details.rejectButton().visible = detailsVisible;
+            st.details.rejectButton().active = detailsVisible;
         }
     }
 
@@ -253,7 +252,10 @@ public final class QuestPanelClient {
             super(x, y, w, h, Component.empty());
         }
         public void setBounds(int x, int y, int w, int h) {
-            this.setX(x); this.setY(y); this.width = w; this.height = h;
+            this.setX(x);
+            this.setY(y);
+            this.width = w;
+            this.height = h;
         }
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
             RenderSystem.disableBlend();

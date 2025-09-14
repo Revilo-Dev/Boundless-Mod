@@ -1,12 +1,12 @@
 {
-  "id": "getti3ed",
-  "name": "starting off",
-  "icon": "minecraft:gold_block",
-  "description": "Punch a tree to gather wood.",
+  "id": "getting_started",
+  "name": "Getting Started",
+  "icon": "minecraft:crafting_table",
+  "description": "Obtain a crafting table",
   "dependencies": "",
   "optional": "false",
   "type": "collection",
-  "completion": { "item": "minecraft:wood", "count": 1 },
-  "reward": { "item": "minecraft:apple", "count": 3 }
+  "completion": { "item": "minecraft:crafting_table", "count": 1 },
+  "reward": { "item": "minecraft:stone_axe", "count": 1 }
 
 }

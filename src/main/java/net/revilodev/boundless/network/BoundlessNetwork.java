@@ -26,6 +26,15 @@ public final class BoundlessNetwork {
         public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
+    public record RejectPayload(String questId) implements CustomPacketPayload {
+        public static final Type<RejectPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "reject"));
+        public static final StreamCodec<ByteBuf, RejectPayload> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.STRING_UTF8, RejectPayload::questId,
+                RejectPayload::new
+        );
+        public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
     public record SyncStatusPayload(String questId, String status) implements CustomPacketPayload {
         public static final Type<SyncStatusPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "quest_sync"));
         public static final StreamCodec<ByteBuf, SyncStatusPayload> STREAM_CODEC = StreamCodec.composite(
@@ -45,6 +54,7 @@ public final class BoundlessNetwork {
     public static void register(final RegisterPayloadHandlersEvent event) {
         PayloadRegistrar reg = event.registrar("1").executesOn(HandlerThread.MAIN);
         reg.playToServer(RedeemPayload.TYPE, RedeemPayload.STREAM_CODEC, BoundlessNetwork::handleRedeem);
+        reg.playToServer(RejectPayload.TYPE, RejectPayload.STREAM_CODEC, BoundlessNetwork::handleReject);
         reg.playToClient(SyncStatusPayload.TYPE, SyncStatusPayload.STREAM_CODEC, BoundlessNetwork::handleSync);
         reg.playToClient(ClearClientPayload.TYPE, ClearClientPayload.STREAM_CODEC, BoundlessNetwork::handleClear);
     }
@@ -58,6 +68,21 @@ public final class BoundlessNetwork {
                 if (changed) {
                     for (var p : sp.server.getPlayerList().getPlayers()) {
                         PacketDistributor.sendToPlayer(p, new SyncStatusPayload(q.id, QuestTracker.Status.REDEEMED.name()));
+                    }
+                }
+            });
+        });
+    }
+
+    private static void handleReject(final RejectPayload payload, final IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            if (!(ctx.player() instanceof net.minecraft.server.level.ServerPlayer sp)) return;
+            QuestData.byIdServer(sp.server, payload.questId()).ifPresent(q -> {
+                if (!q.optional) return;
+                boolean changed = QuestTracker.reject(q, sp);
+                if (changed) {
+                    for (var p : sp.server.getPlayerList().getPlayers()) {
+                        PacketDistributor.sendToPlayer(p, new SyncStatusPayload(q.id, QuestTracker.Status.REJECTED.name()));
                     }
                 }
             });

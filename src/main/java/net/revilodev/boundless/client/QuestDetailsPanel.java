@@ -20,6 +20,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
     private QuestData.Quest quest;
     private final BackButton back;
     private final CompleteButton complete;
+    private final RejectButton reject;
     private final Runnable onBack;
 
     public QuestDetailsPanel(int x, int y, int w, int h, Runnable onBack) {
@@ -34,19 +35,36 @@ public final class QuestDetailsPanel extends AbstractWidget {
             if (quest != null && mc.player != null && QuestTracker.isReady(quest, mc.player)) {
                 PacketDistributor.sendToServer(new BoundlessNetwork.RedeemPayload(quest.id));
                 QuestTracker.clientSetStatus(quest.id, QuestTracker.Status.REDEEMED);
+                if (this.onBack != null) this.onBack.run();
             }
         });
         this.complete.visible = false;
         this.complete.active = false;
+        this.reject = new RejectButton(getX(), getY(), () -> {
+            if (quest != null && mc.player != null && quest.optional) {
+                PacketDistributor.sendToServer(new BoundlessNetwork.RejectPayload(quest.id));
+                QuestTracker.clientSetStatus(quest.id, QuestTracker.Status.REJECTED);
+                if (this.onBack != null) this.onBack.run();
+            }
+        });
+        this.reject.visible = false;
+        this.reject.active = false;
     }
 
     public AbstractButton backButton() { return back; }
     public AbstractButton completeButton() { return complete; }
+    public AbstractButton rejectButton() { return reject; }
 
     public void setBounds(int x, int y, int w, int h) {
-        this.setX(x); this.setY(y); this.width = w; this.height = h;
-        back.setPosition(x + 4, y + h - back.getHeight() - 4);
-        complete.setPosition(x + (w - complete.getWidth()) / 2, y + h - complete.getHeight() - 4);
+        this.setX(x);
+        this.setY(y);
+        this.width = w;
+        this.height = h;
+        int cy = y + h - complete.getHeight() - 4;
+        int cxCenter = x + (w - complete.getWidth()) / 2;
+        back.setPosition(x + 2, cy);
+        complete.setPosition(cxCenter, cy);
+        reject.setPosition(x + w - reject.getWidth() - 2, cy);
     }
 
     public void setQuest(QuestData.Quest q) {
@@ -58,20 +76,21 @@ public final class QuestDetailsPanel extends AbstractWidget {
         int x = this.getX();
         int y = this.getY();
         int w = this.width;
+        int nameWidth = w - 32;
         int[] cursorY = {y + 8};
         quest.iconItem().ifPresent(item -> gg.renderItem(new ItemStack(item), x + 4, cursorY[0]));
-        gg.drawString(mc.font, quest.name, x + 26, cursorY[0] + 6, 0xFFFFFF, false);
-        cursorY[0] += 24;
+        gg.drawWordWrap(mc.font, Component.literal(quest.name), x + 26, cursorY[0] + 2, nameWidth, 0xFFFFFF);
+        cursorY[0] += mc.font.wordWrapHeight(quest.name, nameWidth) + 12;
         if (!quest.description.isBlank()) {
             gg.drawWordWrap(mc.font, Component.literal(quest.description), x + 4, cursorY[0], w - 8, 0xCFCFCF);
             cursorY[0] += mc.font.wordWrapHeight(quest.description, w - 8) + 8;
         }
         if (!quest.dependencies.isEmpty()) {
-            gg.drawString(mc.font, "Requires:", x + 4, cursorY[0], 0xFFD37F, false);
-            cursorY[0] += 12;
+            gg.drawWordWrap(mc.font, Component.literal("Requires:"), x + 4, cursorY[0], w - 8, 0xFFD37F);
+            cursorY[0] += mc.font.wordWrapHeight("Requires:", w - 8) + 2;
             for (String dep : quest.dependencies) {
-                gg.drawString(mc.font, "- " + dep, x + 10, cursorY[0], 0xFFD37F, false);
-                cursorY[0] += 10;
+                gg.drawWordWrap(mc.font, Component.literal("- " + dep), x + 10, cursorY[0], w - 16, 0xFFD37F);
+                cursorY[0] += mc.font.wordWrapHeight("- " + dep, w - 16) + 2;
             }
             cursorY[0] += 2;
         }
@@ -83,39 +102,48 @@ public final class QuestDetailsPanel extends AbstractWidget {
                 int found = QuestTracker.getCollected(quest, mc.player);
                 boolean ready = found >= need;
                 int color = ready ? 0x55FF55 : 0xFF5555;
-                Component prog = Component.literal("Collect: " + target.getDescription().getString() + " " + found + "/" + need);
-                gg.drawString(mc.font, prog, x + 4, cursorY[0], color, false);
-                cursorY[0] += 14;
+                String p = "Collect: " + target.getDescription().getString() + " " + found + "/" + need;
+                gg.drawWordWrap(mc.font, Component.literal(p), x + 4, cursorY[0], w - 8, color);
+                cursorY[0] += mc.font.wordWrapHeight(p, w - 8) + 6;
             }
         }
         if (quest.reward != null && quest.reward.item != null && !quest.reward.item.isBlank()) {
+            gg.drawWordWrap(mc.font, Component.literal("Reward:"), x + 4, cursorY[0], w - 8, 0xA8FFA8);
             Item item = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(quest.reward.item)).orElse(null);
             if (item != null) {
-                gg.drawString(mc.font, "Reward:", x + 4, cursorY[0], 0xA8FFA8, false);
                 gg.renderItem(new ItemStack(item, Math.max(1, quest.reward.count)), x + 56, cursorY[0] - 2);
-                gg.drawString(mc.font, "x" + quest.reward.count, x + 74, cursorY[0] + 2, 0xA8FFA8, false);
-                cursorY[0] += 18;
+                gg.drawWordWrap(mc.font, Component.literal("x" + quest.reward.count), x + 74, cursorY[0] + 2, w - 78, 0xA8FFA8);
             }
+            cursorY[0] += 18;
         }
-        boolean redeemed = QuestTracker.getStatus(quest, mc.player) == QuestTracker.Status.REDEEMED;
-        complete.active = !redeemed && quest != null && mc.player != null && QuestTracker.isReady(quest, mc.player);
-        complete.visible = !redeemed;
+        boolean red = QuestTracker.getStatus(quest, mc.player) == QuestTracker.Status.REDEEMED;
+        boolean rej = QuestTracker.getStatus(quest, mc.player) == QuestTracker.Status.REJECTED;
+        boolean done = red || rej;
+        complete.active = !done && quest != null && mc.player != null && QuestTracker.isReady(quest, mc.player);
+        complete.visible = !done;
+        reject.setOptionalAllowed(quest.optional);
+        reject.active = !done && quest.optional;
+        reject.visible = !done;
     }
 
     public boolean mouseClicked(double mouseX, double mouseY, int button) { return false; }
     protected void updateWidgetNarration(NarrationElementOutput narration) {}
 
     private static final class BackButton extends AbstractButton {
-        private static final ResourceLocation TEX =
+        private static final ResourceLocation TEX_NORMAL =
                 ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_back_button.png");
+        private static final ResourceLocation TEX_HOVER =
+                ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_back_highlighted.png");
         private final Runnable onPress;
         public BackButton(int x, int y, Runnable onPress) {
-            super(x, y, 20, 18, Component.empty());
+            super(x, y, 24, 20, Component.empty());
             this.onPress = onPress;
         }
         public void onPress() { if (onPress != null) onPress.run(); }
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-            gg.blit(TEX, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
+            boolean hovered = this.isMouseOver(mouseX, mouseY);
+            ResourceLocation tex = hovered ? TEX_HOVER : TEX_NORMAL;
+            gg.blit(tex, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
         }
         protected void updateWidgetNarration(NarrationElementOutput narration) {}
     }
@@ -129,7 +157,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
                 ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_complete_button_disabled.png");
         private final Runnable onPress;
         public CompleteButton(int x, int y, Runnable onPress) {
-            super(x, y, 80, 20, Component.translatable("quest.boundless.complete"));
+            super(x, y, 68, 20, Component.translatable("quest.boundless.complete"));
             this.onPress = onPress;
         }
         public void onPress() {
@@ -138,15 +166,53 @@ public final class QuestDetailsPanel extends AbstractWidget {
             this.visible = false;
         }
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-            ResourceLocation tex = !this.active ? TEX_DISABLED : (isHoveredOrFocused() ? TEX_HOVER : TEX_NORMAL);
+            boolean hovered = this.active && this.isMouseOver(mouseX, mouseY);
+            ResourceLocation tex = !this.active ? TEX_DISABLED : (hovered ? TEX_HOVER : TEX_NORMAL);
             gg.blit(tex, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
             var font = Minecraft.getInstance().font;
             int textW = font.width(getMessage());
-            int textX = getX() + (this.width - textW) / 2;
+            int textX = getX() + (this.width - textW) / 2 + 2;
             int textY = getY() + (this.height - font.lineHeight) / 2 + 1;
             int color = this.active ? 0xFFFFFF : 0x808080;
             gg.drawString(font, getMessage(), textX, textY, color, false);
         }
+        protected void updateWidgetNarration(NarrationElementOutput narration) {}
+    }
+
+    private static final class RejectButton extends AbstractButton {
+        private static final ResourceLocation TEX_NORMAL =
+                ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_reject.png");
+        private static final ResourceLocation TEX_HOVER =
+                ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_reject_highlighted.png");
+        private static final ResourceLocation TEX_DISABLED =
+                ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_reject_disabled.png");
+        private final Runnable onPress;
+        private boolean optionalAllowed;
+
+        public RejectButton(int x, int y, Runnable onPress) {
+            super(x, y, 24, 20, Component.empty());
+            this.onPress = onPress;
+        }
+
+        public void setOptionalAllowed(boolean v) {
+            this.optionalAllowed = v;
+        }
+
+        public void onPress() {
+            if (this.active && onPress != null) onPress.run();
+            this.active = false;
+            this.visible = false;
+        }
+
+        protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
+            boolean hovered = this.isMouseOver(mouseX, mouseY);
+            ResourceLocation tex = !this.active ? TEX_DISABLED : (hovered ? TEX_HOVER : TEX_NORMAL);
+            gg.blit(tex, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
+            if (hovered && !this.active && !optionalAllowed) {
+                gg.renderTooltip(Minecraft.getInstance().font, Component.literal("This quest is not optional"), mouseX, mouseY);
+            }
+        }
+
         protected void updateWidgetNarration(NarrationElementOutput narration) {}
     }
 }

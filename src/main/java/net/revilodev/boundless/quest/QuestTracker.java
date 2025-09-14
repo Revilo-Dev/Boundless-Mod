@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class QuestTracker {
-    public enum Status { INCOMPLETE, REDEEMED }
+    public enum Status { INCOMPLETE, REDEEMED, REJECTED }
 
     private static final Map<String, Status> CLIENT_STATES = new HashMap<>();
 
@@ -57,7 +57,7 @@ public final class QuestTracker {
     public static boolean completeAndRedeem(QuestData.Quest q, ServerPlayer player) {
         QuestWorldState st = state(player);
         if (st == null) return false;
-        if (st.get(q.id) == Status.REDEEMED) return false;
+        if (st.get(q.id) != Status.INCOMPLETE) return false;
         if (q.reward != null && q.reward.item != null && !q.reward.item.isBlank()) {
             ResourceLocation rl = ResourceLocation.parse(q.reward.item);
             Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
@@ -66,6 +66,14 @@ public final class QuestTracker {
             }
         }
         st.set(q.id, Status.REDEEMED);
+        return true;
+    }
+
+    public static boolean reject(QuestData.Quest q, ServerPlayer player) {
+        QuestWorldState st = state(player);
+        if (st == null) return false;
+        if (st.get(q.id) != Status.INCOMPLETE) return false;
+        st.set(q.id, Status.REJECTED);
         return true;
     }
 
