@@ -1,11 +1,15 @@
 {
-  "id": "gold",
-  "name": "Gold",
-  "icon": "minecraft:gold_ingot",
-  "description": "Obtain a gold ingot",
+  "id": "",
+  "name": "",
+  "icon": "minecraft:",
+  "description": "",
   "dependencies": "",
   "optional": "true",
-  "type": "submission",
-  "completion": { "item": "minecraft:gold_ingot", "count": 10 },
-  "reward": { "item": "minecraft:golden_apple", "count": 2 }
+  "type": "collection",
+  "completion": {
+    "item": "", "count": 0
+  },
+  "reward": {
+    "item": "", "count": 0
+  }
 }

@@ -62,9 +62,4 @@ public final class KillCounterState extends SavedData {
         if (m == null) return Map.of();
         return Map.copyOf(m);
     }
-
-    public void clearFor(UUID player) {
-        byPlayer.remove(player.toString());
-        setDirty();
-    }
 }

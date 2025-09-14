@@ -1,11 +1,15 @@
 {
-  "id": "diamonds",
-  "name": "Diamonds",
-  "icon": "minecraft:diamond",
-  "description": "Obtain a diamond",
-  "dependencies": "getting_started",
+  "id": "first night",
+  "name": "First Night",
+  "icon": "minecraft:white_bed",
+  "description": "Obtain a bed",
+  "dependencies": "",
   "optional": "true",
   "type": "collection",
-  "completion": { "item": "minecraft:diamond", "count": 1 },
-  "reward": { "item": "minecraft:obsidian", "count": 5 }
+  "completion": {
+    "item": "minecraft:bed", "count": 1
+  },
+  "reward": {
+    "item": "", "count": 0
+  }
 }
