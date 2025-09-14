@@ -3,15 +3,18 @@
   "name": "Undead Hunter",
   "icon": "minecraft:zombie_head",
   "description": "Kill 10 zombies and 10 skeletons",
-  "dependencies": "",
-  "optional": "true",
+  "optional": true,
   "type": "kill",
   "completion": {
-    "entity": "minecraft:zombie", "count": 10,
-    "entity": "minecraft:skeleton", "count": 10
+    "targets": [
+      { "entity": "minecraft:zombie",   "count": 10 },
+      { "entity": "minecraft:skeleton", "count": 10 }
+    ]
   },
   "reward": {
-    "item": "minecraft:enchanted_golden_apple", "count": 1,
-    "item": "minecraft:diamond_sword", "count": 1
+    "items": [
+      { "item": "minecraft:enchanted_golden_apple", "count": 1 },
+      { "item": "minecraft:diamond_sword",          "count": 1 }
+    ]
   }
 }

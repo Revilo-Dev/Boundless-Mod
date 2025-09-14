@@ -22,10 +22,26 @@
 
   "//COMPLETION": "The specific goal required to complete the quest. This object must link to the 'type' of quest.",
   "completion": {
-    "item": "",
-    "count": 0,
-    "entity": "",
-    "count": 1
+    "items": [
+      {
+        "item": "minecraft:",
+        "count": 1
+      },
+      {
+        "item": "minecraft:",
+        "count": 1
+      }
+    ],
+    "targets": [
+      {
+        "entity": "minecraft:e",
+        "count": 1
+      },
+      {
+        "entity": "minecraft:",
+        "count": 1
+      }
+    ]
   },
 
   "//REWARD": "Defines the rewards the player receives. This can be a single reward or multiple rewards",

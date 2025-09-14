@@ -13,10 +13,13 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.HandlerThread;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
+import net.revilodev.boundless.quest.KillCounterState;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestTracker;
 import net.revilodev.boundless.quest.QuestWorldState;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 @EventBusSubscriber(modid = "boundless")
@@ -51,6 +54,30 @@ public final class BoundlessNetwork {
         public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
+    public record KillEntry(String entityId, int count) implements CustomPacketPayload {
+        public static final StreamCodec<ByteBuf, KillEntry> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.STRING_UTF8, KillEntry::entityId,
+                ByteBufCodecs.INT, KillEntry::count,
+                KillEntry::new
+        );
+        public Type<? extends CustomPacketPayload> type() { return null; }
+    }
+
+    public record SyncKillsPayload(List<KillEntry> entries) implements CustomPacketPayload {
+        public static final Type<SyncKillsPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "kills_sync"));
+        public static final StreamCodec<ByteBuf, SyncKillsPayload> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.collection(ArrayList::new, KillEntry.STREAM_CODEC), SyncKillsPayload::entries,
+                SyncKillsPayload::new
+        );
+        public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
+    public record SyncClearPayload() implements CustomPacketPayload {
+        public static final Type<SyncClearPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "quest_clear"));
+        public static final StreamCodec<ByteBuf, SyncClearPayload> STREAM_CODEC = StreamCodec.unit(new SyncClearPayload());
+        public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
     @SubscribeEvent
     public static void register(final RegisterPayloadHandlersEvent event) {
         if (REGISTERED) return;
@@ -58,17 +85,28 @@ public final class BoundlessNetwork {
         PayloadRegistrar reg = event.registrar("1").executesOn(HandlerThread.MAIN);
         reg.playToServer(RedeemPayload.TYPE, RedeemPayload.STREAM_CODEC, BoundlessNetwork::handleRedeem);
         reg.playToServer(RejectPayload.TYPE, RejectPayload.STREAM_CODEC, BoundlessNetwork::handleReject);
-        reg.playToClient(SyncStatusPayload.TYPE, SyncStatusPayload.STREAM_CODEC, BoundlessNetwork::handleSync);
+        reg.playToClient(SyncStatusPayload.TYPE, SyncStatusPayload.STREAM_CODEC, BoundlessNetwork::handleSyncStatus);
+        reg.playToClient(SyncKillsPayload.TYPE, SyncKillsPayload.STREAM_CODEC, BoundlessNetwork::handleSyncKills);
+        reg.playToClient(SyncClearPayload.TYPE, SyncClearPayload.STREAM_CODEC, BoundlessNetwork::handleSyncClear);
     }
 
     public static void syncPlayer(ServerPlayer player) {
-        QuestWorldState st = QuestWorldState.get(player.serverLevel());
-        for (Map.Entry<String, String> e : st.snapshot().entrySet()) {
-            try {
-                QuestTracker.Status status = QuestTracker.Status.valueOf(e.getValue());
-                PacketDistributor.sendToPlayer(player, new SyncStatusPayload(e.getKey(), status.name()));
-            } catch (IllegalArgumentException ignored) {}
+        QuestWorldState qs = QuestWorldState.get(player.serverLevel());
+        for (Map.Entry<String, String> e : qs.snapshot().entrySet()) {
+            PacketDistributor.sendToPlayer(player, new SyncStatusPayload(e.getKey(), e.getValue()));
         }
+        Map<String, Integer> kills = KillCounterState.get(player.serverLevel()).snapshotFor(player.getUUID());
+        List<KillEntry> list = new ArrayList<>();
+        for (Map.Entry<String, Integer> e : kills.entrySet()) {
+            list.add(new KillEntry(e.getKey(), e.getValue()));
+        }
+        if (!list.isEmpty()) {
+            PacketDistributor.sendToPlayer(player, new SyncKillsPayload(list));
+        }
+    }
+
+    public static void syncClear(ServerPlayer player) {
+        PacketDistributor.sendToPlayer(player, new SyncClearPayload());
     }
 
     private static void handleRedeem(final RedeemPayload payload, final IPayloadContext ctx) {
@@ -76,7 +114,6 @@ public final class BoundlessNetwork {
             if (!(ctx.player() instanceof ServerPlayer sp)) return;
             QuestData.byIdServer(sp.server, payload.questId()).ifPresent(q -> {
                 if (!QuestTracker.isReady(q, sp)) return;
-                if (!QuestTracker.dependenciesMet(q, sp)) return;
                 boolean changed = QuestTracker.completeAndRedeem(q, sp);
                 if (changed) {
                     PacketDistributor.sendToPlayer(sp, new SyncStatusPayload(q.id, QuestTracker.Status.REDEEMED.name()));
@@ -89,19 +126,30 @@ public final class BoundlessNetwork {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer sp)) return;
             QuestData.byIdServer(sp.server, payload.questId()).ifPresent(q -> {
-                boolean changed = QuestTracker.reject(q, sp);
-                if (changed) {
+                if (QuestTracker.reject(q, sp)) {
                     PacketDistributor.sendToPlayer(sp, new SyncStatusPayload(q.id, QuestTracker.Status.REJECTED.name()));
                 }
             });
         });
     }
 
-    private static void handleSync(final SyncStatusPayload payload, final IPayloadContext ctx) {
+    private static void handleSyncStatus(final SyncStatusPayload payload, final IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             try {
                 QuestTracker.clientSetStatus(payload.questId(), QuestTracker.Status.valueOf(payload.status()));
             } catch (IllegalArgumentException ignored) {}
         });
+    }
+
+    private static void handleSyncKills(final SyncKillsPayload payload, final IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            for (KillEntry e : payload.entries()) {
+                QuestTracker.clientSetKill(e.entityId(), e.count());
+            }
+        });
+    }
+
+    private static void handleSyncClear(final SyncClearPayload payload, final IPayloadContext ctx) {
+        ctx.enqueueWork(QuestTracker::clientClearAll);
     }
 }

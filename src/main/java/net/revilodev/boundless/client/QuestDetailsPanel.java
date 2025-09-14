@@ -12,9 +12,9 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestTracker;
-import net.revilodev.boundless.network.BoundlessNetwork;
 
 public final class QuestDetailsPanel extends AbstractWidget {
     private final Minecraft mc = Minecraft.getInstance();
@@ -33,7 +33,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
         this.back.visible = false;
         this.back.active = false;
         this.complete = new CompleteButton(getX(), getY(), () -> {
-            if (quest != null && mc.player != null && QuestTracker.isReady(quest, mc.player) && QuestTracker.dependenciesMet(quest, mc.player)) {
+            if (quest != null && mc.player != null) {
                 PacketDistributor.sendToServer(new BoundlessNetwork.RedeemPayload(quest.id));
                 QuestTracker.clientSetStatus(quest.id, QuestTracker.Status.REDEEMED);
                 if (this.onBack != null) this.onBack.run();
@@ -95,46 +95,51 @@ public final class QuestDetailsPanel extends AbstractWidget {
             }
             cursorY[0] += 2;
         }
-        if ((quest.type.equals("collection") || quest.type.equals("submission")) && quest.completion != null && mc.player != null) {
-            ResourceLocation rl = ResourceLocation.parse(quest.completion.item);
-            Item target = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-            if (target != null) {
-                int need = quest.completion.count;
-                int found = QuestTracker.getCollected(quest, mc.player);
-                boolean ready = found >= need;
-                int color = ready ? 0x55FF55 : 0xFF5555;
-                String label = quest.type.equals("submission") ? "Submit: " : "Collect: ";
-                String p = label + target.getDescription().getString() + " " + found + "/" + need;
-                gg.drawWordWrap(mc.font, Component.literal(p), x + 4, cursorY[0], w - 8, color);
-                cursorY[0] += mc.font.wordWrapHeight(p, w - 8) + 6;
+        if (quest.completion != null && !quest.completion.targets.isEmpty() && mc.player != null) {
+            for (QuestData.Target t : quest.completion.targets) {
+                if (t.isItem()) {
+                    ResourceLocation rl = ResourceLocation.parse(t.id);
+                    Item target = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+                    if (target != null) {
+                        int need = t.count;
+                        int found = QuestTracker.getCountInInventory(t.id, mc.player);
+                        boolean ready = found >= need;
+                        int color = ready ? 0x55FF55 : 0xFF5555;
+                        String p = ("submission".equals(quest.type) ? "Submit: " : "Collect: ") + target.getDescription().getString() + " " + found + "/" + need;
+                        gg.drawWordWrap(mc.font, Component.literal(p), x + 4, cursorY[0], w - 8, color);
+                        cursorY[0] += mc.font.wordWrapHeight(p, w - 8) + 4;
+                    }
+                } else if (t.isEntity()) {
+                    ResourceLocation rl = ResourceLocation.parse(t.id);
+                    EntityType<?> et = BuiltInRegistries.ENTITY_TYPE.getOptional(rl).orElse(null);
+                    String eName = et == null ? rl.toString() : et.getDescription().getString();
+                    int have = QuestTracker.getKillCount(mc.player, t.id);
+                    int color = have >= t.count ? 0x55FF55 : 0xFF5555;
+                    String p = "Kill: " + eName + " " + have + "/" + t.count;
+                    gg.drawWordWrap(mc.font, Component.literal(p), x + 4, cursorY[0], w - 8, color);
+                    cursorY[0] += mc.font.wordWrapHeight(p, w - 8) + 4;
+                }
             }
-        } else if (quest.type.equals("kill") && quest.completion != null && quest.completion.entity != null && mc.player != null) {
-            ResourceLocation rl = ResourceLocation.parse(quest.completion.entity);
-            EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.getOptional(rl).orElse(null);
-            if (type != null) {
-                int need = quest.completion.count;
-                int found = QuestTracker.getKills(quest, mc.player);
-                boolean ready = found >= need;
-                int color = ready ? 0x55FF55 : 0xFF5555;
-                String p = "Kill: " + type.getDescription().getString() + " " + found + "/" + need;
-                gg.drawWordWrap(mc.font, Component.literal(p), x + 4, cursorY[0], w - 8, color);
-                cursorY[0] += mc.font.wordWrapHeight(p, w - 8) + 6;
-            }
+            cursorY[0] += 2;
         }
-        if (quest.reward != null && quest.reward.item != null && !quest.reward.item.isBlank()) {
+        if (quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty()) {
             gg.drawWordWrap(mc.font, Component.literal("Reward:"), x + 4, cursorY[0], w - 8, 0xA8FFA8);
-            Item item = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(quest.reward.item)).orElse(null);
-            if (item != null) {
-                gg.renderItem(new ItemStack(item, Math.max(1, quest.reward.count)), x + 56, cursorY[0] - 2);
-                gg.drawWordWrap(mc.font, Component.literal("x" + quest.reward.count), x + 74, cursorY[0] + 2, w - 78, 0xA8FFA8);
+            cursorY[0] += mc.font.wordWrapHeight("Reward:", w - 8);
+            for (QuestData.RewardEntry re : quest.rewards.items) {
+                ResourceLocation rl = ResourceLocation.parse(re.item);
+                Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+                String line = (item == null ? re.item : item.getDescription().getString()) + " x" + re.count;
+                gg.drawWordWrap(mc.font, Component.literal("- " + line), x + 10, cursorY[0], w - 16, 0xA8FFA8);
+                cursorY[0] += mc.font.wordWrapHeight("- " + line, w - 16);
             }
-            cursorY[0] += 18;
+            cursorY[0] += 6;
         }
+        boolean depsMet = QuestTracker.dependenciesMet(quest, mc.player);
         boolean red = QuestTracker.getStatus(quest, mc.player) == QuestTracker.Status.REDEEMED;
         boolean rej = QuestTracker.getStatus(quest, mc.player) == QuestTracker.Status.REJECTED;
         boolean done = red || rej;
-        boolean depsMet = mc.player != null && QuestTracker.dependenciesMet(quest, mc.player);
-        complete.active = !done && depsMet && quest != null && mc.player != null && QuestTracker.isReady(quest, mc.player);
+        boolean ready = depsMet && !done && QuestTracker.isReady(quest, mc.player);
+        complete.active = ready;
         complete.visible = !done;
         reject.setOptionalAllowed(quest.optional);
         reject.active = !done && quest.optional;
