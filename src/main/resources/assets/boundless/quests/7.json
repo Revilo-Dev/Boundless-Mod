@@ -1,13 +1,13 @@
 {
-  "id": "",
-  "name": "",
-  "icon": "minecraft:",
-  "description": "",
-  "dependencies": "",
+  "id": "artisan",
+  "name": "Artisan",
+  "icon": "minecraft:anvil",
+  "description": "Obtain an anvil",
+  "dependencies": "iron_age",
   "optional": "true",
   "type": "collection",
   "completion": {
-    "item": "", "count": 0
+    "item": "minecraft:anvil", "count": 1
   },
   "reward": {
     "item": "", "count": 0

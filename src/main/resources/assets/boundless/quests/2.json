@@ -7,7 +7,7 @@
   "optional": "true",
   "type": "collection",
   "completion": {
-    "item": "minecraft:bed", "count": 1
+    "item": "#minecraft:beds", "count": 1
   },
   "reward": {
     "item": "", "count": 0

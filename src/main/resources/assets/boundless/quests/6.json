@@ -1,15 +1,15 @@
 {
-  "id": "",
-  "name": "",
-  "icon": "minecraft:",
-  "description": "",
-  "dependencies": "",
+  "id": "diamond",
+  "name": "Diamonds!",
+  "icon": "minecraft:diamond",
+  "description": "Obtain a diamond",
+  "dependencies": "iron_age",
   "optional": "true",
   "type": "collection",
   "completion": {
-    "item": "", "count": 0
+    "item": "minecraft:diamond", "count": 1
   },
   "reward": {
-    "item": "", "count": 0
+    "item": "minecraft:obsidian", "count": 3
   }
 }

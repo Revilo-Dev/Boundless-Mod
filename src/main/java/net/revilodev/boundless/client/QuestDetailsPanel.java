@@ -6,15 +6,21 @@ import net.minecraft.client.gui.components.AbstractButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestTracker;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public final class QuestDetailsPanel extends AbstractWidget {
     private final Minecraft mc = Minecraft.getInstance();
@@ -79,13 +85,16 @@ public final class QuestDetailsPanel extends AbstractWidget {
         int w = this.width;
         int nameWidth = w - 32;
         int[] cursorY = {y + 8};
+
         quest.iconItem().ifPresent(item -> gg.renderItem(new ItemStack(item), x + 4, cursorY[0]));
         gg.drawWordWrap(mc.font, Component.literal(quest.name), x + 26, cursorY[0] + 2, nameWidth, 0xFFFFFF);
         cursorY[0] += mc.font.wordWrapHeight(quest.name, nameWidth) + 12;
+
         if (!quest.description.isBlank()) {
             gg.drawWordWrap(mc.font, Component.literal(quest.description), x + 4, cursorY[0], w - 8, 0xCFCFCF);
             cursorY[0] += mc.font.wordWrapHeight(quest.description, w - 8) + 8;
         }
+
         if (!quest.dependencies.isEmpty()) {
             gg.drawWordWrap(mc.font, Component.literal("Requires:"), x + 4, cursorY[0], w - 8, 0xFFD37F);
             cursorY[0] += mc.font.wordWrapHeight("Requires:", w - 8) + 2;
@@ -95,20 +104,42 @@ public final class QuestDetailsPanel extends AbstractWidget {
             }
             cursorY[0] += 2;
         }
+
         if (quest.completion != null && !quest.completion.targets.isEmpty() && mc.player != null) {
             for (QuestData.Target t : quest.completion.targets) {
                 if (t.isItem()) {
-                    ResourceLocation rl = ResourceLocation.parse(t.id);
-                    Item target = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-                    if (target != null) {
-                        int need = t.count;
-                        int found = QuestTracker.getCountInInventory(t.id, mc.player);
-                        boolean ready = found >= need;
-                        int color = ready ? 0x55FF55 : 0xFF5555;
-                        String p = ("submission".equals(quest.type) ? "Submit: " : "Collect: ") + target.getDescription().getString() + " " + found + "/" + need;
-                        gg.drawWordWrap(mc.font, Component.literal(p), x + 4, cursorY[0], w - 8, color);
-                        cursorY[0] += mc.font.wordWrapHeight(p, w - 8) + 4;
+                    String raw = t.id;
+                    boolean isTagSyntax = raw.startsWith("#");
+                    String key = isTagSyntax ? raw.substring(1) : raw;
+                    ResourceLocation rl = ResourceLocation.parse(key);
+                    Item direct = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+                    boolean treatAsTag = isTagSyntax || direct == null;
+
+                    int need = t.count;
+                    int found = QuestTracker.getCountInInventory(t.id, mc.player);
+                    boolean ready = found >= need;
+                    int color = ready ? 0x55FF55 : 0xFF5555;
+                    String prefix = "submission".equals(quest.type) ? "Submit: " : "Collect: ";
+
+                    int lineY = cursorY[0];
+                    gg.drawString(mc.font, prefix, x + 4, lineY + 4, color, false);
+                    int px = x + 4 + mc.font.width(prefix) + 2;
+
+                    Item iconItem;
+                    if (treatAsTag) {
+                        List<Item> tagItems = resolveTagItems(rl);
+                        iconItem = tagItems.isEmpty() ? null : tagItems.get((int)((mc.level != null ? mc.level.getGameTime() : 0) / 20 % tagItems.size()));
+                    } else {
+                        iconItem = direct;
                     }
+                    if (iconItem != null) {
+                        gg.renderItem(new ItemStack(iconItem), px, lineY);
+                        px += 18;
+                    }
+
+                    String progress = found + "/" + need;
+                    gg.drawString(mc.font, progress, px, lineY + 4, color, false);
+                    cursorY[0] += 22;
                 } else if (t.isEntity()) {
                     ResourceLocation rl = ResourceLocation.parse(t.id);
                     EntityType<?> et = BuiltInRegistries.ENTITY_TYPE.getOptional(rl).orElse(null);
@@ -122,18 +153,42 @@ public final class QuestDetailsPanel extends AbstractWidget {
             }
             cursorY[0] += 2;
         }
+
         if (quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty()) {
             gg.drawWordWrap(mc.font, Component.literal("Reward:"), x + 4, cursorY[0], w - 8, 0xA8FFA8);
             cursorY[0] += mc.font.wordWrapHeight("Reward:", w - 8);
+
+            int startX = x + 10;
+            int cell = 18;
+            int usable = Math.max(1, w - 20);
+            int perRow = Math.max(1, usable / cell);
+            int col = 0;
+            int row = 0;
+
             for (QuestData.RewardEntry re : quest.rewards.items) {
                 ResourceLocation rl = ResourceLocation.parse(re.item);
                 Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-                String line = (item == null ? re.item : item.getDescription().getString()) + " x" + re.count;
-                gg.drawWordWrap(mc.font, Component.literal("- " + line), x + 10, cursorY[0], w - 16, 0xA8FFA8);
-                cursorY[0] += mc.font.wordWrapHeight("- " + line, w - 16);
+                if (item != null) {
+                    int ix = startX + col * cell;
+                    int iy = cursorY[0] + row * cell;
+                    gg.renderItem(new ItemStack(item), ix, iy);
+                    String countStr = "x" + Math.max(1, re.count);
+                    gg.drawString(mc.font, countStr, ix + 10, iy + 10, 0xA8FFA8, false);
+                    col++;
+                    if (col >= perRow) {
+                        col = 0;
+                        row++;
+                    }
+                } else {
+                    String fallback = "- " + re.item + " x" + Math.max(1, re.count);
+                    gg.drawWordWrap(mc.font, Component.literal(fallback), x + 10, cursorY[0] + row * cell, w - 16, 0xA8FFA8);
+                    row++;
+                    col = 0;
+                }
             }
-            cursorY[0] += 6;
+            cursorY[0] += (row + (col > 0 ? 1 : 0)) * cell + 6;
         }
+
         boolean depsMet = QuestTracker.dependenciesMet(quest, mc.player);
         boolean red = QuestTracker.getStatus(quest, mc.player) == QuestTracker.Status.REDEEMED;
         boolean rej = QuestTracker.getStatus(quest, mc.player) == QuestTracker.Status.REJECTED;
@@ -144,6 +199,21 @@ public final class QuestDetailsPanel extends AbstractWidget {
         reject.setOptionalAllowed(quest.optional);
         reject.active = !done && quest.optional;
         reject.visible = !done;
+    }
+
+    private List<Item> resolveTagItems(ResourceLocation tagId) {
+        List<Item> out = new ArrayList<>();
+        TagKey<Item> itemTag = TagKey.create(Registries.ITEM, tagId);
+        for (Item it : BuiltInRegistries.ITEM) {
+            if (it.builtInRegistryHolder().is(itemTag)) out.add(it);
+        }
+        if (out.isEmpty()) {
+            var blockTag = TagKey.create(Registries.BLOCK, tagId);
+            for (Item it : BuiltInRegistries.ITEM) {
+                if (it instanceof BlockItem bi && bi.getBlock().builtInRegistryHolder().is(blockTag)) out.add(it);
+            }
+        }
+        return out;
     }
 
     public boolean mouseClicked(double mouseX, double mouseY, int button) { return false; }

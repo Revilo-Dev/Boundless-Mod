@@ -1,15 +1,28 @@
 {
-  "id": "",
-  "name": "",
-  "icon": "minecraft:",
-  "description": "",
+  "id": "iron_age",
+  "name": "Iron Age",
+  "icon": "minecraft:iron_ingot",
+  "description": "Advance to iron tier",
   "dependencies": "",
   "optional": "true",
   "type": "collection",
   "completion": {
-    "item": "", "count": 0
+    "items": [
+      {
+        "item": "minecraft:iron_pickaxe",
+        "count": 1
+      },
+      {
+        "item": "minecraft:iron_sword",
+        "count": 1
+      },
+      {
+        "item": "minecraft:iron_axe",
+        "count": 1
+      }
+    ]
   },
   "reward": {
-    "item": "", "count": 0
+    "item": "minecraft:iron_ingot", "count": 5
   }
 }

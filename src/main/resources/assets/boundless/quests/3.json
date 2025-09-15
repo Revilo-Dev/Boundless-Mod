@@ -1,15 +1,15 @@
 {
-  "id": "",
-  "name": "",
-  "icon": "minecraft:",
-  "description": "",
-  "dependencies": "",
+  "id": "stone_age",
+  "name": "Stone Age",
+  "icon": "minecraft:stone",
+  "description": "Advance to stone tools",
+  "dependencies": "first night",
   "optional": "true",
-  "type": "collection",
+  "type": "submit",
   "completion": {
-    "item": "", "count": 0
+    "item": "minecraft:cobblestone", "count": 16
   },
   "reward": {
-    "item": "", "count": 0
+    "item": "minecraft:stone_pickaxe", "count": 1
   }
 }

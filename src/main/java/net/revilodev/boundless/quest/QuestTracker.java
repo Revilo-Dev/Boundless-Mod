@@ -1,15 +1,16 @@
 package net.revilodev.boundless.quest;
 
-import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public final class QuestTracker {
@@ -35,29 +36,19 @@ public final class QuestTracker {
     }
 
     public static boolean dependenciesMet(QuestData.Quest q, Player player) {
-        if (player == null) return false;
-        List<String> deps = q.dependencies;
-        if (deps == null || deps.isEmpty()) return true;
-        for (String dep : deps) {
-            QuestData.Quest d = QuestData.byId(dep).orElse(null);
-            if (d == null) return false;
-            if (getStatus(d, player) != Status.REDEEMED) return false;
+        if (q == null || q.dependencies == null || q.dependencies.isEmpty()) return true;
+        for (String depId : q.dependencies) {
+            QuestData.Quest dep = QuestData.byId(depId).orElse(null);
+            if (dep == null) return false;
+            if (getStatus(dep, player) != Status.REDEEMED) return false;
         }
         return true;
     }
 
     public static boolean isReady(QuestData.Quest q, Player player) {
-        if (player == null) return false;
-        if (!dependenciesMet(q, player)) return false;
-        if (q.completion == null || q.completion.targets.isEmpty()) return false;
-        if ("kill".equals(q.type)) {
-            for (QuestData.Target t : q.completion.targets) {
-                if (!t.isEntity()) continue;
-                if (getKillCount(player, t.id) < t.count) return false;
-            }
-            return true;
-        }
+        if (player == null || q == null || q.completion == null) return false;
         if ("collection".equals(q.type) || "submission".equals(q.type)) {
+            if (q.completion.targets == null || q.completion.targets.isEmpty()) return false;
             for (QuestData.Target t : q.completion.targets) {
                 if (!t.isItem()) continue;
                 if (getCountInInventory(t.id, player) < t.count) return false;
@@ -67,42 +58,52 @@ public final class QuestTracker {
         return false;
     }
 
-    public static int getCountInInventory(String itemId, Player player) {
-        if (player == null) return 0;
-        ResourceLocation rl = ResourceLocation.parse(itemId);
-        Item target = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-        if (target == null) return 0;
-        int found = 0;
-        for (ItemStack stack : player.getInventory().items) {
-            if (!stack.isEmpty() && stack.is(target)) found += stack.getCount();
+    public static int getCollected(QuestData.Quest q, Player player) {
+        if (player == null || q == null || q.completion == null || q.completion.targets == null) return 0;
+        for (QuestData.Target t : q.completion.targets) {
+            if (t.isItem()) return getCountInInventory(t.id, player);
         }
-        return found;
+        return 0;
     }
 
-    public static int getKillCount(Player player, String entityId) {
-        if (player instanceof ServerPlayer sp && player.level() instanceof ServerLevel server) {
-            return KillCounterState.get(server).get(sp.getUUID(), entityId);
+    public static int getCountInInventory(String id, Player player) {
+        if (player == null || id == null || id.isBlank()) return 0;
+        boolean explicitHash = id.startsWith("#");
+        String key = explicitHash ? id.substring(1) : id;
+        ResourceLocation rl = ResourceLocation.parse(key);
+        Item direct = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+        int found = 0;
+        if (explicitHash || direct == null) {
+            TagKey<Item> itemTag = TagKey.create(Registries.ITEM, rl);
+            for (ItemStack s : player.getInventory().items) {
+                if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
+            }
+            if (found == 0) {
+                var blockTag = TagKey.create(Registries.BLOCK, rl);
+                for (ItemStack s : player.getInventory().items) {
+                    if (!s.isEmpty() && s.getItem() instanceof BlockItem bi && bi.getBlock().builtInRegistryHolder().is(blockTag)) {
+                        found += s.getCount();
+                    }
+                }
+            }
+        } else {
+            for (ItemStack s : player.getInventory().items) {
+                if (!s.isEmpty() && s.is(direct)) found += s.getCount();
+            }
         }
-        return CLIENT_KILLS.getOrDefault(entityId, 0);
+        return found;
     }
 
     public static boolean completeAndRedeem(QuestData.Quest q, ServerPlayer player) {
         QuestWorldState st = state(player);
         if (st == null) return false;
-        if (st.get(q.id) != Status.INCOMPLETE) return false;
-        if (!isReady(q, player)) return false;
-        if ("submission".equals(q.type) && q.completion != null) {
-            for (QuestData.Target t : q.completion.targets) {
-                if (!t.isItem()) continue;
-                consumeFromInventory(player, t.id, t.count);
-            }
-        }
+        if (st.get(q.id) == Status.REDEEMED) return false;
         if (q.rewards != null && q.rewards.items != null) {
-            for (QuestData.RewardEntry re : q.rewards.items) {
-                ResourceLocation rl = ResourceLocation.parse(re.item);
-                Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+            for (QuestData.RewardEntry r : q.rewards.items) {
+                ResourceLocation rl = ResourceLocation.parse(r.item);
+                Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
                 if (item != null) {
-                    player.getInventory().add(new ItemStack(item, Math.max(1, re.count)));
+                    player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
                 }
             }
         }
@@ -110,28 +111,23 @@ public final class QuestTracker {
         return true;
     }
 
-    private static void consumeFromInventory(ServerPlayer player, String itemId, int count) {
-        ResourceLocation rl = ResourceLocation.parse(itemId);
-        Item target = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-        if (target == null) return;
-        int remaining = count;
-        for (int i = 0; i < player.getInventory().items.size() && remaining > 0; i++) {
-            ItemStack s = player.getInventory().items.get(i);
-            if (!s.isEmpty() && s.is(target)) {
-                int take = Math.min(remaining, s.getCount());
-                s.shrink(take);
-                remaining -= take;
-            }
-        }
-        player.getInventory().setChanged();
-    }
-
     public static boolean reject(QuestData.Quest q, ServerPlayer player) {
         QuestWorldState st = state(player);
         if (st == null) return false;
-        if (st.get(q.id) == Status.REJECTED) return false;
+        if (!q.optional) return false;
+        if (st.get(q.id) == Status.REDEEMED) return false;
         st.set(q.id, Status.REJECTED);
         return true;
+    }
+
+    public static int getKillCount(Player player, String entityId) {
+        if (player == null || entityId == null || entityId.isBlank()) return 0;
+        if (player.level() instanceof ServerLevel sl) {
+            var map = KillCounterState.get(sl).snapshotFor(player.getUUID());
+            Integer v = map.get(entityId);
+            return v == null ? 0 : v;
+        }
+        return CLIENT_KILLS.getOrDefault(entityId, 0);
     }
 
     public static void reset(Player player) {
@@ -145,13 +141,8 @@ public final class QuestTracker {
         CLIENT_STATES.put(questId, status);
     }
 
-    public static void clientSetKills(Map<String, Integer> all) {
-        CLIENT_KILLS.clear();
-        CLIENT_KILLS.putAll(all);
-    }
-
     public static void clientSetKill(String entityId, int count) {
-        CLIENT_KILLS.put(entityId, count);
+        CLIENT_KILLS.put(entityId, Math.max(0, count));
     }
 
     public static void clientClearAll() {

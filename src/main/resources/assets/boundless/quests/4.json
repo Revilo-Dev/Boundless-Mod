@@ -1,15 +1,15 @@
 {
-  "id": "",
-  "name": "",
-  "icon": "minecraft:",
-  "description": "",
-  "dependencies": "",
+  "id": "smelting",
+  "name": "Smelting",
+  "icon": "minecraft:furnace",
+  "description": "Obtain a furnace to refine metals",
+  "dependencies": "stone_age",
   "optional": "true",
   "type": "collection",
   "completion": {
-    "item": "", "count": 0
+    "item": "minecraft:furnace", "count": 1
   },
   "reward": {
-    "item": "", "count": 0
+    "item": "minecraft:coal", "count": 10
   }
 }
