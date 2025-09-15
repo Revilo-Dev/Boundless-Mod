@@ -193,7 +193,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
                 Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
                 if (item != null) {
                     int ix = x + 10 + col * REWARD_CELL - 9;
-                    int iy = curY[0] + row * REWARD_CELL + 11;
+                    int iy = curY[0] + row * REWARD_CELL + 7;
                     gg.renderItem(new ItemStack(item), ix, iy);
                     String countStr = "x" + Math.max(1, re.count);
                     gg.drawString(mc.font, countStr, ix + 20, iy, 0xA8FFA8, false);
