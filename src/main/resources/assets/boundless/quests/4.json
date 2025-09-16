@@ -1,15 +1,15 @@
 {
-  "id": "smelting",
-  "name": "Smelting",
-  "icon": "minecraft:furnace",
-  "description": "Obtain a furnace to refine metals",
-  "dependencies": "stone_age",
+  "id": "first night",
+  "name": "First Night",
+  "icon": "minecraft:white_bed",
+  "description": "Obtain a bed",
+  "dependencies": "smelting",
   "optional": "true",
   "type": "collection",
   "completion": {
-    "item": "minecraft:furnace", "count": 1
+    "item": "#minecraft:beds", "count": 1
   },
   "reward": {
-    "item": "minecraft:coal", "count": 10
+    "item": "", "count": 0
   }
 }

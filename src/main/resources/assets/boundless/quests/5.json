@@ -3,7 +3,7 @@
   "name": "Iron Age",
   "icon": "minecraft:iron_ingot",
   "description": "Advance to iron tier",
-  "dependencies": "",
+  "dependencies": "first_night",
   "optional": "true",
   "type": "collection",
   "completion": {

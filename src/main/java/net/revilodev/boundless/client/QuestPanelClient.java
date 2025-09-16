@@ -85,34 +85,32 @@ public final class QuestPanelClient {
         if (st == null || !(s instanceof InventoryScreen inv)) return;
         if (!st.open) return;
         int px = computePanelX(inv) + 10;
-        int bgy = inv.getGuiTop();
-        int py = bgy + 10;
+        int py = inv.getGuiTop() + 10;
         int pw = 127;
         int ph = PANEL_H - 20;
         double mx = e.getMouseX();
         double my = e.getMouseY();
+        boolean used = false;
         if (st.list != null && st.list.visible) {
             if (mx >= px && mx <= px + pw && my >= py && my <= py + ph) {
                 double dY = e.getScrollDeltaY();
-                boolean used = st.list.mouseScrolled(mx, my, dY);
-                if (!used) used = st.list.mouseScrolled(mx, my, 0.0, dY);
-                if (used) e.setCanceled(true);
+                used = st.list.mouseScrolled(mx, my, dY) || st.list.mouseScrolled(mx, my, 0.0, dY);
             }
         }
         if (st.details != null && st.details.visible) {
             if (mx >= px && mx <= px + pw && my >= py && my <= py + ph) {
                 double dY = e.getScrollDeltaY();
-                boolean used = st.details.mouseScrolled(mx, my, dY);
-                if (!used) used = st.details.mouseScrolled(mx, my, 0.0, dY);
-                if (used) e.setCanceled(true);
+                used = st.details.mouseScrolled(mx, my, dY) || st.details.mouseScrolled(mx, my, 0.0, dY) || used;
             }
         }
+        if (used) e.setCanceled(true);
     }
 
     private static void createOrUpdateWidgets(ScreenEvent.Init.Post e, InventoryScreen inv, State st) {
         if (st.list == null) {
             st.list = new QuestListWidget(0, 0, 127, PANEL_H - 20, q -> openDetails(st, q));
             st.list.setQuests(QuestData.all());
+            st.list.setCategory(st.selectedCategory);
             e.addListener(st.list);
         }
         if (st.details == null) {
@@ -121,6 +119,17 @@ public final class QuestPanelClient {
             e.addListener(st.details.backButton());
             e.addListener(st.details.completeButton());
             e.addListener(st.details.rejectButton());
+        }
+        if (st.tabs == null) {
+            st.tabs = new CategoryTabsWidget(0, 0, 26, PANEL_H, id -> {
+                st.selectedCategory = id;
+                if (st.list != null) {
+                    st.list.setCategory(id);
+                }
+            });
+            st.tabs.setCategories(QuestData.categoriesOrdered());
+            st.tabs.setSelected(st.selectedCategory);
+            e.addListener(st.tabs);
         }
         setPanelChildBounds(inv, st);
         updateVisibility(st);
@@ -151,6 +160,10 @@ public final class QuestPanelClient {
         return inv.getGuiLeft() - PANEL_W - 2;
     }
 
+    private static int computeTabsX(InventoryScreen inv) {
+        return computePanelX(inv) - 23;
+    }
+
     private static void setPanelChildBounds(InventoryScreen inv, State st) {
         int bgx = computePanelX(inv);
         int bgy = inv.getGuiTop();
@@ -166,6 +179,7 @@ public final class QuestPanelClient {
             st.details.completeButton().setPosition(px + (pw - st.details.completeButton().getWidth()) / 2, py + ph - st.details.completeButton().getHeight() - 4);
             st.details.rejectButton().setPosition(px + pw - st.details.rejectButton().getWidth() - 2, py + ph - st.details.rejectButton().getHeight() - 4);
         }
+        if (st.tabs != null) st.tabs.setBounds(computeTabsX(inv), bgy + 4, 26, PANEL_H - 8);
     }
 
     private static void reposition(InventoryScreen inv, State st) {
@@ -260,8 +274,9 @@ public final class QuestPanelClient {
             st.details.completeButton().visible = detailsVisible;
             st.details.completeButton().active = detailsVisible;
             st.details.rejectButton().visible = detailsVisible;
-            st.details.rejectButton().active = detailsVisible && st.details.rejectButton().active;
+            st.details.rejectButton().active = detailsVisible;
         }
+        if (st.tabs != null) { st.tabs.visible = st.open; st.tabs.active = st.open; }
     }
 
     private static final class PanelBackground extends AbstractWidget {
@@ -285,9 +300,11 @@ public final class QuestPanelClient {
         PanelBackground bg;
         QuestListWidget list;
         QuestDetailsPanel details;
+        CategoryTabsWidget tabs;
         boolean showingDetails;
         boolean open;
         Integer originalLeft;
+        String selectedCategory = "all";
         State(InventoryScreen inv) { this.inv = inv; }
     }
 }

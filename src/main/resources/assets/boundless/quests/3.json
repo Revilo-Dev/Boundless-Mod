@@ -1,15 +1,15 @@
 {
-  "id": "stone_age",
-  "name": "Stone Age",
-  "icon": "minecraft:stone",
-  "description": "Advance to stone tools",
-  "dependencies": "first night",
+  "id": "smelting",
+  "name": "Smelting",
+  "icon": "minecraft:furnace",
+  "description": "Obtain a furnace to refine metals",
+  "dependencies": "stone_age",
   "optional": "true",
-  "type": "submit",
+  "type": "collection",
   "completion": {
-    "item": "minecraft:cobblestone", "count": 16
+    "item": "minecraft:furnace", "count": 1
   },
   "reward": {
-    "item": "minecraft:stone_pickaxe", "count": 1
+    "item": "minecraft:coal", "count": 10
   }
 }
