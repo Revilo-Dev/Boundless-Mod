@@ -40,18 +40,20 @@ public final class QuestTracker {
         for (String depId : q.dependencies) {
             QuestData.Quest dep = QuestData.byId(depId).orElse(null);
             if (dep == null) return false;
-            if (getStatus(dep, player) != Status.REDEEMED) return false;
+            Status s = getStatus(dep, player);
+            if (s != Status.REDEEMED) return false;
         }
         return true;
     }
 
     public static boolean isReady(QuestData.Quest q, Player player) {
         if (player == null || q == null || q.completion == null) return false;
-        if ("collection".equals(q.type) || "submission".equals(q.type)) {
+        if (!dependenciesMet(q, player)) return false;
+        if ("collection".equals(q.type) || "submission".equals(q.type) || "submit".equals(q.type)) {
             if (q.completion.targets == null || q.completion.targets.isEmpty()) return false;
             for (QuestData.Target t : q.completion.targets) {
-                if (!t.isItem()) continue;
-                if (getCountInInventory(t.id, player) < t.count) return false;
+                if (t.isItem() && getCountInInventory(t.id, player) < t.count) return false;
+                if (t.isEntity() && getKillCount(player, t.id) < t.count) return false;
             }
             return true;
         }
@@ -60,9 +62,7 @@ public final class QuestTracker {
 
     public static int getCollected(QuestData.Quest q, Player player) {
         if (player == null || q == null || q.completion == null || q.completion.targets == null) return 0;
-        for (QuestData.Target t : q.completion.targets) {
-            if (t.isItem()) return getCountInInventory(t.id, player);
-        }
+        for (QuestData.Target t : q.completion.targets) if (t.isItem()) return getCountInInventory(t.id, player);
         return 0;
     }
 
@@ -75,21 +75,15 @@ public final class QuestTracker {
         int found = 0;
         if (explicitHash || direct == null) {
             TagKey<Item> itemTag = TagKey.create(Registries.ITEM, rl);
-            for (ItemStack s : player.getInventory().items) {
-                if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
-            }
+            for (ItemStack s : player.getInventory().items) if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
             if (found == 0) {
                 var blockTag = TagKey.create(Registries.BLOCK, rl);
                 for (ItemStack s : player.getInventory().items) {
-                    if (!s.isEmpty() && s.getItem() instanceof BlockItem bi && bi.getBlock().builtInRegistryHolder().is(blockTag)) {
-                        found += s.getCount();
-                    }
+                    if (!s.isEmpty() && s.getItem() instanceof BlockItem bi && bi.getBlock().builtInRegistryHolder().is(blockTag)) found += s.getCount();
                 }
             }
         } else {
-            for (ItemStack s : player.getInventory().items) {
-                if (!s.isEmpty() && s.is(direct)) found += s.getCount();
-            }
+            for (ItemStack s : player.getInventory().items) if (!s.isEmpty() && s.is(direct)) found += s.getCount();
         }
         return found;
     }
@@ -102,9 +96,7 @@ public final class QuestTracker {
             for (QuestData.RewardEntry r : q.rewards.items) {
                 ResourceLocation rl = ResourceLocation.parse(r.item);
                 Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-                if (item != null) {
-                    player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
-                }
+                if (item != null) player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
             }
         }
         st.set(q.id, Status.REDEEMED);

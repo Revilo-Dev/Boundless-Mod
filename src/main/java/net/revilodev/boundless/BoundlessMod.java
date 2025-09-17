@@ -16,6 +16,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.revilodev.boundless.client.QuestPanelClient;
 import net.revilodev.boundless.command.BoundlessCommands;
 import net.revilodev.boundless.network.BoundlessNetwork;
@@ -25,24 +26,35 @@ import org.slf4j.Logger;
 import java.util.List;
 
 @Mod(BoundlessMod.MOD_ID)
-public class BoundlessMod {
+public final class BoundlessMod {
     public static final String MOD_ID = "boundless";
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public BoundlessMod(ModContainer modContainer, IEventBus modEventBus) {
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::addCreative);
+
+        // Register network
+        BoundlessNetwork.bootstrap(modEventBus);
+
+        // Client-side screen hooks
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenInit);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenClosing);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPost);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPre);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseScrolled);
+
+        // Subscribe this mod class to global events
         NeoForge.EVENT_BUS.register(this);
     }
 
-    private void commonSetup(final FMLCommonSetupEvent event) {}
+    private void commonSetup(final FMLCommonSetupEvent event) {
+        LOGGER.info("Boundless common setup complete");
+    }
 
-    private void addCreative(BuildCreativeModeTabContentsEvent event) {}
+    private void addCreative(BuildCreativeModeTabContentsEvent event) {
+        // register creative tab contents here
+    }
 
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
@@ -50,7 +62,9 @@ public class BoundlessMod {
     }
 
     @SubscribeEvent
-    public void onServerStarting(ServerStartingEvent event) {}
+    public void onServerStarting(ServerStartingEvent event) {
+        LOGGER.info("Boundless server starting");
+    }
 
     @SubscribeEvent
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
@@ -64,12 +78,14 @@ public class BoundlessMod {
         if (!(event.getEntity() instanceof LivingEntity victim)) return;
         if (!(event.getSource().getEntity() instanceof ServerPlayer sp)) return;
         if (!(sp.level() instanceof ServerLevel server)) return;
+
         ResourceLocation rl = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(victim.getType());
         if (rl == null) return;
+
         KillCounterState.get(server).inc(sp.getUUID(), rl.toString());
-        var count = KillCounterState.get(server).get(sp.getUUID(), rl.toString());
-        var entry = new BoundlessNetwork.KillEntry(rl.toString(), count);
+        int count = KillCounterState.get(server).get(sp.getUUID(), rl.toString());
+        BoundlessNetwork.KillEntry entry = new BoundlessNetwork.KillEntry(rl.toString(), count);
         BoundlessNetwork.SyncKillsPayload payload = new BoundlessNetwork.SyncKillsPayload(List.of(entry));
-        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(sp, payload);
+        PacketDistributor.sendToPlayer(sp, payload);
     }
 }

@@ -1,8 +1,8 @@
 {
 
-  "id": "bounty",
+  "id": "quests",
   "icon":"minecraft:skull_banner_pattern",
-  "name": "Bounties",
+  "name": "Quests",
   "order": "2"
 
 }
