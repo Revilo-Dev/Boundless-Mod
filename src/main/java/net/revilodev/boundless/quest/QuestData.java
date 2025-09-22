@@ -263,6 +263,12 @@ public final class QuestData {
         return new Rewards(List.of());
     }
 
+    public static java.util.Collection<Quest> allServer(net.minecraft.server.MinecraftServer server) {
+        loadServer(server, false);
+        return java.util.Collections.unmodifiableCollection(QUESTS.values());
+    }
+
+
     private static Completion parseCompletion(JsonElement el, String type) {
         if (el == null) return new Completion(List.of());
         List<Target> out = new ArrayList<>();

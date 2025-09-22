@@ -1,6 +1,7 @@
 package net.revilodev.boundless.client;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.ImageButton;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -10,6 +11,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.revilodev.boundless.quest.QuestData;
+import net.revilodev.boundless.quest.QuestTracker;
 
 import java.lang.reflect.Field;
 import java.util.Map;
@@ -20,6 +22,10 @@ public final class QuestPanelClient {
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_button.png");
     private static final ResourceLocation BTN_TEX_HOVER =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_button_hovered.png");
+    private static final ResourceLocation BTN_TEX_TOAST =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_book_toast.png");
+    private static final ResourceLocation BTN_TEX_TOAST_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_book_toast_highlighted.png");
     private static final ResourceLocation PANEL_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/quest_panel.png");
 
@@ -28,7 +34,6 @@ public final class QuestPanelClient {
 
     private static final Map<Screen, State> STATES = new WeakHashMap<>();
     private static Field LEFT_FIELD;
-
     private static boolean lastQuestOpen = false;
 
     public static void onScreenInit(ScreenEvent.Init.Post e) {
@@ -68,6 +73,13 @@ public final class QuestPanelClient {
         Screen s = e.getScreen();
         State st = STATES.get(s);
         if (st == null || !(s instanceof InventoryScreen inv)) return;
+        if (st.btn != null && Minecraft.getInstance().player != null) {
+            if (QuestTracker.hasAnyCompleted(Minecraft.getInstance().player)) {
+                st.btn.setTextures(BTN_TEX_TOAST, BTN_TEX_TOAST_HOVER);
+            } else {
+                st.btn.setTextures(BTN_TEX, BTN_TEX_HOVER);
+            }
+        }
         if (st.open) {
             int centered = computeCenteredLeft(inv);
             setLeft(inv, centered);
@@ -123,9 +135,7 @@ public final class QuestPanelClient {
         if (st.tabs == null) {
             st.tabs = new CategoryTabsWidget(0, 0, 26, PANEL_H, id -> {
                 st.selectedCategory = id;
-                if (st.list != null) {
-                    st.list.setCategory(id);
-                }
+                if (st.list != null) st.list.setCategory(id);
             });
             st.tabs.setCategories(QuestData.categoriesOrdered());
             st.tabs.setSelected(st.selectedCategory);

@@ -5,11 +5,14 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -21,6 +24,7 @@ import net.revilodev.boundless.client.QuestPanelClient;
 import net.revilodev.boundless.command.BoundlessCommands;
 import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.KillCounterState;
+import net.revilodev.boundless.quest.QuestEvents;
 import org.slf4j.Logger;
 
 import java.util.List;
@@ -34,26 +38,36 @@ public final class BoundlessMod {
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::addCreative);
 
-        // Register network
-        BoundlessNetwork.bootstrap(modEventBus);
+        // Client-only setup
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            modEventBus.addListener(this::clientSetup);
+        }
 
-        // Client-side screen hooks
-        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenInit);
-        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenClosing);
-        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPost);
-        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPre);
-        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseScrolled);
+        // Network registration
+        BoundlessNetwork.bootstrap(modEventBus);
 
         // Subscribe this mod class to global events
         NeoForge.EVENT_BUS.register(this);
+
+        // 🔹 Register player tick (server+client) without annotations
+        NeoForge.EVENT_BUS.addListener(QuestEvents::onPlayerTick);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
         LOGGER.info("Boundless common setup complete");
     }
 
+    private void clientSetup(final FMLClientSetupEvent event) {
+        // Register client GUI hooks safely
+        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenInit);
+        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenClosing);
+        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPost);
+        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPre);
+        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseScrolled);
+    }
+
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
-        // register creative tab contents here
+        // creative tab entries go here
     }
 
     @SubscribeEvent

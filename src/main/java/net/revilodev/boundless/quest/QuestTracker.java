@@ -9,12 +9,13 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.revilodev.boundless.network.BoundlessNetwork;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public final class QuestTracker {
-    public enum Status { INCOMPLETE, REDEEMED, REJECTED }
+    public enum Status { INCOMPLETE, COMPLETED, REDEEMED, REJECTED }
 
     private static final Map<String, Status> CLIENT_STATES = new HashMap<>();
     private static final Map<String, Integer> CLIENT_KILLS = new HashMap<>();
@@ -32,16 +33,21 @@ public final class QuestTracker {
     }
 
     public static boolean isVisible(QuestData.Quest q, Player player) {
-        return getStatus(q, player) == Status.INCOMPLETE;
+        Status s = getStatus(q, player);
+        return s == Status.INCOMPLETE || s == Status.COMPLETED;
     }
 
     public static boolean dependenciesMet(QuestData.Quest q, Player player) {
         if (q == null || q.dependencies == null || q.dependencies.isEmpty()) return true;
         for (String depId : q.dependencies) {
-            QuestData.Quest dep = QuestData.byId(depId).orElse(null);
+            QuestData.Quest dep;
+            if (player.level().isClientSide) dep = QuestData.byId(depId).orElse(null);
+            else {
+                ServerLevel sl = (ServerLevel) player.level();
+                dep = QuestData.byIdServer(sl.getServer(), depId).orElse(null);
+            }
             if (dep == null) return false;
-            Status s = getStatus(dep, player);
-            if (s != Status.REDEEMED) return false;
+            if (getStatus(dep, player) != Status.REDEEMED) return false;
         }
         return true;
     }
@@ -49,21 +55,19 @@ public final class QuestTracker {
     public static boolean isReady(QuestData.Quest q, Player player) {
         if (player == null || q == null || q.completion == null) return false;
         if (!dependenciesMet(q, player)) return false;
-        if ("collection".equals(q.type) || "submission".equals(q.type) || "submit".equals(q.type)) {
-            if (q.completion.targets == null || q.completion.targets.isEmpty()) return false;
-            for (QuestData.Target t : q.completion.targets) {
-                if (t.isItem() && getCountInInventory(t.id, player) < t.count) return false;
-                if (t.isEntity() && getKillCount(player, t.id) < t.count) return false;
-            }
-            return true;
+        if (q.completion.targets == null || q.completion.targets.isEmpty()) return false;
+        for (QuestData.Target t : q.completion.targets) {
+            if (t.isItem() && getCountInInventory(t.id, player) < t.count) return false;
+            if (t.isEntity() && getKillCount(player, t.id) < t.count) return false;
         }
-        return false;
+        return true;
     }
 
-    public static int getCollected(QuestData.Quest q, Player player) {
-        if (player == null || q == null || q.completion == null || q.completion.targets == null) return 0;
-        for (QuestData.Target t : q.completion.targets) if (t.isItem()) return getCountInInventory(t.id, player);
-        return 0;
+    public static boolean hasAnyCompleted(Player player) {
+        for (QuestData.Quest q : QuestData.all()) {
+            if (getStatus(q, player) == Status.COMPLETED) return true;
+        }
+        return false;
     }
 
     public static int getCountInInventory(String id, Player player) {
@@ -75,17 +79,34 @@ public final class QuestTracker {
         int found = 0;
         if (explicitHash || direct == null) {
             TagKey<Item> itemTag = TagKey.create(Registries.ITEM, rl);
-            for (ItemStack s : player.getInventory().items) if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
+            for (ItemStack s : player.getInventory().items) {
+                if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
+            }
             if (found == 0) {
                 var blockTag = TagKey.create(Registries.BLOCK, rl);
                 for (ItemStack s : player.getInventory().items) {
-                    if (!s.isEmpty() && s.getItem() instanceof BlockItem bi && bi.getBlock().builtInRegistryHolder().is(blockTag)) found += s.getCount();
+                    if (!s.isEmpty() && s.getItem() instanceof BlockItem bi &&
+                            bi.getBlock().builtInRegistryHolder().is(blockTag)) {
+                        found += s.getCount();
+                    }
                 }
             }
         } else {
-            for (ItemStack s : player.getInventory().items) if (!s.isEmpty() && s.is(direct)) found += s.getCount();
+            for (ItemStack s : player.getInventory().items) {
+                if (!s.isEmpty() && s.is(direct)) found += s.getCount();
+            }
         }
         return found;
+    }
+
+    public static int getKillCount(Player player, String entityId) {
+        if (player == null || entityId == null || entityId.isBlank()) return 0;
+        if (player.level() instanceof ServerLevel sl) {
+            var map = KillCounterState.get(sl).snapshotFor(player.getUUID());
+            Integer v = map.get(entityId);
+            return v == null ? 0 : v;
+        }
+        return CLIENT_KILLS.getOrDefault(entityId, 0);
     }
 
     public static boolean completeAndRedeem(QuestData.Quest q, ServerPlayer player) {
@@ -96,7 +117,9 @@ public final class QuestTracker {
             for (QuestData.RewardEntry r : q.rewards.items) {
                 ResourceLocation rl = ResourceLocation.parse(r.item);
                 Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-                if (item != null) player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
+                if (item != null) {
+                    player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
+                }
             }
         }
         st.set(q.id, Status.REDEEMED);
@@ -110,16 +133,6 @@ public final class QuestTracker {
         if (st.get(q.id) == Status.REDEEMED) return false;
         st.set(q.id, Status.REJECTED);
         return true;
-    }
-
-    public static int getKillCount(Player player, String entityId) {
-        if (player == null || entityId == null || entityId.isBlank()) return 0;
-        if (player.level() instanceof ServerLevel sl) {
-            var map = KillCounterState.get(sl).snapshotFor(player.getUUID());
-            Integer v = map.get(entityId);
-            return v == null ? 0 : v;
-        }
-        return CLIENT_KILLS.getOrDefault(entityId, 0);
     }
 
     public static void reset(Player player) {
@@ -140,5 +153,51 @@ public final class QuestTracker {
     public static void clientClearAll() {
         CLIENT_STATES.clear();
         CLIENT_KILLS.clear();
+    }
+
+    /**
+     * CLIENT: lightweight readiness sweep.
+     * - Only UPGRADES INCOMPLETE -> COMPLETED.
+     * - Never downgrades COMPLETED back to INCOMPLETE.
+     * This prevents the toast button from flickering off if the player moves items.
+     */
+    public static void tickPlayer(Player player) {
+        if (player == null) return;
+        if (!player.level().isClientSide) return;
+        QuestData.loadClient(false);
+        for (QuestData.Quest q : QuestData.all()) {
+            Status current = getStatus(q, player);
+            if (current == Status.REDEEMED || current == Status.REJECTED || current == Status.COMPLETED) continue;
+            boolean depsOk = dependenciesMet(q, player);
+            boolean ready = depsOk && isReady(q, player);
+            if (ready && current == Status.INCOMPLETE) {
+                clientSetStatus(q.id, Status.COMPLETED);
+            }
+        }
+    }
+
+    /**
+     * SERVER: authoritative upgrade pass every few ticks.
+     * - Skips REDEEMED/REJECTED (treats rejected as disabled).
+     * - Upgrades INCOMPLETE -> COMPLETED when requirements are met.
+     * - Sends SyncStatusPayload so the client button can flip textures.
+     */
+    public static void serverCheckAndMarkComplete(ServerPlayer sp) {
+        QuestWorldState st = state(sp);
+        if (st == null) return;
+
+        // Ensure quests are loaded on the server side
+        for (QuestData.Quest q : QuestData.allServer(sp.server)) {
+            Status cur = st.get(q.id);
+            if (cur == Status.REDEEMED || cur == Status.REJECTED || cur == Status.COMPLETED) continue;
+
+            if (isReady(q, sp)) {
+                st.set(q.id, Status.COMPLETED);
+                // sync to client so UI can react (quest book switches to toast)
+                BoundlessNetwork.SyncStatusPayload pkt =
+                        new BoundlessNetwork.SyncStatusPayload(q.id, Status.COMPLETED.name());
+                net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(sp, pkt);
+            }
+        }
     }
 }

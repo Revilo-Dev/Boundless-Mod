@@ -1,5 +1,7 @@
 {
   "quest.boundless.complete": "Complete",
 
-  "toast.boundless.quest_unlocked": "Quest Unlocked!"
+  "toast.boundless.quest_unlocked": "Quest Unlocked!",
+
+  "quest.boundless.toggle": "Quest completed!"
 }

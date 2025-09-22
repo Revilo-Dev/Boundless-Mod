@@ -10,7 +10,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 public final class QuestUnlockedToast implements Toast {
-    private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/quest_toast.png");
+    private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_toast.png");
     private final Component title;
     private final Component subtitle;
     private final Item icon;
