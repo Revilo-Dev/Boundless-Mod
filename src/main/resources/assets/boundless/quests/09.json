@@ -1,0 +1,21 @@
+{
+  "category": "minecraft",
+  "id": "blazing",
+  "name": "Blazing",
+  "icon": "minecraft:blaze_rod",
+  "description": "Collect blaze rods and create a brewing stand",
+  "dependencies": "the_nether",
+  "optional": "false",
+  "type": "collection",
+  "completion": {
+    "items": [
+      {
+        "item": "minecraft:blaze_rods",
+        "count": 16
+      }
+    ]
+  },
+  "reward": {
+    "item": "minecraft:brewing_stand", "count": 0
+  }
+}

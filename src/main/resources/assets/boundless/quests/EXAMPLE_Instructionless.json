@@ -1,4 +1,5 @@
 {
+  "category": "minecraft",
   "id": "",
   "name": "",
   "icon": "minecraft:",
@@ -7,9 +8,19 @@
   "optional": "true",
   "type": "collection",
   "completion": {
-    "item": "", "count": 0
+    "items": [
+      {
+        "item": "minecraft:",
+        "count": 1
+      }
+    ]
   },
   "reward": {
-    "item": "", "count": 0
+    "items": [
+      {
+        "item": "minecraft:",
+        "count": 1
+      }
+    ]
   }
 }

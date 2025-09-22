@@ -1,0 +1,16 @@
+{
+  "category": "minecraft",
+  "id": "the_nether",
+  "name": "The Nether",
+  "icon": "minecraft:netherrack",
+  "description": "Enter the nether to find a nether fortress",
+  "dependencies": "diamonds",
+  "optional": "false",
+  "type": "collection",
+  "completion": {
+    "item": "", "count": 0
+  },
+  "reward": {
+    "item": "minecraft:gold_boots", "count": 1
+  }
+}

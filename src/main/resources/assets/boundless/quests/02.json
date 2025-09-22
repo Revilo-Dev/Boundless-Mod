@@ -1,10 +1,11 @@
 {
+  "category": "minecraft",
   "id": "stone_age",
   "name": "Stone Age",
   "icon": "minecraft:stone",
-  "description": "Advance to stone tools",
+  "description": "Mine 16 cobblestone to progress to stone tools",
   "dependencies": "getting_started",
-  "optional": "true",
+  "optional": "false",
   "type": "submit",
   "completion": {
     "item": "minecraft:cobblestone", "count": 16

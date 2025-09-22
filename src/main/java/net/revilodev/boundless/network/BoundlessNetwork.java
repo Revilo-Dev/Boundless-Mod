@@ -122,12 +122,13 @@ public final class BoundlessNetwork {
                 if (!QuestTracker.isReady(q, sp)) return;
                 boolean changed = QuestTracker.completeAndRedeem(q, sp);
                 if (changed) {
-                    PacketDistributor.sendToPlayer(sp, new SyncStatusPayload(q.id, QuestTracker.Status.REDEEMED.name()));
-                    PacketDistributor.sendToPlayer(sp, new ToastPayload(q.id));
+                    PacketDistributor.sendToPlayer(sp,
+                            new SyncStatusPayload(q.id, QuestTracker.Status.REDEEMED.name()));
                 }
             });
         });
     }
+
 
     private static void handleReject(final RejectPayload payload, final IPayloadContext ctx) {
         ctx.enqueueWork(() -> {

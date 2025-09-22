@@ -31,7 +31,6 @@ public class QuestToggleButton extends AbstractButton {
         boolean hovered = this.isMouseOver(mouseX, mouseY);
         ResourceLocation tex = hovered ? texHover : texNormal;
         gg.blit(tex, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
-        if (hovered) gg.renderTooltip(Minecraft.getInstance().font, Component.translatable("quest.boundless.toggle"), mouseX, mouseY);
     }
 
     protected void updateWidgetNarration(net.minecraft.client.gui.narration.NarrationElementOutput narration) {}

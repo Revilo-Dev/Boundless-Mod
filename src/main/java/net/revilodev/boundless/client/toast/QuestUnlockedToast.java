@@ -34,8 +34,8 @@ public final class QuestUnlockedToast implements Toast {
     public Visibility render(GuiGraphics gg, ToastComponent component, long time) {
         gg.blit(TEXTURE, 0, 0, 0, 0, this.width(), this.height(), this.width(), this.height());
         if (icon != null) gg.renderItem(new ItemStack(icon), 6, 6);
-        gg.drawString(Minecraft.getInstance().font, title, 30, 7, 0xFFFFFF, false);
-        gg.drawString(Minecraft.getInstance().font, subtitle, 30, 18, 0xD0D0D0, false);
+        gg.drawString(Minecraft.getInstance().font, title, 30, 7, 0x242424, false);
+        gg.drawString(Minecraft.getInstance().font, subtitle, 30, 18, 0x8f8f8f, false);
         return time >= 5000L ? Visibility.HIDE : Visibility.SHOW;
     }
 

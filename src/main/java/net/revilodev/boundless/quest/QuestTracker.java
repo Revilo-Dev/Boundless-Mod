@@ -10,6 +10,7 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.revilodev.boundless.network.BoundlessNetwork;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -155,48 +156,36 @@ public final class QuestTracker {
         CLIENT_KILLS.clear();
     }
 
-    /**
-     * CLIENT: lightweight readiness sweep.
-     * - Only UPGRADES INCOMPLETE -> COMPLETED.
-     * - Never downgrades COMPLETED back to INCOMPLETE.
-     * This prevents the toast button from flickering off if the player moves items.
-     */
     public static void tickPlayer(Player player) {
         if (player == null) return;
         if (!player.level().isClientSide) return;
         QuestData.loadClient(false);
         for (QuestData.Quest q : QuestData.all()) {
             Status current = getStatus(q, player);
-            if (current == Status.REDEEMED || current == Status.REJECTED || current == Status.COMPLETED) continue;
-            boolean depsOk = dependenciesMet(q, player);
-            boolean ready = depsOk && isReady(q, player);
+            if (current == Status.REDEEMED || current == Status.REJECTED) continue;
+            boolean ready = dependenciesMet(q, player) && isReady(q, player);
             if (ready && current == Status.INCOMPLETE) {
                 clientSetStatus(q.id, Status.COMPLETED);
+            } else if (!ready && current == Status.COMPLETED) {
+                clientSetStatus(q.id, Status.INCOMPLETE);
             }
         }
     }
 
-    /**
-     * SERVER: authoritative upgrade pass every few ticks.
-     * - Skips REDEEMED/REJECTED (treats rejected as disabled).
-     * - Upgrades INCOMPLETE -> COMPLETED when requirements are met.
-     * - Sends SyncStatusPayload so the client button can flip textures.
-     */
     public static void serverCheckAndMarkComplete(ServerPlayer sp) {
         QuestWorldState st = state(sp);
         if (st == null) return;
-
-        // Ensure quests are loaded on the server side
         for (QuestData.Quest q : QuestData.allServer(sp.server)) {
             Status cur = st.get(q.id);
-            if (cur == Status.REDEEMED || cur == Status.REJECTED || cur == Status.COMPLETED) continue;
-
-            if (isReady(q, sp)) {
+            if (cur == Status.REDEEMED || cur == Status.REJECTED) continue;
+            boolean ready = dependenciesMet(q, sp) && isReady(q, sp);
+            if (ready && cur == Status.INCOMPLETE) {
                 st.set(q.id, Status.COMPLETED);
-                // sync to client so UI can react (quest book switches to toast)
-                BoundlessNetwork.SyncStatusPayload pkt =
-                        new BoundlessNetwork.SyncStatusPayload(q.id, Status.COMPLETED.name());
-                net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(sp, pkt);
+                PacketDistributor.sendToPlayer(sp, new BoundlessNetwork.SyncStatusPayload(q.id, Status.COMPLETED.name()));
+                BoundlessNetwork.sendToastTo(sp, q.id);
+            } else if (!ready && cur == Status.COMPLETED) {
+                st.set(q.id, Status.INCOMPLETE);
+                PacketDistributor.sendToPlayer(sp, new BoundlessNetwork.SyncStatusPayload(q.id, Status.INCOMPLETE.name()));
             }
         }
     }

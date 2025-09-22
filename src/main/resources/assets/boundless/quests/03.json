@@ -1,10 +1,11 @@
 {
+  "category": "minecraft",
   "id": "smelting",
   "name": "Smelting",
   "icon": "minecraft:furnace",
-  "description": "Obtain a furnace to refine metals",
+  "description": "Build a furnace to cook food and smelt ores.",
   "dependencies": "stone_age",
-  "optional": "true",
+  "optional": "false",
   "type": "collection",
   "completion": {
     "item": "minecraft:furnace", "count": 1

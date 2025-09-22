@@ -34,7 +34,7 @@
     ],
     "targets": [
       {
-        "entity": "minecraft:e",
+        "entity": "minecraft:",
         "count": 1
       },
       {

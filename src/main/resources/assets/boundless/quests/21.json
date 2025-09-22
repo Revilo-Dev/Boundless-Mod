@@ -1,0 +1,26 @@
+{
+  "category": "minecraft",
+  "id": "treasure_hunter",
+  "name": "Treasure Hunter",
+  "icon": "minecraft:heart_of_the_sea",
+  "description": "Follow a treasure map and obtain a heart of the sea.",
+  "dependencies": "skys_the_limit",
+  "optional": "true",
+  "type": "collection",
+  "completion": {
+    "items": [
+      {
+        "item": "minecraft:heart_of_the_sea",
+        "count": 1
+      }
+    ]
+  },
+  "reward": {
+    "items": [
+      {
+        "item": "minecraft:heart_of_the_sea",
+        "count": 1
+      }
+    ]
+  }
+}

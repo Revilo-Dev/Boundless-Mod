@@ -1,0 +1,26 @@
+{
+  "category": "minecraft",
+  "id": "eye_spy",
+  "name": "Eye Spy",
+  "icon": "minecraft:ender_eye",
+  "description": "Find the stronghold and prepare to open the End portal.",
+  "dependencies": "blazing",
+  "optional": "false",
+  "type": "collection",
+  "completion": {
+    "items": [
+      {
+        "item": "minecraft:ender_eye",
+        "count": 12
+      }
+    ]
+  },
+  "reward": {
+    "items": [
+      {
+        "item": "minecraft:ender_chest",
+        "count": 2
+      }
+    ]
+  }
+}
