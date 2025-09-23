@@ -10,12 +10,21 @@
   "completion": {
     "items": [
       {
-        "item": "minecraft:blaze_rods",
+        "item": "minecraft:blaze_rod",
         "count": 16
       }
     ]
   },
   "reward": {
-    "item": "minecraft:brewing_stand", "count": 0
+    "items": [
+      {
+        "item": "minecraft:brewing_stand",
+        "count": 1
+      },
+      {
+        "item": "minecraft:nether_wart",
+        "count": 6
+      }
+    ]
   }
 }

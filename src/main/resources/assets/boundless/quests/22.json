@@ -1,7 +1,7 @@
 {
   "category": "minecraft",
   "id": "ocean_lord",
-  "name": "Ocean Lord",
+  "name": "King of the Ocean",
   "icon": "minecraft:conduit",
   "description": "Conquer an ocean monument and obtain sponges.",
   "dependencies": "treasure_hunter",

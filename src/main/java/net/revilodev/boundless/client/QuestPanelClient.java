@@ -39,24 +39,48 @@ public final class QuestPanelClient {
     public static void onScreenInit(ScreenEvent.Init.Post e) {
         Screen s = e.getScreen();
         if (!(s instanceof InventoryScreen inv)) return;
+
         QuestData.loadClient(false);
-        State st = STATES.computeIfAbsent(s, k -> new State(inv));
+
+        // Always new state per screen instance (resizing rebuilds screen)
+        State st = new State(inv);
+        STATES.put(s, st);
+
         int btnX = inv.getGuiLeft() + 125;
         int btnY = inv.getGuiTop() + 61;
         QuestToggleButton btn = new QuestToggleButton(btnX, btnY, BTN_TEX, BTN_TEX_HOVER, () -> toggle(st));
         st.btn = btn;
-        if (st.bg == null) {
-            st.bg = new PanelBackground(0, 0, PANEL_W, PANEL_H);
-            e.addListener(st.bg);
-        }
+
+        st.bg = new PanelBackground(0, 0, PANEL_W, PANEL_H);
+        e.addListener(st.bg);
+
+        st.list = new QuestListWidget(0, 0, 127, PANEL_H - 20, q -> openDetails(st, q));
+        st.list.setQuests(QuestData.all());
+        st.list.setCategory(st.selectedCategory);
+        e.addListener(st.list);
+
+        st.details = new QuestDetailsPanel(0, 0, 127, PANEL_H - 20, () -> closeDetails(st));
+        e.addListener(st.details);
+        e.addListener(st.details.backButton());
+        e.addListener(st.details.completeButton());
+        e.addListener(st.details.rejectButton());
+
+        st.tabs = new CategoryTabsWidget(0, 0, 26, PANEL_H, id -> {
+            st.selectedCategory = id;
+            if (st.list != null) st.list.setCategory(id);
+        });
+        st.tabs.setCategories(QuestData.categoriesOrdered());
+        st.tabs.setSelected(st.selectedCategory);
+        e.addListener(st.tabs);
+
         e.addListener(btn);
-        createOrUpdateWidgets(e, inv, st);
         reposition(inv, st);
+
+        // restore state
         if (lastQuestOpen) {
             st.open = true;
-            if (st.originalLeft == null) st.originalLeft = getLeft(inv);
-            int centered = computeCenteredLeft(inv);
-            setLeft(inv, centered);
+            st.originalLeft = getLeft(inv);
+            setLeft(inv, computeCenteredLeft(inv));
             updateVisibility(st);
         }
     }
@@ -81,8 +105,7 @@ public final class QuestPanelClient {
             }
         }
         if (st.open) {
-            int centered = computeCenteredLeft(inv);
-            setLeft(inv, centered);
+            setLeft(inv, computeCenteredLeft(inv));
         }
         reposition(inv, st);
         updateVisibility(st);
@@ -118,40 +141,12 @@ public final class QuestPanelClient {
         if (used) e.setCanceled(true);
     }
 
-    private static void createOrUpdateWidgets(ScreenEvent.Init.Post e, InventoryScreen inv, State st) {
-        if (st.list == null) {
-            st.list = new QuestListWidget(0, 0, 127, PANEL_H - 20, q -> openDetails(st, q));
-            st.list.setQuests(QuestData.all());
-            st.list.setCategory(st.selectedCategory);
-            e.addListener(st.list);
-        }
-        if (st.details == null) {
-            st.details = new QuestDetailsPanel(0, 0, 127, PANEL_H - 20, () -> closeDetails(st));
-            e.addListener(st.details);
-            e.addListener(st.details.backButton());
-            e.addListener(st.details.completeButton());
-            e.addListener(st.details.rejectButton());
-        }
-        if (st.tabs == null) {
-            st.tabs = new CategoryTabsWidget(0, 0, 26, PANEL_H, id -> {
-                st.selectedCategory = id;
-                if (st.list != null) st.list.setCategory(id);
-            });
-            st.tabs.setCategories(QuestData.categoriesOrdered());
-            st.tabs.setSelected(st.selectedCategory);
-            e.addListener(st.tabs);
-        }
-        setPanelChildBounds(inv, st);
-        updateVisibility(st);
-    }
-
     private static void toggle(State st) {
         st.open = !st.open;
         lastQuestOpen = st.open;
         if (st.open) {
             if (st.originalLeft == null) st.originalLeft = getLeft(st.inv);
-            int centered = computeCenteredLeft(st.inv);
-            setLeft(st.inv, centered);
+            setLeft(st.inv, computeCenteredLeft(st.inv));
         } else if (st.originalLeft != null) {
             setLeft(st.inv, st.originalLeft);
         }

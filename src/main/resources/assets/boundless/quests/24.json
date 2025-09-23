@@ -4,16 +4,12 @@
   "name": "Hero of the Village",
   "icon": "minecraft:shield",
   "description": "Defend a village from pillagers and earn their gratitude.",
-  "dependencies": "conqueror",
+  "dependencies": "iron_age",
   "optional": "true",
-  "type": "collection",
+  "type": "effect",
   "completion": {
-    "items": [
-      {
-        "item": "minecraft:ominous_banner",
-        "count": 1
-      }
-    ]
+    "effect": "minecraft:hero_of_the_village",
+    "count": 1
   },
   "reward": {
     "items": [

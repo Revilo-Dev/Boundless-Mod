@@ -11,44 +11,27 @@
   "//DESCRIPTION": "This tells the player what they need to do or provides context",
   "description": "",
 
-  "//DEPENDENCIES": "A list of quest IDs that must be completed before this quest can be started or completed. If there are no dependencies",
+  "//DEPENDENCIES": "A list of quest IDs that must be completed before this quest can be started or completed. If there are no dependencies, leave blank",
   "dependencies": "",
 
   "//OPTIONAL": "Set to 'true' if the quest is optional, and 'false' if it is mandatory. It's not recommended to mark quests with dependencies as optional.",
   "optional": "true",
 
-  "//TYPE": "Defines the category: 'collection' (gather items), 'submission' (turn in items), 'kill' (defeat mobs)",
+  "//TYPE": "Defines the quest type: - 'collection' (gather items) - 'submission' (turn in items)  - 'kill' (defeat mobs)  - 'effect' (player must have a specific effect active)  - 'advancement' (player must complete a specific advancement)",
   "type": "collection",
 
-  "//COMPLETION": "The specific goal required to complete the quest. This object must link to the 'type' of quest.",
-  "completion": {
+  "//COMPLETION": "The specific goal required to complete the quest. The structure depends on 'type'  examples >>> :  - collection/submission: { items: [ { item: minecraft:stone, count: 16 } ] }  - kill: { targets: [ { entity: minecraft:zombie, count: 5 } ] }  - effect: { effect: minecraft:hero_of_the_village, count: 1 }  - advancement: { advancement: minecraft:story/mine_stone, count: 1 }",
+  "completion": {},
+
+  "//REWARD": "Defines the rewards the player receives. This can be a single reward or multiple rewards",
+  "reward": {
     "items": [
       {
         "item": "minecraft:",
-        "count": 1
-      },
-      {
-        "item": "minecraft:",
-        "count": 1
-      }
-    ],
-    "targets": [
-      {
-        "entity": "minecraft:",
-        "count": 1
-      },
-      {
-        "entity": "minecraft:",
         "count": 1
       }
     ]
   },
 
-  "//REWARD": "Defines the rewards the player receives. This can be a single reward or multiple rewards",
-  "reward": {
-    "item": "",
-    "count": 0
-  },
-
-  "//TIP": "Quests should be named in the order you want them to appear eg, 01, 02, 03; as quests are listed from lowest to highest value"
+  "//TIP": "Quests should be named in the order you want them to appear eg, 01-quest, 02-quest, 03-quest; as quests by default are listed from lowest to highest value, if you would like to set the order without renaming files add an additional: {order: nn} in the file "
 }

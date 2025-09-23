@@ -9,6 +9,8 @@ import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.world.item.Item;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.revilodev.boundless.BoundlessMod;
 
 import java.io.BufferedReader;
@@ -103,6 +105,8 @@ public final class QuestData {
 
         public boolean isItem() { return "item".equals(kind); }
         public boolean isEntity() { return "entity".equals(kind); }
+        public boolean isEffect() { return "effect".equals(kind); }
+        public boolean isAdvancement() { return "advancement".equals(kind); }
     }
 
     public static final class Category {
@@ -133,13 +137,15 @@ public final class QuestData {
         QUESTS.clear();
         CATEGORIES.clear();
 
-        Map<ResourceLocation, Resource> catFilesA = rm.listResources(ROOT + "/categories", p -> p.getPath().endsWith(".json"));
-        Map<ResourceLocation, Resource> catFilesB = rm.listResources(ROOT + "/catagories", p -> p.getPath().endsWith(".json"));
-        Map<ResourceLocation, Resource> catFiles = new LinkedHashMap<>();
+        Map<ResourceLocation, List<Resource>> catFilesA = rm.listResourceStacks(ROOT + "/categories", p -> p.getPath().endsWith(".json"));
+        Map<ResourceLocation, List<Resource>> catFiles = new LinkedHashMap<>();
         catFiles.putAll(catFilesA);
-        catFiles.putAll(catFilesB);
-        for (Map.Entry<ResourceLocation, Resource> entry : catFiles.entrySet()) {
-            try (Reader raw = entry.getValue().openAsReader(); Reader reader = new BufferedReader(raw)) {
+
+        for (Map.Entry<ResourceLocation, List<Resource>> entry : catFiles.entrySet()) {
+            List<Resource> stack = entry.getValue();
+            if (stack.isEmpty()) continue;
+            Resource top = stack.get(stack.size() - 1); // top pack wins
+            try (Reader raw = top.openAsReader(); Reader reader = new BufferedReader(raw)) {
                 JsonElement el = GsonHelper.fromJson(GSON, reader, JsonElement.class);
                 if (el == null || !el.isJsonObject()) continue;
                 JsonObject obj = el.getAsJsonObject();
@@ -160,50 +166,46 @@ public final class QuestData {
             }
         }
 
-        Map<ResourceLocation, Resource> files = rm.listResources(ROOT, path -> path.getPath().endsWith(".json"));
-        for (Map.Entry<ResourceLocation, Resource> entry : files.entrySet()) {
+        Map<ResourceLocation, List<Resource>> files = rm.listResourceStacks(ROOT, path -> path.getPath().endsWith(".json"));
+        for (Map.Entry<ResourceLocation, List<Resource>> entry : files.entrySet()) {
             String path = entry.getKey().getPath();
             if (path.contains("/categories/") || path.contains("/catagories/")) continue;
-            try {
-                Resource resObj = entry.getValue();
-                try (Reader raw = resObj.openAsReader(); Reader reader = new BufferedReader(raw)) {
-                    JsonElement el = GsonHelper.fromJson(GSON, reader, JsonElement.class);
-                    if (el == null || !el.isJsonObject()) continue;
-                    JsonObject obj = el.getAsJsonObject();
+            List<Resource> stack = entry.getValue();
+            if (stack.isEmpty()) continue;
+            Resource top = stack.get(stack.size() - 1);
+            try (Reader raw = top.openAsReader(); Reader reader = new BufferedReader(raw)) {
+                JsonElement el = GsonHelper.fromJson(GSON, reader, JsonElement.class);
+                if (el == null || !el.isJsonObject()) continue;
+                JsonObject obj = el.getAsJsonObject();
 
-                    String id = optString(obj, "id");
-                    if (id == null || id.isBlank()) {
-                        String p = entry.getKey().getPath();
-                        int lastSlash = p.lastIndexOf('/');
-                        String n = (lastSlash >= 0 ? p.substring(lastSlash + 1) : p);
-                        id = n.endsWith(".json") ? n.substring(0, n.length() - 5) : n;
-                    }
-
-                    String name = optString(obj, "name");
-                    String icon = optString(obj, "icon");
-                    String description = optString(obj, "description");
-
-                    List<String> deps = parseDependencies(obj);
-
-                    boolean optional = false;
-                    if (obj.has("optional")) {
-                        if (obj.get("optional").isJsonPrimitive()) {
-                            JsonPrimitive prim = obj.getAsJsonPrimitive("optional");
-                            if (prim.isBoolean()) optional = prim.getAsBoolean();
-                            else optional = Boolean.parseBoolean(prim.getAsString());
-                        }
-                    }
-
-                    Rewards rewards = parseRewards(obj.get("reward"));
-
-                    String type = optString(obj, "type");
-                    Completion completion = parseCompletion(obj.get("completion"), type);
-
-                    String category = optString(obj, "category");
-
-                    Quest q = new Quest(id, name, icon, description, deps, optional, rewards, type, completion, category);
-                    QUESTS.put(q.id, q);
+                String id = optString(obj, "id");
+                if (id == null || id.isBlank()) {
+                    String p = entry.getKey().getPath();
+                    int lastSlash = p.lastIndexOf('/');
+                    String n = (lastSlash >= 0 ? p.substring(lastSlash + 1) : p);
+                    id = n.endsWith(".json") ? n.substring(0, n.length() - 5) : n;
                 }
+
+                String name = optString(obj, "name");
+                String icon = optString(obj, "icon");
+                String description = optString(obj, "description");
+
+                List<String> deps = parseDependencies(obj);
+
+                boolean optional = false;
+                if (obj.has("optional") && obj.get("optional").isJsonPrimitive()) {
+                    JsonPrimitive prim = obj.getAsJsonPrimitive("optional");
+                    if (prim.isBoolean()) optional = prim.getAsBoolean();
+                    else optional = Boolean.parseBoolean(prim.getAsString());
+                }
+
+                Rewards rewards = parseRewards(obj.get("reward"));
+                String type = optString(obj, "type");
+                Completion completion = parseCompletion(obj.get("completion"), type);
+                String category = optString(obj, "category");
+
+                Quest q = new Quest(id, name, icon, description, deps, optional, rewards, type, completion, category);
+                QUESTS.put(q.id, q);
             } catch (IOException ex) {
                 BoundlessMod.LOGGER.error("Error reading quest json {}: {}", entry.getKey(), ex.toString());
             } catch (Exception ex) {
@@ -263,11 +265,10 @@ public final class QuestData {
         return new Rewards(List.of());
     }
 
-    public static java.util.Collection<Quest> allServer(net.minecraft.server.MinecraftServer server) {
+    public static Collection<Quest> allServer(MinecraftServer server) {
         loadServer(server, false);
-        return java.util.Collections.unmodifiableCollection(QUESTS.values());
+        return Collections.unmodifiableCollection(QUESTS.values());
     }
-
 
     private static Completion parseCompletion(JsonElement el, String type) {
         if (el == null) return new Completion(List.of());
@@ -320,6 +321,16 @@ public final class QuestData {
                 if (entity != null && !entity.isBlank()) out.add(new Target("entity", entity, count));
                 return new Completion(out);
             }
+            if (obj.has("effect")) {
+                String effect = optString(obj, "effect");
+                if (effect != null && !effect.isBlank()) out.add(new Target("effect", effect, 1));
+                return new Completion(out);
+            }
+            if (obj.has("advancement")) {
+                String adv = optString(obj, "advancement");
+                if (adv != null && !adv.isBlank()) out.add(new Target("advancement", adv, 1));
+                return new Completion(out);
+            }
         }
         return new Completion(List.of());
     }
@@ -333,6 +344,12 @@ public final class QuestData {
             String entity = optString(o, "entity");
             int count = o.has("count") ? o.get("count").getAsInt() : 1;
             if (entity != null && !entity.isBlank()) out.add(new Target("entity", entity, count));
+        } else if (o.has("effect")) {
+            String effect = optString(o, "effect");
+            if (effect != null && !effect.isBlank()) out.add(new Target("effect", effect, 1));
+        } else if (o.has("advancement")) {
+            String adv = optString(o, "advancement");
+            if (adv != null && !adv.isBlank()) out.add(new Target("advancement", adv, 1));
         }
     }
 
@@ -349,6 +366,11 @@ public final class QuestData {
         ResourceManager rm = resources.resourceManager();
         load(rm, forceReload);
         loadedServer = true;
+
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            ResourceManager crm = Minecraft.getInstance().getResourceManager();
+            load(crm, true);
+        }
     }
 
     public static boolean isEmpty() { return QUESTS.isEmpty(); }

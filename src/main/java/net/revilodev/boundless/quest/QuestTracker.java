@@ -1,16 +1,20 @@
 package net.revilodev.boundless.quest;
 
+import net.minecraft.advancements.AdvancementHolder;
+import net.minecraft.advancements.AdvancementProgress;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.revilodev.boundless.network.BoundlessNetwork;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.revilodev.boundless.network.BoundlessNetwork;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -57,9 +61,12 @@ public final class QuestTracker {
         if (player == null || q == null || q.completion == null) return false;
         if (!dependenciesMet(q, player)) return false;
         if (q.completion.targets == null || q.completion.targets.isEmpty()) return false;
+
         for (QuestData.Target t : q.completion.targets) {
             if (t.isItem() && getCountInInventory(t.id, player) < t.count) return false;
             if (t.isEntity() && getKillCount(player, t.id) < t.count) return false;
+            if (t.isEffect() && !hasEffect(player, t.id)) return false;
+            if (t.isAdvancement() && !hasAdvancement(player, t.id)) return false;
         }
         return true;
     }
@@ -108,6 +115,25 @@ public final class QuestTracker {
             return v == null ? 0 : v;
         }
         return CLIENT_KILLS.getOrDefault(entityId, 0);
+    }
+
+    // --- fixed to use Holder<MobEffect> ---
+    public static boolean hasEffect(Player player, String effectId) {
+        if (player == null) return false;
+        ResourceLocation rl = ResourceLocation.parse(effectId);
+        var opt = net.minecraft.core.registries.BuiltInRegistries.MOB_EFFECT.getHolder(rl);
+        if (opt.isEmpty()) return false;
+        Holder<MobEffect> holder = opt.get();
+        return player.hasEffect(holder);
+    }
+
+    public static boolean hasAdvancement(Player player, String advId) {
+        if (!(player instanceof ServerPlayer sp)) return false;
+        ResourceLocation rl = ResourceLocation.parse(advId);
+        AdvancementHolder holder = sp.server.getAdvancements().get(rl);
+        if (holder == null) return false;
+        AdvancementProgress prog = sp.getAdvancements().getOrStartProgress(holder);
+        return prog.isDone();
     }
 
     public static boolean completeAndRedeem(QuestData.Quest q, ServerPlayer player) {

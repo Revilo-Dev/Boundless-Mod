@@ -12,6 +12,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.effect.MobEffect; // <-- added
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -25,7 +26,6 @@ import java.util.List;
 
 public final class QuestDetailsPanel extends AbstractWidget {
     private static final int LINE_ITEM_ROW = 22;
-    private static final int REWARD_CELL = 18;
     private static final int BOTTOM_PADDING = 28;
 
     private final Minecraft mc = Minecraft.getInstance();
@@ -174,6 +174,25 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     String p = "Kill: " + eName + " " + have + "/" + t.count;
                     gg.drawWordWrap(mc.font, Component.literal(p), x + 4, curY[0], w - 8, color);
                     curY[0] += mc.font.wordWrapHeight(p, w - 8) + 4;
+
+                    // --- added: display for effect target ---
+                } else if ("effect".equals(t.kind)) {
+                    ResourceLocation rl = ResourceLocation.parse(t.id);
+                    MobEffect eff = BuiltInRegistries.MOB_EFFECT.getOptional(rl).orElse(null);
+                    String eName = eff == null ? rl.toString() : Component.translatable(eff.getDescriptionId()).getString();
+                    boolean has = QuestTracker.hasEffect(mc.player, t.id);
+                    int color = has ? 0x55FF55 : 0xFF5555;
+                    String line = "Effect: " + eName + (has ? " ✔" : " ✘");
+                    gg.drawWordWrap(mc.font, Component.literal(line), x + 4, curY[0], w - 8, color);
+                    curY[0] += mc.font.wordWrapHeight(line, w - 8) + 4;
+
+                    // --- added: display for advancement target ---
+                } else if ("advancement".equals(t.kind)) {
+                    boolean done = QuestTracker.hasAdvancement(mc.player, t.id);
+                    int color = done ? 0x55FF55 : 0xFF5555;
+                    String line = "Advancement: " + t.id + (done ? " ✔" : " ✘");
+                    gg.drawWordWrap(mc.font, Component.literal(line), x + 4, curY[0], w - 8, color);
+                    curY[0] += mc.font.wordWrapHeight(line, w - 8) + 4;
                 }
             }
             curY[0] += 2;
@@ -181,36 +200,25 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         if (quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty()) {
             gg.drawWordWrap(mc.font, Component.literal("Reward:"), x + 4, curY[0], w - 8, 0xA8FFA8);
-            curY[0] += mc.font.wordWrapHeight("Reward:", w - 8);
-
-            int usable = Math.max(1, w - 20);
-            int perRow = Math.max(1, usable / REWARD_CELL);
-            int col = 0;
-            int row = 0;
+            curY[0] += mc.font.wordWrapHeight("Reward:", w - 8) + 4;
 
             for (QuestData.RewardEntry re : quest.rewards.items) {
                 ResourceLocation rl = ResourceLocation.parse(re.item);
                 Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-                if (item != null) {
-                    int ix = x + 10 + col * REWARD_CELL - 9;
-                    int iy = curY[0] + row * REWARD_CELL + 5;
-                    gg.renderItem(new ItemStack(item), ix, iy);
-                    String countStr = "x" + Math.max(1, re.count);
-                    gg.drawString(mc.font, countStr, ix + 20, iy, 0xA8FFA8, false);
+                int lineY = curY[0];
 
-                    col++;
-                    if (col >= perRow) {
-                        col = 0;
-                        row++;
-                    }
+                if (item != null) {
+                    gg.renderItem(new ItemStack(item), x + 4, lineY);
+                    String countStr = "x" + Math.max(1, re.count);
+                    gg.drawString(mc.font, countStr, x + 24, lineY + 6, 0xA8FFA8, false);
                 } else {
                     String fallback = "- " + re.item + " x" + Math.max(1, re.count);
-                    gg.drawWordWrap(mc.font, Component.literal(fallback), x + 10, curY[0] + row * REWARD_CELL, w - 16, 0xA8FFA8);
-                    row++;
-                    col = 0;
+                    gg.drawWordWrap(mc.font, Component.literal(fallback), x + 4, lineY, w - 8, 0xA8FFA8);
                 }
+
+                curY[0] += LINE_ITEM_ROW;
             }
-            curY[0] += (row + (col > 0 ? 1 : 0)) * REWARD_CELL + 6;
+            curY[0] += 2;
         }
 
         gg.disableScissor();
@@ -256,18 +264,18 @@ public final class QuestDetailsPanel extends AbstractWidget {
                 } else if (t.isEntity()) {
                     String p = "Kill: x/x";
                     y += mc.font.wordWrapHeight(p, w - 8) + 4;
+                } else if ("effect".equals(t.kind)) { // added
+                    y += mc.font.wordWrapHeight("Effect: name", w - 8) + 4;
+                } else if ("advancement".equals(t.kind)) { // added
+                    y += mc.font.wordWrapHeight("Advancement: id", w - 8) + 4;
                 }
             }
             y += 2;
         }
 
         if (quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty()) {
-            y += mc.font.wordWrapHeight("Reward:", w - 8);
-            int usable = Math.max(1, w - 20);
-            int perRow = Math.max(1, usable / REWARD_CELL);
-            int count = quest.rewards.items.size();
-            int rows = (count + perRow - 1) / perRow;
-            y += rows * REWARD_CELL + 6;
+            y += mc.font.wordWrapHeight("Reward:", w - 8) + 4;
+            y += quest.rewards.items.size() * LINE_ITEM_ROW + 2;
         }
 
         return y;

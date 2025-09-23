@@ -92,8 +92,17 @@ public final class QuestListWidget extends AbstractWidget {
             if (iconItem != null) {
                 gg.renderItem(new ItemStack(iconItem), this.getX() + 6, top + 5);
             }
+
+            // quest name with ellipsis if too long
             String name = q.name;
-            gg.drawString(mc.font, name, this.getX() + 30, top + 9, deps ? 0xFFFFFF : 0xA0A0A0, false);
+            int maxWidth = this.width - 42; // 36 + 6px padding
+            int nameWidth = mc.font.width(name);
+            if (nameWidth > maxWidth) {
+                String trimmed = mc.font.plainSubstrByWidth(name, maxWidth - mc.font.width("...")) + "...";
+                gg.drawString(mc.font, trimmed, this.getX() + 30, top + 9, deps ? 0xFFFFFF : 0xA0A0A0, false);
+            } else {
+                gg.drawString(mc.font, name, this.getX() + 30, top + 9, deps ? 0xFFFFFF : 0xA0A0A0, false);
+            }
         }
         gg.disableScissor();
         int content = contentHeight();

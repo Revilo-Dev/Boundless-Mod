@@ -11,6 +11,6 @@
     "item": "minecraft:anvil", "count": 1
   },
   "reward": {
-    "item": "", "count": 0
+    "item": "minecraft:iron_ingot", "count": 10
   }
 }

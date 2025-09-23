@@ -2,12 +2,13 @@
   "category": "minecraft",
   "id": "getting_started",
   "name": "Getting Started",
+  "order": "01",
   "icon": "minecraft:crafting_table",
   "description": "Craft your first workbench. Every adventure starts with a block of wood.",
   "dependencies": "",
   "optional": "false",
   "type": "collection",
   "completion": { "item": "minecraft:crafting_table", "count": 1 },
-  "reward": { "item": "minecraft:steak", "count": 16 }
+  "reward": { "item": "minecraft:cooked_beef", "count": 16 }
 
 }

@@ -24,6 +24,15 @@
     ]
 },
   "reward": {
-    "item": "minecraft:obsidian", "count": 4
+    "items": [
+      {
+        "item": "minecraft:obsidian",
+        "count": 4
+      },
+      {
+        "item": "minecraft:book",
+        "count": 1
+      }
+    ]
   }
 }

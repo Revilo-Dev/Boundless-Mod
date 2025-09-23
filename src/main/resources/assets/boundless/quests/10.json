@@ -10,7 +10,7 @@
   "completion": {
     "items": [
       {
-        "item": "minecraft:potion",
+        "item": "#minecraft:potions",
         "count": 1
       }
     ]
@@ -19,7 +19,7 @@
     "items": [
       {
         "item": "minecraft:ghast_tear",
-        "count": 1
+        "count": 3
       }
     ]
   }
