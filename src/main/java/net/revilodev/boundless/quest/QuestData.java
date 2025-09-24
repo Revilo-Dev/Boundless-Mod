@@ -5,8 +5,11 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.packs.PackResources;
+import net.minecraft.server.packs.resources.IoSupplier;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
+import net.minecraft.server.packs.repository.Pack;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.world.item.Item;
 import net.neoforged.api.distmarker.Dist;
@@ -15,14 +18,17 @@ import net.revilodev.boundless.BoundlessMod;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public final class QuestData {
     private QuestData() {}
 
     private static final Gson GSON = new GsonBuilder().setLenient().create();
-    private static final String ROOT = "quests";
+    private static final String PATH_QUESTS = "quests";
+    private static final String PATH_CATEGORIES = "quests/categories";
 
     private static final Map<String, Quest> QUESTS = new LinkedHashMap<>();
     private static final Map<String, Category> CATEGORIES = new LinkedHashMap<>();
@@ -68,7 +74,6 @@ public final class QuestData {
 
     public static final class Rewards {
         public final List<RewardEntry> items;
-
         public Rewards(List<RewardEntry> items) {
             this.items = items == null ? List.of() : List.copyOf(items);
         }
@@ -77,7 +82,6 @@ public final class QuestData {
     public static final class RewardEntry {
         public final String item;
         public final int count;
-
         public RewardEntry(String item, int count) {
             this.item = item;
             this.count = Math.max(1, count);
@@ -86,7 +90,6 @@ public final class QuestData {
 
     public static final class Completion {
         public final List<Target> targets;
-
         public Completion(List<Target> targets) {
             this.targets = targets == null ? List.of() : List.copyOf(targets);
         }
@@ -137,14 +140,23 @@ public final class QuestData {
         QUESTS.clear();
         CATEGORIES.clear();
 
-        Map<ResourceLocation, List<Resource>> catFilesA = rm.listResourceStacks(ROOT + "/categories", p -> p.getPath().endsWith(".json"));
-        Map<ResourceLocation, List<Resource>> catFiles = new LinkedHashMap<>();
-        catFiles.putAll(catFilesA);
+        BoundlessMod.LOGGER.info("QuestData: Begin load, forceReload={}", forceReload);
 
-        for (Map.Entry<ResourceLocation, List<Resource>> entry : catFiles.entrySet()) {
-            List<Resource> stack = entry.getValue();
+        Map<ResourceLocation, List<Resource>> catStacks = rm.listResourceStacks(PATH_CATEGORIES, rl -> rl.getPath().endsWith(".json"));
+        Map<String, Integer> catByNs = new HashMap<>();
+        for (ResourceLocation rl : catStacks.keySet()) catByNs.merge(rl.getNamespace(), 1, Integer::sum);
+        BoundlessMod.LOGGER.info("QuestData: category stacks total={}, namespaces={}", catStacks.size(), catByNs);
+
+        for (Map.Entry<ResourceLocation, List<Resource>> e : catStacks.entrySet()) {
+            List<Resource> stack = e.getValue();
             if (stack.isEmpty()) continue;
-            Resource top = stack.get(stack.size() - 1); // top pack wins
+            Resource top = stack.get(stack.size() - 1);
+            String topPack = safePackId(top);
+            if (stack.size() > 1) {
+                List<String> packs = new ArrayList<>();
+                for (Resource r : stack) packs.add(safePackId(r));
+                BoundlessMod.LOGGER.info("QuestData: category overlay {} packs={}", e.getKey(), packs);
+            }
             try (Reader raw = top.openAsReader(); Reader reader = new BufferedReader(raw)) {
                 JsonElement el = GsonHelper.fromJson(GSON, reader, JsonElement.class);
                 if (el == null || !el.isJsonObject()) continue;
@@ -154,69 +166,171 @@ public final class QuestData {
                 String cname = optString(obj, "name");
                 int order = 0;
                 if (obj.has("order")) {
-                    JsonPrimitive prim = obj.getAsJsonPrimitive("order");
-                    if (prim.isNumber()) order = prim.getAsInt();
-                    else try { order = Integer.parseInt(prim.getAsString()); } catch (NumberFormatException ignored) {}
+                    try { order = obj.get("order").getAsInt(); } catch (Exception ignored) {}
                 }
                 if (id != null && !id.isBlank()) {
                     CATEGORIES.put(id, new Category(id, icon, cname, order));
+                    BoundlessMod.LOGGER.info("QuestData: category loaded id={} from {}", id, e.getKey() + "@" + topPack);
                 }
             } catch (Exception ex) {
-                BoundlessMod.LOGGER.error("Bad category json {}: {}", entry.getKey(), ex.toString());
+                BoundlessMod.LOGGER.error("QuestData: bad category {}: {}", e.getKey(), ex.toString());
             }
         }
 
-        Map<ResourceLocation, List<Resource>> files = rm.listResourceStacks(ROOT, path -> path.getPath().endsWith(".json"));
-        for (Map.Entry<ResourceLocation, List<Resource>> entry : files.entrySet()) {
-            String path = entry.getKey().getPath();
-            if (path.contains("/categories/") || path.contains("/catagories/")) continue;
-            List<Resource> stack = entry.getValue();
+        Map<ResourceLocation, List<Resource>> questStacks = rm.listResourceStacks(PATH_QUESTS, rl -> rl.getPath().endsWith(".json"));
+        Map<String, Integer> questsByNs = new HashMap<>();
+        for (ResourceLocation rl : questStacks.keySet()) questsByNs.merge(rl.getNamespace(), 1, Integer::sum);
+        BoundlessMod.LOGGER.info("QuestData: quest stacks total={}, namespaces={}", questStacks.size(), questsByNs);
+
+        for (Map.Entry<ResourceLocation, List<Resource>> e : questStacks.entrySet()) {
+            ResourceLocation rl = e.getKey();
+            if (rl.getPath().contains("/categories/")) continue;
+            List<Resource> stack = e.getValue();
             if (stack.isEmpty()) continue;
             Resource top = stack.get(stack.size() - 1);
+            String topPack = safePackId(top);
+            if (stack.size() > 1) {
+                List<String> packs = new ArrayList<>();
+                for (Resource r : stack) packs.add(safePackId(r));
+                BoundlessMod.LOGGER.info("QuestData: quest overlay {} packs={}", rl, packs);
+            }
             try (Reader raw = top.openAsReader(); Reader reader = new BufferedReader(raw)) {
-                JsonElement el = GsonHelper.fromJson(GSON, reader, JsonElement.class);
-                if (el == null || !el.isJsonObject()) continue;
-                JsonObject obj = el.getAsJsonObject();
-
-                String id = optString(obj, "id");
-                if (id == null || id.isBlank()) {
-                    String p = entry.getKey().getPath();
-                    int lastSlash = p.lastIndexOf('/');
-                    String n = (lastSlash >= 0 ? p.substring(lastSlash + 1) : p);
-                    id = n.endsWith(".json") ? n.substring(0, n.length() - 5) : n;
+                JsonObject obj = safeObject(reader);
+                if (obj == null) continue;
+                Quest q = parseQuestObject(obj, rl);
+                if (q != null) {
+                    QUESTS.put(q.id, q);
+                    BoundlessMod.LOGGER.info("QuestData: quest loaded id={} from {}", q.id, rl + "@" + topPack);
                 }
-
-                String name = optString(obj, "name");
-                String icon = optString(obj, "icon");
-                String description = optString(obj, "description");
-
-                List<String> deps = parseDependencies(obj);
-
-                boolean optional = false;
-                if (obj.has("optional") && obj.get("optional").isJsonPrimitive()) {
-                    JsonPrimitive prim = obj.getAsJsonPrimitive("optional");
-                    if (prim.isBoolean()) optional = prim.getAsBoolean();
-                    else optional = Boolean.parseBoolean(prim.getAsString());
-                }
-
-                Rewards rewards = parseRewards(obj.get("reward"));
-                String type = optString(obj, "type");
-                Completion completion = parseCompletion(obj.get("completion"), type);
-                String category = optString(obj, "category");
-
-                Quest q = new Quest(id, name, icon, description, deps, optional, rewards, type, completion, category);
-                QUESTS.put(q.id, q);
             } catch (IOException ex) {
-                BoundlessMod.LOGGER.error("Error reading quest json {}: {}", entry.getKey(), ex.toString());
+                BoundlessMod.LOGGER.error("QuestData: read error {}: {}", rl, ex.toString());
             } catch (Exception ex) {
-                BoundlessMod.LOGGER.error("Bad quest json {}: {}", entry.getKey(), ex.toString());
+                BoundlessMod.LOGGER.error("QuestData: bad quest {}: {}", rl, ex.toString());
             }
         }
 
-        if (!CATEGORIES.containsKey("all")) {
-            CATEGORIES.put("all", new Category("all", "minecraft:book", "All", Integer.MIN_VALUE));
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            scanSelectedResourcePacksData();
         }
-        BoundlessMod.LOGGER.info("Loaded {} quest(s), {} category(ies).", QUESTS.size(), CATEGORIES.size());
+
+        if (!CATEGORIES.containsKey("all")) CATEGORIES.put("all", new Category("all", "minecraft:book", "All", Integer.MIN_VALUE));
+        BoundlessMod.LOGGER.info("QuestData: Loaded {} quest(s), {} category(ies).", QUESTS.size(), CATEGORIES.size());
+    }
+
+    private static void scanSelectedResourcePacksData() {
+        try {
+            var repo = Minecraft.getInstance().getResourcePackRepository();
+            Collection<Pack> selected = repo.getSelectedPacks();
+            List<String> packIds = new ArrayList<>();
+            for (Pack p : selected) packIds.add(p.getId());
+            BoundlessMod.LOGGER.info("QuestData: RP selected packs={}", packIds);
+            int dataCatCount = 0;
+            int dataQuestCount = 0;
+            for (Pack p : selected) {
+                try (PackResources res = p.open()) {
+                    Set<String> namespaces = res.getNamespaces(net.minecraft.server.packs.PackType.SERVER_DATA);
+                    BoundlessMod.LOGGER.info("QuestData: RP '{}' data namespaces={}", p.getId(), namespaces);
+                    for (String ns : namespaces) {
+                        dataCatCount += listDataCategoriesFromPack(p.getId(), res, ns);
+                        dataQuestCount += listDataQuestsFromPack(p.getId(), res, ns);
+                    }
+                } catch (Throwable t) {
+                    BoundlessMod.LOGGER.error("QuestData: RP open failed {}: {}", p.getId(), t.toString());
+                }
+            }
+            BoundlessMod.LOGGER.info("QuestData: RP data totals categories={}, quests={}", dataCatCount, dataQuestCount);
+        } catch (Throwable t) {
+            BoundlessMod.LOGGER.error("QuestData: RP scan failed: {}", t.toString());
+        }
+    }
+
+    private static int listDataCategoriesFromPack(String packId, PackResources res, String ns) {
+        final int[] count = {0};
+        res.listResources(net.minecraft.server.packs.PackType.SERVER_DATA, ns, PATH_CATEGORIES, (loc, supplier) -> {
+            if (!loc.getPath().endsWith(".json")) return;
+            try (Reader r = supplierToReader(supplier)) {
+                JsonObject obj = safeObject(r);
+                if (obj == null) return;
+                String id = optString(obj, "id");
+                String icon = optString(obj, "icon");
+                String cname = optString(obj, "name");
+                int order = 0;
+                if (obj.has("order")) {
+                    try { order = obj.get("order").getAsInt(); } catch (Exception ignored) {}
+                }
+                if (id != null && !id.isBlank()) {
+                    CATEGORIES.put(id, new Category(id, icon, cname, order));
+                    BoundlessMod.LOGGER.info("QuestData: RP-DATA category id={} from {}@{}", id, loc, packId);
+                    count[0]++;
+                }
+            } catch (IOException ex) {
+                BoundlessMod.LOGGER.error("QuestData: RP-DATA category read error {}@{}: {}", loc, packId, ex.toString());
+            } catch (Exception ex) {
+                BoundlessMod.LOGGER.error("QuestData: RP-DATA category bad {}@{}: {}", loc, packId, ex.toString());
+            }
+        });
+        return count[0];
+    }
+
+    private static int listDataQuestsFromPack(String packId, PackResources res, String ns) {
+        final int[] count = {0};
+        res.listResources(net.minecraft.server.packs.PackType.SERVER_DATA, ns, PATH_QUESTS, (loc, supplier) -> {
+            if (!loc.getPath().endsWith(".json")) return;
+            if (loc.getPath().contains("/categories/")) return;
+            try (Reader r = supplierToReader(supplier)) {
+                JsonObject obj = safeObject(r);
+                if (obj == null) return;
+                Quest q = parseQuestObject(obj, loc);
+                if (q != null) {
+                    QUESTS.put(q.id, q);
+                    BoundlessMod.LOGGER.info("QuestData: RP-DATA quest id={} from {}@{}", q.id, loc, packId);
+                    count[0]++;
+                }
+            } catch (IOException ex) {
+                BoundlessMod.LOGGER.error("QuestData: RP-DATA quest read error {}@{}: {}", loc, packId, ex.toString());
+            } catch (Exception ex) {
+                BoundlessMod.LOGGER.error("QuestData: RP-DATA quest bad {}@{}: {}", loc, packId, ex.toString());
+            }
+        });
+        return count[0];
+    }
+
+    private static Reader supplierToReader(IoSupplier<java.io.InputStream> supplier) throws IOException {
+        return new BufferedReader(new InputStreamReader(supplier.get(), StandardCharsets.UTF_8));
+    }
+
+    private static String safePackId(Resource r) {
+        try { return r.sourcePackId(); } catch (Throwable ignored) { return "unknown"; }
+    }
+
+    private static JsonObject safeObject(Reader reader) {
+        JsonElement el = GsonHelper.fromJson(GSON, reader, JsonElement.class);
+        if (el == null || !el.isJsonObject()) return null;
+        return el.getAsJsonObject();
+    }
+
+    private static Quest parseQuestObject(JsonObject obj, ResourceLocation src) {
+        String id = optString(obj, "id");
+        if (id == null || id.isBlank()) {
+            String p = src.getPath();
+            int lastSlash = p.lastIndexOf('/');
+            String n = (lastSlash >= 0 ? p.substring(lastSlash + 1) : p);
+            id = n.endsWith(".json") ? n.substring(0, n.length() - 5) : n;
+        }
+        String name = optString(obj, "name");
+        String icon = optString(obj, "icon");
+        String description = optString(obj, "description");
+        List<String> deps = parseDependencies(obj);
+        boolean optional = false;
+        if (obj.has("optional") && obj.get("optional").isJsonPrimitive()) {
+            try { optional = obj.getAsJsonPrimitive("optional").getAsBoolean(); }
+            catch (Exception ignored) { optional = Boolean.parseBoolean(optString(obj, "optional")); }
+        }
+        Rewards rewards = parseRewards(obj.get("reward"));
+        String type = optString(obj, "type");
+        Completion completion = parseCompletion(obj.get("completion"), type);
+        String category = optString(obj, "category");
+        return new Quest(id, name, icon, description, deps, optional, rewards, type, completion, category);
     }
 
     private static List<String> parseDependencies(JsonObject obj) {
@@ -263,11 +377,6 @@ public final class QuestData {
             return new Rewards(out);
         }
         return new Rewards(List.of());
-    }
-
-    public static Collection<Quest> allServer(MinecraftServer server) {
-        loadServer(server, false);
-        return Collections.unmodifiableCollection(QUESTS.values());
     }
 
     private static Completion parseCompletion(JsonElement el, String type) {
@@ -355,6 +464,16 @@ public final class QuestData {
 
     public static synchronized void loadClient(boolean forceReload) {
         if (loadedClient && !forceReload && !QUESTS.isEmpty()) return;
+        BoundlessMod.LOGGER.info("QuestData: loadClient()");
+        try {
+            var repo = Minecraft.getInstance().getResourcePackRepository();
+            Collection<Pack> selected = repo.getSelectedPacks();
+            List<String> packIds = new ArrayList<>();
+            for (Pack p : selected) packIds.add(p.getId());
+            BoundlessMod.LOGGER.info("QuestData: RP selected at loadClient: {}", packIds);
+        } catch (Throwable t) {
+            BoundlessMod.LOGGER.warn("QuestData: RP list failed: {}", t.toString());
+        }
         ResourceManager rm = Minecraft.getInstance().getResourceManager();
         load(rm, forceReload);
         loadedClient = true;
@@ -362,12 +481,13 @@ public final class QuestData {
 
     public static synchronized void loadServer(MinecraftServer server, boolean forceReload) {
         if (loadedServer && !forceReload && !QUESTS.isEmpty()) return;
+        BoundlessMod.LOGGER.info("QuestData: loadServer()");
         var resources = server.getServerResources();
         ResourceManager rm = resources.resourceManager();
         load(rm, forceReload);
         loadedServer = true;
-
         if (FMLEnvironment.dist == Dist.CLIENT) {
+            BoundlessMod.LOGGER.info("QuestData: client resync after server load");
             ResourceManager crm = Minecraft.getInstance().getResourceManager();
             load(crm, true);
         }
@@ -377,6 +497,11 @@ public final class QuestData {
 
     public static Collection<Quest> all() {
         if (!loadedClient) loadClient(false);
+        return Collections.unmodifiableCollection(QUESTS.values());
+    }
+
+    public static Collection<Quest> allServer(MinecraftServer server) {
+        loadServer(server, false);
         return Collections.unmodifiableCollection(QUESTS.values());
     }
 

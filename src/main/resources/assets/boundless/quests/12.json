@@ -4,14 +4,14 @@
   "name": "Trading",
   "icon": "minecraft:emerald",
   "description": "Villagers offer many items to trade for. Start trading with them.",
-  "dependencies": "",
+  "dependencies": "first_night",
   "optional": "false",
   "type": "collection",
   "completion": {
     "items": [
       {
         "item": "minecraft:emerald",
-        "count": 5
+        "count": 16
       }
     ]
   },

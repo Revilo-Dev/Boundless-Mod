@@ -8,12 +8,8 @@
   "optional": "false",
   "type": "collection",
   "completion": {
-    "items": [
-      {
-        "item": "minecraft:ender_eye",
-        "count": 12
-      }
-    ]
+    "effect": "minecraft:hero_of_the_village",
+    "count": 1
   },
   "reward": {
     "items": [
