@@ -1,0 +1,26 @@
+{
+  "category": "minecraft",
+  "id": "shulker_storage",
+  "name": "Shulker Storage",
+  "icon": "minecraft:shulker_shell",
+  "description": "Loot the End cities and kill shulkers to create portable storage.",
+  "dependencies": "dragon_slayer",
+  "optional": "false",
+  "type": "collection",
+  "completion": {
+    "targets": [
+      {
+        "entity": "minecraft:shulker",
+        "count": 20
+      }
+    ]
+  },
+  "reward": {
+    "items": [
+      {
+        "item": "minecraft:shulker_box",
+        "count": 4
+      }
+    ]
+  }
+}

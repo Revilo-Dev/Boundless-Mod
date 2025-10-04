@@ -1,0 +1,16 @@
+{
+  "category": "minecraft",
+  "id": "first_night",
+  "name": "First Night",
+  "icon": "minecraft:white_bed",
+  "description": "Set your spawn and rest through the night.",
+  "dependencies": "smelting",
+  "optional": "false",
+  "type": "collection",
+  "completion": {
+    "item": "#minecraft:beds", "count": 1
+  },
+  "reward": {
+    "item": "", "count": 0
+  }
+}

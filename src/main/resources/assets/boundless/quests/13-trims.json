@@ -1,0 +1,26 @@
+{
+  "category": "minecraft",
+  "id": "trims",
+  "name": "Trims",
+  "icon": "minecraft:smithing_table",
+  "description": "Armor Trims are great for making your armour stand out, find and apply an armour trim.",
+  "dependencies": "trading",
+  "optional": "true",
+  "type": "collection",
+  "completion": {
+    "items": [
+      {
+        "item": "#minecraft:trim_templates",
+        "count": 1
+      }
+    ]
+  },
+  "reward": {
+    "items": [
+      {
+        "item": "minecraft:smithing_table",
+        "count": 1
+      }
+    ]
+  }
+}

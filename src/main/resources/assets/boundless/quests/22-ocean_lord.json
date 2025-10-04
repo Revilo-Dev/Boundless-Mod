@@ -1,0 +1,26 @@
+{
+  "category": "minecraft",
+  "id": "ocean_lord",
+  "name": "King of the Ocean",
+  "icon": "minecraft:conduit",
+  "description": "Conquer an ocean monument and obtain sponges.",
+  "dependencies": "treasure_hunter",
+  "optional": "true",
+  "type": "collection",
+  "completion": {
+    "items": [
+      {
+        "item": "minecraft:sponge",
+        "count": 10
+      }
+    ]
+  },
+  "reward": {
+    "items": [
+      {
+        "item": "minecraft:trident",
+        "count": 1
+      }
+    ]
+  }
+}

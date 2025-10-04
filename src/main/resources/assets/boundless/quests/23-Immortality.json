@@ -1,0 +1,26 @@
+{
+  "category": "minecraft",
+  "id": "immortality",
+  "name": "Immortality",
+  "icon": "minecraft:totem_of_undying",
+  "description": "Defeat an evoker and hold a totem of undying, effectively reaching immortality.",
+  "dependencies": "skys_the_limit",
+  "optional": "false",
+  "type": "collection",
+  "completion": {
+    "items": [
+      {
+        "item": "minecraft:totem_of_undying",
+        "count": 1
+      }
+    ]
+  },
+  "reward": {
+    "items": [
+      {
+        "item": "minecraft:emerald_block",
+        "count": 10
+      }
+    ]
+  }
+}
