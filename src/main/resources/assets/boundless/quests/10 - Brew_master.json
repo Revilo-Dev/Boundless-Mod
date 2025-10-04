@@ -1,6 +1,6 @@
 {
   "category": "minecraft",
-  "id": "brewmaster",
+  "id": "brew_master",
   "name": "Brew master",
   "icon": "minecraft:brewing_stand",
   "description": "Brew your first potion with a brewing stand.",
