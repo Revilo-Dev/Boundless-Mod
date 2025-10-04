@@ -8,8 +8,6 @@
   "dependencies": "",
   "optional": "false",
   "type": "advancement",
-  "completion": {
-    "item": "minecraft:cobblestone", "count": 16
-  },
+  "completion": { "advancement": "minecraft:story/iron_tools", "count": 1 },
   "reward": { "command": "/worldborder add 10" }
 }

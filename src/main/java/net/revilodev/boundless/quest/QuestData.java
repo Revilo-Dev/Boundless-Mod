@@ -74,8 +74,10 @@ public final class QuestData {
 
     public static final class Rewards {
         public final List<RewardEntry> items;
-        public Rewards(List<RewardEntry> items) {
+        public final String command;
+        public Rewards(List<RewardEntry> items, String command) {
             this.items = items == null ? List.of() : List.copyOf(items);
+            this.command = command;
         }
     }
 
@@ -347,8 +349,9 @@ public final class QuestData {
     }
 
     private static Rewards parseRewards(JsonElement el) {
-        if (el == null) return new Rewards(List.of());
+        if (el == null) return new Rewards(List.of(), null);
         List<RewardEntry> out = new ArrayList<>();
+        String command = null;
         if (el.isJsonArray()) {
             for (JsonElement e : el.getAsJsonArray()) {
                 if (!e.isJsonObject()) continue;
@@ -357,7 +360,7 @@ public final class QuestData {
                 int count = r.has("count") ? r.get("count").getAsInt() : 1;
                 if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
             }
-            return new Rewards(out);
+            return new Rewards(out, null);
         }
         if (el.isJsonObject()) {
             JsonObject obj = el.getAsJsonObject();
@@ -369,14 +372,21 @@ public final class QuestData {
                     int count = r.has("count") ? r.get("count").getAsInt() : 1;
                     if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
                 }
-                return new Rewards(out);
+            } else if (obj.has("item")) {
+                String item = optString(obj, "item");
+                int count = obj.has("count") ? obj.get("count").getAsInt() : 1;
+                if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
             }
-            String item = optString(obj, "item");
-            int count = obj.has("count") ? obj.get("count").getAsInt() : 1;
-            if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
-            return new Rewards(out);
+            if (obj.has("command") && obj.get("command").isJsonPrimitive()) {
+                command = obj.get("command").getAsString();
+            }
+            return new Rewards(out, command);
         }
-        return new Rewards(List.of());
+        if (el.isJsonPrimitive()) {
+            String maybeCmd = el.getAsString();
+            if (!maybeCmd.isBlank()) return new Rewards(List.of(), maybeCmd);
+        }
+        return new Rewards(List.of(), null);
     }
 
     private static Completion parseCompletion(JsonElement el, String type) {

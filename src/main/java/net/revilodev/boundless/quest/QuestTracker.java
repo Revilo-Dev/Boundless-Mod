@@ -2,6 +2,8 @@ package net.revilodev.boundless.quest;
 
 import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.AdvancementProgress;
+import net.minecraft.client.Minecraft;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
@@ -24,6 +26,7 @@ public final class QuestTracker {
 
     private static final Map<String, Status> CLIENT_STATES = new HashMap<>();
     private static final Map<String, Integer> CLIENT_KILLS = new HashMap<>();
+    private static final Map<String, Boolean> CLIENT_ADV_DONE = new HashMap<>();
 
     private static QuestWorldState state(Player player) {
         if (player == null) return null;
@@ -117,7 +120,6 @@ public final class QuestTracker {
         return CLIENT_KILLS.getOrDefault(entityId, 0);
     }
 
-    // --- fixed to use Holder<MobEffect> ---
     public static boolean hasEffect(Player player, String effectId) {
         if (player == null) return false;
         ResourceLocation rl = ResourceLocation.parse(effectId);
@@ -128,18 +130,29 @@ public final class QuestTracker {
     }
 
     public static boolean hasAdvancement(Player player, String advId) {
-        if (!(player instanceof ServerPlayer sp)) return false;
         ResourceLocation rl = ResourceLocation.parse(advId);
-        AdvancementHolder holder = sp.server.getAdvancements().get(rl);
-        if (holder == null) return false;
-        AdvancementProgress prog = sp.getAdvancements().getOrStartProgress(holder);
-        return prog.isDone();
+
+        if (player instanceof ServerPlayer sp) {
+            AdvancementHolder holder = sp.server.getAdvancements().get(rl);
+            if (holder == null) return false;
+            AdvancementProgress prog = sp.getAdvancements().getOrStartProgress(holder);
+            boolean done = prog.isDone();
+            CLIENT_ADV_DONE.put(rl.toString(), done);
+            return done;
+        }
+
+        if (player.level().isClientSide) {
+            return CLIENT_ADV_DONE.getOrDefault(rl.toString(), false);
+        }
+
+        return false;
     }
 
     public static boolean completeAndRedeem(QuestData.Quest q, ServerPlayer player) {
         QuestWorldState st = state(player);
         if (st == null) return false;
         if (st.get(q.id) == Status.REDEEMED) return false;
+
         if (q.rewards != null && q.rewards.items != null) {
             for (QuestData.RewardEntry r : q.rewards.items) {
                 ResourceLocation rl = ResourceLocation.parse(r.item);
@@ -149,6 +162,13 @@ public final class QuestTracker {
                 }
             }
         }
+
+        if (q.rewards != null && q.rewards.command != null && !q.rewards.command.isBlank()) {
+            String raw = q.rewards.command.startsWith("/") ? q.rewards.command.substring(1) : q.rewards.command;
+            CommandSourceStack source = player.createCommandSourceStack().withPermission(4);
+            player.server.getCommands().performPrefixedCommand(source, raw);
+        }
+
         st.set(q.id, Status.REDEEMED);
         return true;
     }
@@ -167,6 +187,7 @@ public final class QuestTracker {
         if (st != null) st.reset();
         CLIENT_STATES.clear();
         CLIENT_KILLS.clear();
+        CLIENT_ADV_DONE.clear();
     }
 
     public static void clientSetStatus(String questId, Status status) {
@@ -180,6 +201,7 @@ public final class QuestTracker {
     public static void clientClearAll() {
         CLIENT_STATES.clear();
         CLIENT_KILLS.clear();
+        CLIENT_ADV_DONE.clear();
     }
 
     public static void tickPlayer(Player player) {
