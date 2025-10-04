@@ -206,9 +206,6 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     if (iconItem != null) {
                         ItemStack st = new ItemStack(iconItem);
                         gg.renderItem(st, px - 2, curY[0] + 2);
-                        if (mouseX >= px - 2 && mouseX <= px + 14 && mouseY >= curY[0] + 2 && mouseY <= curY[0] + 18) {
-                            hoveredTooltips.add(st.getHoverName());
-                        }
                         px += 18;
                     }
 
@@ -225,72 +222,38 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
                     gg.drawString(mc.font, "Kill: " + have + "/" + t.count, x + 24, curY[0] + 6, color, false);
                     gg.renderItem(new ItemStack(Items.DIAMOND_SWORD), x + 4, curY[0] + 2);
-                    if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= curY[0] + 2 && mouseY <= curY[0] + 18) {
-                        hoveredTooltips.add(Component.literal(eName));
-                    }
                     curY[0] += LINE_ITEM_ROW;
 
                 } else if (t.isEffect()) {
                     ResourceLocation rl = ResourceLocation.parse(t.id);
-                    MobEffect eff = BuiltInRegistries.MOB_EFFECT.getOptional(rl).orElse(null);
-                    String eName = eff == null ? rl.toString() : Component.translatable(eff.getDescriptionId()).getString();
                     boolean has = QuestTracker.hasEffect(mc.player, t.id);
                     int color = has ? 0x55FF55 : 0xFF5555;
 
-                    String label = "Have effect: ";
-                    int labelW = mc.font.width(label);
-                    int iconX = x + 4 + labelW + 4;
-                    int iconY = curY[0] + 2;
-                    int nameX = iconX + 16 + 4;
-                    int wrapW = Math.max(1, w - (nameX - x) - 4);
+                    gg.drawString(mc.font, "Have effect:", x + 24, curY[0] + 6, color, false);
 
-                    gg.drawString(mc.font, label, x + 4, curY[0] + 6, color, false);
+                    // Custom texture binding
+                    ResourceLocation tex = ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/effects/" + rl.getPath() + ".png");
+                    gg.blit(tex, x + 4, curY[0] + 2, 0, 0, 16, 16, 16, 16);
 
-                    ItemStack icon = new ItemStack(Items.POTION);
-                    gg.renderItem(icon, iconX, iconY);
-                    if (mouseX >= iconX && mouseX <= iconX + 16 && mouseY >= iconY && mouseY <= iconY + 16) {
-                        hoveredTooltips.add(Component.literal(eName));
-                    }
-
-                    gg.drawWordWrap(mc.font, Component.literal(eName), nameX, curY[0] + 2, wrapW, color);
-                    int nameH = mc.font.wordWrapHeight(eName, wrapW);
-
-                    curY[0] += Math.max(LINE_ITEM_ROW, nameH + 8);
+                    curY[0] += LINE_ITEM_ROW;
 
                 } else if (t.isAdvancement()) {
                     ResourceLocation rl = ResourceLocation.parse(t.id);
-                    ItemStack icon = new ItemStack(Items.MOJANG_BANNER_PATTERN);
-                    String advName = rl.toString();
 
+                    ItemStack icon = new ItemStack(Items.MOJANG_BANNER_PATTERN);
                     AdvancementHolder adv = mc.getConnection() != null ? mc.getConnection().getAdvancements().get(rl) : null;
                     if (adv != null) {
                         DisplayInfo di = adv.value().display().orElse(null);
-                        if (di != null) {
-                            icon = di.getIcon();
-                            advName = di.getTitle().getString();
-                        }
+                        if (di != null) icon = di.getIcon();
                     }
 
                     boolean done = QuestTracker.hasAdvancement(mc.player, t.id);
                     int color = done ? 0x55FF55 : 0xFF5555;
 
-                    String label = "Achieve: ";
-                    int labelW = mc.font.width(label);
-                    int iconX = x + 4 + labelW + 4;
-                    int iconY = curY[0] + 2;
-                    int nameX = iconX + 16 + 4;
-                    int wrapW = Math.max(1, w - (nameX - x) - 4);
+                    gg.drawString(mc.font, "Complete advancement:", x + 24, curY[0] + 6, color, false);
+                    gg.renderItem(icon, x + 4, curY[0] + 2);
 
-                    gg.drawString(mc.font, label, x + 4, curY[0] + 6, color, false);
-                    gg.renderItem(icon, iconX, iconY);
-                    if (mouseX >= iconX && mouseX <= iconX + 16 && mouseY >= iconY && mouseY <= iconY + 16) {
-                        hoveredTooltips.add(Component.literal(advName));
-                    }
-
-                    gg.drawWordWrap(mc.font, Component.literal(advName), nameX, curY[0] + 2, wrapW, color);
-                    int nameH = mc.font.wordWrapHeight(advName, wrapW);
-
-                    curY[0] += Math.max(LINE_ITEM_ROW, nameH + 8);
+                    curY[0] += LINE_ITEM_ROW;
                 }
             }
             curY[0] += 2;
@@ -309,9 +272,6 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     ItemStack st = new ItemStack(item, Math.max(1, re.count));
                     gg.renderItem(st, x + 4, lineY);
                     gg.drawString(mc.font, "x" + st.getCount(), x + 24, lineY + 6, 0xA8FFA8, false);
-                    if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
-                        hoveredTooltips.add(st.getHoverName());
-                    }
                 } else {
                     gg.drawWordWrap(mc.font, Component.literal("- " + re.item + " x" + Math.max(1, re.count)), x + 4, lineY, w - 8, 0xA8FFA8);
                 }
@@ -321,10 +281,6 @@ public final class QuestDetailsPanel extends AbstractWidget {
         }
 
         gg.disableScissor();
-
-        for (Component tip : hoveredTooltips) {
-            gg.renderTooltip(mc.font, tip, mouseX, mouseY);
-        }
 
         boolean depsMet = QuestTracker.dependenciesMet(quest, mc.player);
         boolean red = QuestTracker.getStatus(quest, mc.player) == QuestTracker.Status.REDEEMED;
@@ -342,7 +298,6 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
     private int measureContentHeight(int panelWidth) {
         if (quest == null) return 0;
-
         int w = panelWidth;
         int y = 4;
 
@@ -357,40 +312,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
         }
 
         if (quest.completion != null && !quest.completion.targets.isEmpty()) {
-            for (QuestData.Target t : quest.completion.targets) {
-                if (t.isEffect()) {
-                    ResourceLocation rl = ResourceLocation.parse(t.id);
-                    MobEffect eff = BuiltInRegistries.MOB_EFFECT.getOptional(rl).orElse(null);
-                    String eName = eff == null ? rl.toString() : Component.translatable(eff.getDescriptionId()).getString();
-
-                    String label = "Have effect: ";
-                    int labelW = mc.font.width(label);
-                    int offsetX = 4 + labelW + 4 + 16 + 4;
-                    int wrapW = Math.max(1, w - offsetX - 4);
-                    int nameH = mc.font.wordWrapHeight(eName, wrapW);
-                    y += Math.max(LINE_ITEM_ROW, nameH + 8);
-
-                } else if (t.isAdvancement()) {
-                    ResourceLocation rl = ResourceLocation.parse(t.id);
-                    String advName = rl.toString();
-                    AdvancementHolder adv = mc.getConnection() != null ? mc.getConnection().getAdvancements().get(rl) : null;
-                    if (adv != null) {
-                        DisplayInfo di = adv.value().display().orElse(null);
-                        if (di != null) advName = di.getTitle().getString();
-                    }
-
-                    String label = "Achieve: ";
-                    int labelW = mc.font.width(label);
-                    int offsetX = 4 + labelW + 4 + 16 + 4;
-                    int wrapW = Math.max(1, w - offsetX - 4);
-                    int nameH = mc.font.wordWrapHeight(advName, wrapW);
-                    y += Math.max(LINE_ITEM_ROW, nameH + 8);
-
-                } else {
-                    y += LINE_ITEM_ROW;
-                }
-            }
-            y += 2;
+            y += quest.completion.targets.size() * LINE_ITEM_ROW + 2;
         }
 
         if (quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty()) {
