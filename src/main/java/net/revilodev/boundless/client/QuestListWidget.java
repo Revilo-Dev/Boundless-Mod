@@ -1,3 +1,4 @@
+
 package net.revilodev.boundless.client;
 
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -94,6 +95,7 @@ public final class QuestListWidget extends AbstractWidget {
             if (iconItem != null) {
                 gg.renderItem(new ItemStack(iconItem), this.getX() + 6, top + 5);
             }
+
             String name = q.name;
             int maxWidth = this.width - 42;
             int nameWidth = mc.font.width(name);
@@ -138,7 +140,7 @@ public final class QuestListWidget extends AbstractWidget {
         if (!this.visible || !this.active || !this.isMouseOver(mouseX, mouseY)) return false;
         if (button != 0) return false;
         if (mc.player == null) return false;
-        int localY = (int) (mouseY - this.getY() + scrollY);
+        int localY = (int)(mouseY - this.getY() + scrollY);
         int idx = localY / (rowHeight + rowPad);
         int visibleIndex = 0;
         for (QuestData.Quest q : quests) {

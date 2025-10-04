@@ -35,7 +35,6 @@ public final class BoundlessMod {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public BoundlessMod(ModContainer modContainer, IEventBus modBus) {
-        // ✅ Modern NeoForge config registration (no ModLoadingContext)
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC, MOD_ID + "-common.toml");
 
         // Setup listeners

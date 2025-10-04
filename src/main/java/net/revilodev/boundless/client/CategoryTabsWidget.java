@@ -1,3 +1,4 @@
+// src/main/java/net/revilodev/boundless/client/CategoryTabsWidget.java
 package net.revilodev.boundless.client;
 
 import net.minecraft.client.Minecraft;
@@ -43,8 +44,6 @@ public final class CategoryTabsWidget extends AbstractWidget {
 
     public void setCategories(List<QuestData.Category> list) {
         categories.clear();
-
-        // filter disabled categories
         for (QuestData.Category c : list) {
             if (!Config.disabledCategories().contains(c.id)) {
                 categories.add(c);

@@ -103,6 +103,7 @@ public final class BoundlessNetwork {
     // --------------------- SYNC LOGIC ---------------------
 
     public static void syncPlayer(ServerPlayer player) {
+
         syncClear(player);
 
         QuestWorldState qs = QuestWorldState.get(player.serverLevel());

@@ -1,0 +1,15 @@
+{
+  "category": "minecraft",
+  "id": "test1",
+  "name": "World Border Lv2",
+  "order": "01",
+  "icon": "minecraft:copper_block",
+  "description": "Expand Your world by 10 blocks.",
+  "dependencies": "",
+  "optional": "false",
+  "type": "advancement",
+  "completion": {
+    "item": "minecraft:cobblestone", "count": 16
+  },
+  "reward": { "command": "/worldborder add 10" }
+}
