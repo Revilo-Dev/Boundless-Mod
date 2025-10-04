@@ -7,6 +7,7 @@ import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import net.revilodev.boundless.Config;
 import net.revilodev.boundless.quest.QuestData;
 
 import java.util.ArrayList;
@@ -42,7 +43,13 @@ public final class CategoryTabsWidget extends AbstractWidget {
 
     public void setCategories(List<QuestData.Category> list) {
         categories.clear();
-        categories.addAll(list);
+
+        // filter disabled categories
+        for (QuestData.Category c : list) {
+            if (!Config.disabledCategories().contains(c.id)) {
+                categories.add(c);
+            }
+        }
     }
 
     public void setSelected(String id) {

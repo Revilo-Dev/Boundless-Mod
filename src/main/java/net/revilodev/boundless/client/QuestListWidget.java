@@ -9,6 +9,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.revilodev.boundless.Config;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestTracker;
 
@@ -57,6 +58,7 @@ public final class QuestListWidget extends AbstractWidget {
     }
 
     private boolean matchesCategory(QuestData.Quest q) {
+        if (Config.disabledCategories().contains(q.category)) return false;
         if ("all".equalsIgnoreCase(category)) return true;
         return q.category != null && q.category.equalsIgnoreCase(category);
     }
@@ -92,10 +94,8 @@ public final class QuestListWidget extends AbstractWidget {
             if (iconItem != null) {
                 gg.renderItem(new ItemStack(iconItem), this.getX() + 6, top + 5);
             }
-
-            // quest name with ellipsis if too long
             String name = q.name;
-            int maxWidth = this.width - 42; // 36 + 6px padding
+            int maxWidth = this.width - 42;
             int nameWidth = mc.font.width(name);
             if (nameWidth > maxWidth) {
                 String trimmed = mc.font.plainSubstrByWidth(name, maxWidth - mc.font.width("...")) + "...";
@@ -138,7 +138,7 @@ public final class QuestListWidget extends AbstractWidget {
         if (!this.visible || !this.active || !this.isMouseOver(mouseX, mouseY)) return false;
         if (button != 0) return false;
         if (mc.player == null) return false;
-        int localY = (int)(mouseY - this.getY() + scrollY);
+        int localY = (int) (mouseY - this.getY() + scrollY);
         int idx = localY / (rowHeight + rowPad);
         int visibleIndex = 0;
         for (QuestData.Quest q : quests) {

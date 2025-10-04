@@ -10,9 +10,9 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
-import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -34,20 +34,25 @@ public final class BoundlessMod {
     public static final String MOD_ID = "boundless";
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    public BoundlessMod(ModContainer modContainer, IEventBus modEventBus) {
-        modEventBus.addListener(this::commonSetup);
+    public BoundlessMod(ModContainer modContainer, IEventBus modBus) {
+        // ✅ Modern NeoForge config registration (no ModLoadingContext)
+        modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC, MOD_ID + "-common.toml");
 
-        // Client-only setup
-        if (FMLEnvironment.dist == Dist.CLIENT) {
-            modEventBus.addListener(this::clientSetup);
+        // Setup listeners
+        modBus.addListener(this::commonSetup);
+        modBus.addListener(this::addCreative);
+
+        if (net.neoforged.fml.loading.FMLEnvironment.dist == Dist.CLIENT) {
+            modBus.addListener(this::clientSetup);
         }
-        // Network registration
-        BoundlessNetwork.bootstrap(modEventBus);
-        // Register config
-        net.revilodev.boundless.config.BoundlessConfig.register();
-        // Subscribe this mod class to global events
+
+        // Network
+        BoundlessNetwork.bootstrap(modBus);
+
+        // Global events
         NeoForge.EVENT_BUS.register(this);
-        // Register player tick
+
+        // Quest tick events
         NeoForge.EVENT_BUS.addListener(QuestEvents::onPlayerTick);
     }
 
@@ -63,6 +68,7 @@ public final class BoundlessMod {
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseScrolled);
     }
 
+    private void addCreative(BuildCreativeModeTabContentsEvent event) {}
 
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
