@@ -24,10 +24,11 @@ public final class QuestTracker {
 
     private static final Map<String, Status> CLIENT_STATES = new HashMap<>();
     private static final Map<String, Integer> CLIENT_KILLS = new HashMap<>();
+    private static net.minecraft.world.level.Level LAST_CLIENT_LEVEL = null;
 
     private static QuestWorldState state(Player player) {
         if (player == null) return null;
-        if (player.level() instanceof ServerLevel server) return QuestWorldState.get(server);
+        if (player.level() instanceof ServerLevel serverLevel) return QuestWorldState.get(serverLevel);
         return null;
     }
 
@@ -61,7 +62,6 @@ public final class QuestTracker {
         if (player == null || q == null || q.completion == null) return false;
         if (!dependenciesMet(q, player)) return false;
         if (q.completion.targets == null || q.completion.targets.isEmpty()) return false;
-
         for (QuestData.Target t : q.completion.targets) {
             if (t.isItem() && getCountInInventory(t.id, player) < t.count) return false;
             if (t.isEntity() && getKillCount(player, t.id) < t.count) return false;
@@ -117,7 +117,6 @@ public final class QuestTracker {
         return CLIENT_KILLS.getOrDefault(entityId, 0);
     }
 
-    // --- fixed to use Holder<MobEffect> ---
     public static boolean hasEffect(Player player, String effectId) {
         if (player == null) return false;
         ResourceLocation rl = ResourceLocation.parse(effectId);
@@ -185,6 +184,10 @@ public final class QuestTracker {
     public static void tickPlayer(Player player) {
         if (player == null) return;
         if (!player.level().isClientSide) return;
+        if (LAST_CLIENT_LEVEL != player.level()) {
+            clientClearAll();
+            LAST_CLIENT_LEVEL = player.level();
+        }
         QuestData.loadClient(false);
         for (QuestData.Quest q : QuestData.all()) {
             Status current = getStatus(q, player);

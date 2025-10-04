@@ -13,7 +13,8 @@ public final class KillCounterState extends SavedData {
     private final Map<String, Map<String, Integer>> byPlayer = new HashMap<>();
 
     public static KillCounterState get(ServerLevel level) {
-        return level.getDataStorage().computeIfAbsent(
+        ServerLevel overworld = level.getServer().overworld();
+        return overworld.getDataStorage().computeIfAbsent(
                 new SavedData.Factory<>(KillCounterState::new, KillCounterState::load),
                 "boundless_kills"
         );

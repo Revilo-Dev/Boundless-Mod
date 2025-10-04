@@ -1,4 +1,6 @@
 {
+  "//CATEGORY": "The category of the quest, either custom or just minecraft, make sure to define your own custom category if set to anything other than minecraft",
+  "category": "minecraft",
   "//ID": "A unique identifier for this quest. This should be a string that clearly identifies the quest",
   "id": "",
 

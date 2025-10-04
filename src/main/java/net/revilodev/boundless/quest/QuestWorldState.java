@@ -12,7 +12,8 @@ public class QuestWorldState extends SavedData {
     private final Map<String, String> states = new HashMap<>();
 
     public static QuestWorldState get(ServerLevel level) {
-        return level.getDataStorage().computeIfAbsent(
+        ServerLevel overworld = level.getServer().overworld();
+        return overworld.getDataStorage().computeIfAbsent(
                 new SavedData.Factory<>(QuestWorldState::new, QuestWorldState::load),
                 "boundless_quests"
         );

@@ -12,7 +12,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.effect.MobEffect; // <-- added
+import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -38,12 +38,24 @@ public final class QuestDetailsPanel extends AbstractWidget {
     private float scrollY = 0f;
     private int measuredContentHeight = 0;
 
+    private final List<DepClickRegion> depRegions = new ArrayList<>();
+
+    private static final class DepClickRegion {
+        final int x, y, w, h;
+        final String questId;
+        DepClickRegion(int x, int y, int w, int h, String questId) {
+            this.x = x; this.y = y; this.w = w; this.h = h;
+            this.questId = questId;
+        }
+        boolean contains(double mx, double my) {
+            return mx >= x && mx <= x + w && my >= y && my <= y + h;
+        }
+    }
+
     public QuestDetailsPanel(int x, int y, int w, int h, Runnable onBack) {
         super(x, y, w, h, Component.empty());
         this.onBack = onBack;
-        this.back = new BackButton(getX(), getY(), () -> {
-            if (this.onBack != null) this.onBack.run();
-        });
+        this.back = new BackButton(getX(), getY(), () -> { if (this.onBack != null) this.onBack.run(); });
         this.back.visible = false;
         this.back.active = false;
         this.complete = new CompleteButton(getX(), getY(), () -> {
@@ -90,6 +102,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
     protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
         if (!this.visible || quest == null) return;
 
+        depRegions.clear();
+
         int x = this.getX();
         int y = this.getY();
         int w = this.width;
@@ -121,9 +135,37 @@ public final class QuestDetailsPanel extends AbstractWidget {
         if (!quest.dependencies.isEmpty()) {
             gg.drawWordWrap(mc.font, Component.literal("Requires:"), x + 4, curY[0], w - 8, 0xFFD37F);
             curY[0] += mc.font.wordWrapHeight("Requires:", w - 8) + 2;
-            for (String dep : quest.dependencies) {
-                gg.drawWordWrap(mc.font, Component.literal("- " + dep), x + 10, curY[0], w - 16, 0xFFD37F);
-                curY[0] += mc.font.wordWrapHeight("- " + dep, w - 16) + 2;
+            for (String depId : quest.dependencies) {
+                QuestData.Quest depQuest = QuestData.byId(depId).orElse(null);
+                String depName = depQuest != null ? depQuest.name : depId;
+
+                int lineY = curY[0];
+                int textX = x + 24;
+                int textW = mc.font.width(depName);
+
+                int color = 0xFF5555;
+                if (depQuest != null && mc.player != null) {
+                    var status = QuestTracker.getStatus(depQuest, mc.player);
+                    if (status == QuestTracker.Status.REDEEMED) {
+                        color = 0x55FF55;
+                    }
+                }
+
+                if (depQuest != null) {
+                    depQuest.iconItem().ifPresent(icon -> gg.renderItem(new ItemStack(icon), x + 4, lineY));
+                }
+
+                gg.drawString(mc.font, depName, textX, lineY + 4, color, false);
+                gg.fill(textX, lineY + 14, textX + textW, lineY + 15, color);
+
+                DepClickRegion region = new DepClickRegion(textX, lineY, textW, mc.font.lineHeight + 2, depId);
+                depRegions.add(region);
+
+                if (region.contains(mouseX, mouseY)) {
+                    gg.renderTooltip(mc.font, Component.literal("View"), mouseX, mouseY);
+                }
+
+                curY[0] += LINE_ITEM_ROW;
             }
             curY[0] += 2;
         }
@@ -174,9 +216,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     String p = "Kill: " + eName + " " + have + "/" + t.count;
                     gg.drawWordWrap(mc.font, Component.literal(p), x + 4, curY[0], w - 8, color);
                     curY[0] += mc.font.wordWrapHeight(p, w - 8) + 4;
-
-                    // --- added: display for effect target ---
-                } else if ("effect".equals(t.kind)) {
+                } else if (t.isEffect()) {
                     ResourceLocation rl = ResourceLocation.parse(t.id);
                     MobEffect eff = BuiltInRegistries.MOB_EFFECT.getOptional(rl).orElse(null);
                     String eName = eff == null ? rl.toString() : Component.translatable(eff.getDescriptionId()).getString();
@@ -185,9 +225,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     String line = "Effect: " + eName + (has ? " ✔" : " ✘");
                     gg.drawWordWrap(mc.font, Component.literal(line), x + 4, curY[0], w - 8, color);
                     curY[0] += mc.font.wordWrapHeight(line, w - 8) + 4;
-
-                    // --- added: display for advancement target ---
-                } else if ("advancement".equals(t.kind)) {
+                } else if (t.isAdvancement()) {
                     boolean done = QuestTracker.hasAdvancement(mc.player, t.id);
                     int color = done ? 0x55FF55 : 0xFF5555;
                     String line = "Advancement: " + t.id + (done ? " ✔" : " ✘");
@@ -251,8 +289,10 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         if (!quest.dependencies.isEmpty()) {
             y += mc.font.wordWrapHeight("Requires:", w - 8) + 2;
-            for (String dep : quest.dependencies) {
-                y += mc.font.wordWrapHeight("- " + dep, w - 16) + 2;
+            for (String depId : quest.dependencies) {
+                QuestData.Quest depQuest = QuestData.byId(depId).orElse(null);
+                String depName = depQuest != null ? depQuest.name : depId;
+                y += mc.font.wordWrapHeight(depName, w - 8) + 2;
             }
             y += 2;
         }
@@ -264,9 +304,9 @@ public final class QuestDetailsPanel extends AbstractWidget {
                 } else if (t.isEntity()) {
                     String p = "Kill: x/x";
                     y += mc.font.wordWrapHeight(p, w - 8) + 4;
-                } else if ("effect".equals(t.kind)) { // added
+                } else if (t.isEffect()) {
                     y += mc.font.wordWrapHeight("Effect: name", w - 8) + 4;
-                } else if ("advancement".equals(t.kind)) { // added
+                } else if (t.isAdvancement()) {
                     y += mc.font.wordWrapHeight("Advancement: id", w - 8) + 4;
                 }
             }
@@ -313,7 +353,20 @@ public final class QuestDetailsPanel extends AbstractWidget {
         return mouseScrolled(mouseX, mouseY, deltaY);
     }
 
-    public boolean mouseClicked(double mouseX, double mouseY, int button) { return false; }
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (!this.visible || !this.active) return false;
+        for (DepClickRegion r : depRegions) {
+            if (r.contains(mouseX, mouseY)) {
+                QuestData.Quest depQuest = QuestData.byId(r.questId).orElse(null);
+                if (depQuest != null) {
+                    setQuest(depQuest);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     protected void updateWidgetNarration(NarrationElementOutput narration) {}
 
     private static final class BackButton extends AbstractButton {
@@ -347,11 +400,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
             super(x, y, 68, 20, Component.translatable("quest.boundless.complete"));
             this.onPress = onPress;
         }
-        public void onPress() {
-            if (onPress != null) onPress.run();
-            this.active = false;
-            this.visible = false;
-        }
+        public void onPress() { if (onPress != null) onPress.run(); this.active = false; this.visible = false; }
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
             boolean hovered = this.active && this.isMouseOver(mouseX, mouseY);
             ResourceLocation tex = !this.active ? TEX_DISABLED : (hovered ? TEX_HOVER : TEX_NORMAL);
@@ -381,15 +430,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
             this.onPress = onPress;
         }
 
-        public void setOptionalAllowed(boolean v) {
-            this.optionalAllowed = v;
-        }
-
-        public void onPress() {
-            if (this.active && onPress != null) onPress.run();
-            this.active = false;
-            this.visible = false;
-        }
+        public void setOptionalAllowed(boolean v) { this.optionalAllowed = v; }
+        public void onPress() { if (this.active && onPress != null) onPress.run(); this.active = false; this.visible = false; }
 
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
             boolean hovered = this.isMouseOver(mouseX, mouseY);
@@ -399,7 +441,6 @@ public final class QuestDetailsPanel extends AbstractWidget {
                 gg.renderTooltip(Minecraft.getInstance().font, Component.literal("This quest is not optional"), mouseX, mouseY);
             }
         }
-
         protected void updateWidgetNarration(NarrationElementOutput narration) {}
     }
 }
