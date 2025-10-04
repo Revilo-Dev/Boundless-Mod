@@ -36,20 +36,18 @@ public final class BoundlessMod {
 
     public BoundlessMod(ModContainer modContainer, IEventBus modEventBus) {
         modEventBus.addListener(this::commonSetup);
-        modEventBus.addListener(this::addCreative);
 
         // Client-only setup
         if (FMLEnvironment.dist == Dist.CLIENT) {
             modEventBus.addListener(this::clientSetup);
         }
-
         // Network registration
         BoundlessNetwork.bootstrap(modEventBus);
-
+        // Register config
+        net.revilodev.boundless.config.BoundlessConfig.register();
         // Subscribe this mod class to global events
         NeoForge.EVENT_BUS.register(this);
-
-        // 🔹 Register player tick (server+client) without annotations
+        // Register player tick
         NeoForge.EVENT_BUS.addListener(QuestEvents::onPlayerTick);
     }
 
@@ -58,7 +56,6 @@ public final class BoundlessMod {
     }
 
     private void clientSetup(final FMLClientSetupEvent event) {
-        // Register client GUI hooks safely
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenInit);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenClosing);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPost);
@@ -66,9 +63,6 @@ public final class BoundlessMod {
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseScrolled);
     }
 
-    private void addCreative(BuildCreativeModeTabContentsEvent event) {
-        // creative tab entries go here
-    }
 
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {

@@ -9,13 +9,15 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class QuestWorldState extends SavedData {
+    private static final String DATA_NAME = "boundless_quests";
+
     private final Map<String, String> states = new HashMap<>();
 
     public static QuestWorldState get(ServerLevel level) {
         ServerLevel overworld = level.getServer().overworld();
         return overworld.getDataStorage().computeIfAbsent(
                 new SavedData.Factory<>(QuestWorldState::new, QuestWorldState::load),
-                "boundless_quests"
+                DATA_NAME
         );
     }
 
@@ -29,6 +31,7 @@ public class QuestWorldState extends SavedData {
         return data;
     }
 
+    @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider provider) {
         for (Map.Entry<String, String> e : states.entrySet()) {
             tag.putString(e.getKey(), e.getValue());

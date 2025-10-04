@@ -29,6 +29,8 @@ public final class BoundlessNetwork {
         modBus.addListener(BoundlessNetwork::register);
     }
 
+    // --------------------- PAYLOADS ---------------------
+
     public record RedeemPayload(String questId) implements CustomPacketPayload {
         public static final Type<RedeemPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "redeem"));
         public static final StreamCodec<ByteBuf, RedeemPayload> STREAM_CODEC = StreamCodec.composite(
@@ -86,6 +88,8 @@ public final class BoundlessNetwork {
         public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
+    // --------------------- REGISTRATION ---------------------
+
     public static void register(final RegisterPayloadHandlersEvent event) {
         PayloadRegistrar reg = event.registrar("1").executesOn(HandlerThread.MAIN);
         reg.playToServer(RedeemPayload.TYPE, RedeemPayload.STREAM_CODEC, BoundlessNetwork::handleRedeem);
@@ -96,11 +100,16 @@ public final class BoundlessNetwork {
         reg.playToClient(ToastPayload.TYPE, ToastPayload.STREAM_CODEC, BoundlessNetwork::handleToast);
     }
 
+    // --------------------- SYNC LOGIC ---------------------
+
     public static void syncPlayer(ServerPlayer player) {
+        syncClear(player);
+
         QuestWorldState qs = QuestWorldState.get(player.serverLevel());
         for (Map.Entry<String, String> e : qs.snapshot().entrySet()) {
             PacketDistributor.sendToPlayer(player, new SyncStatusPayload(e.getKey(), e.getValue()));
         }
+
         Map<String, Integer> kills = KillCounterState.get(player.serverLevel()).snapshotFor(player.getUUID());
         List<KillEntry> list = new ArrayList<>();
         for (Map.Entry<String, Integer> e : kills.entrySet()) list.add(new KillEntry(e.getKey(), e.getValue()));
@@ -115,6 +124,8 @@ public final class BoundlessNetwork {
         PacketDistributor.sendToPlayer(player, new ToastPayload(questId));
     }
 
+    // --------------------- HANDLERS ---------------------
+
     private static void handleRedeem(final RedeemPayload payload, final IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer sp)) return;
@@ -128,7 +139,6 @@ public final class BoundlessNetwork {
             });
         });
     }
-
 
     private static void handleReject(final RejectPayload payload, final IPayloadContext ctx) {
         ctx.enqueueWork(() -> {

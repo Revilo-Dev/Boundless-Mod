@@ -138,6 +138,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
             curY[0] += mc.font.wordWrapHeight(quest.description, w - 8) + 8;
         }
 
+        // Dependencies
         if (!quest.dependencies.isEmpty()) {
             gg.drawWordWrap(mc.font, Component.literal("Requires:"), x + 4, curY[0], w - 8, 0xFFD37F);
             curY[0] += mc.font.wordWrapHeight("Requires:", w - 8) + 2;
@@ -172,6 +173,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
             curY[0] += 2;
         }
 
+
         if (quest.completion != null && !quest.completion.targets.isEmpty() && mc.player != null) {
             for (QuestData.Target t : quest.completion.targets) {
                 if (t.isItem()) {
@@ -189,17 +191,20 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
                     String prefix = "submission".equals(quest.type) ? "Submit: " : "Collect: ";
                     gg.drawString(mc.font, prefix, x + 4, curY[0] + 6, color, false);
+
                     int px = x + 4 + mc.font.width(prefix) + 2;
 
                     Item iconItem;
                     if (treatAsTag) {
                         List<Item> tagItems = resolveTagItems(rl);
-                        iconItem = tagItems.isEmpty() ? null : tagItems.get((int) ((mc.level != null ? mc.level.getGameTime() : 0) / 20 % tagItems.size()));
+                        iconItem = tagItems.isEmpty() ? null : tagItems.get((int)((mc.level != null ? mc.level.getGameTime() : 0) / 20 % tagItems.size()));
                     } else iconItem = direct;
 
                     if (iconItem != null) {
                         ItemStack st = new ItemStack(iconItem);
                         gg.renderItem(st, px - 2, curY[0] + 2);
+                        if (mouseX >= px - 2 && mouseX <= px + 14 && mouseY >= curY[0] + 2 && mouseY <= curY[0] + 18)
+                            hoveredTooltips.add(st.getHoverName());
                         px += 18;
                     }
 
@@ -212,9 +217,10 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     String eName = et == null ? rl.toString() : et.getDescription().getString();
                     int have = QuestTracker.getKillCount(mc.player, t.id);
                     int color = have >= t.count ? 0x55FF55 : 0xFF5555;
+
                     gg.drawString(mc.font, "Kill: " + have + "/" + t.count, x + 24, curY[0] + 6, color, false);
                     gg.renderItem(new ItemStack(Items.DIAMOND_SWORD), x + 4, curY[0] + 2);
-                    if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= curY[0] && mouseY <= curY[0] + 18)
+                    if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= curY[0] + 2 && mouseY <= curY[0] + 18)
                         hoveredTooltips.add(Component.literal(eName));
                     curY[0] += LINE_ITEM_ROW;
 
@@ -241,6 +247,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     ResourceLocation rl = ResourceLocation.parse(t.id);
                     ItemStack icon = new ItemStack(Items.MOJANG_BANNER_PATTERN);
                     String advName = rl.toString();
+
                     AdvancementHolder adv = mc.getConnection() != null ? mc.getConnection().getAdvancements().get(rl) : null;
                     if (adv != null) {
                         DisplayInfo di = adv.value().display().orElse(null);
@@ -253,9 +260,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     boolean done = QuestTracker.hasAdvancement(mc.player, t.id);
                     int color = done ? 0x55FF55 : 0xFF5555;
 
-                    String label = "Complete advancement:";
+                    String label = "Achieve:";
                     gg.drawString(mc.font, label, x + 4, curY[0] + 6, color, false);
-
                     int iconX = x + 4 + mc.font.width(label) + 6;
                     gg.renderItem(icon, iconX, curY[0] + 2);
 
@@ -267,6 +273,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
             }
             curY[0] += 2;
         }
+
 
         if (quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty()) {
             gg.drawWordWrap(mc.font, Component.literal("Reward:"), x + 4, curY[0], w - 8, 0xA8FFA8);
@@ -280,6 +287,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     ItemStack st = new ItemStack(item, Math.max(1, re.count));
                     gg.renderItem(st, x + 4, lineY);
                     gg.drawString(mc.font, "x" + st.getCount(), x + 24, lineY + 6, 0xA8FFA8, false);
+                    if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16)
+                        hoveredTooltips.add(st.getHoverName());
                 } else gg.drawWordWrap(mc.font, Component.literal("- " + re.item + " x" + Math.max(1, re.count)), x + 4, lineY, w - 8, 0xA8FFA8);
                 curY[0] += LINE_ITEM_ROW;
             }
@@ -287,9 +296,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
         }
 
         gg.disableScissor();
-
-        for (Component tip : hoveredTooltips)
-            gg.renderTooltip(mc.font, tip, mouseX, mouseY);
+        for (Component tip : hoveredTooltips) gg.renderTooltip(mc.font, tip, mouseX, mouseY);
 
         boolean depsMet = QuestTracker.dependenciesMet(quest, mc.player);
         boolean red = QuestTracker.getStatus(quest, mc.player) == QuestTracker.Status.REDEEMED;
@@ -364,7 +371,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
     protected void updateWidgetNarration(NarrationElementOutput narration) {}
 
-    // --- Buttons unchanged ---
+
     private static final class BackButton extends AbstractButton {
         private static final ResourceLocation TEX_NORMAL = ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_back_button.png");
         private static final ResourceLocation TEX_HOVER = ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_back_highlighted.png");
