@@ -250,12 +250,26 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     ItemStack icon = new ItemStack(Items.MOJANG_BANNER_PATTERN);
                     String advName = rl.toString();
 
-                    AdvancementHolder adv = mc.getConnection() != null ? mc.getConnection().getAdvancements().get(rl) : null;
-                    if (adv != null) {
-                        DisplayInfo di = adv.value().display().orElse(null);
-                        if (di != null) {
-                            icon = di.getIcon();
+                    AdvancementHolder holder = null;
+
+                    if (mc.getConnection() != null) {
+                        holder = mc.getConnection().getAdvancements().get(rl);
+                    }
+
+
+                    if (holder == null && mc.hasSingleplayerServer()) {
+                        var server = mc.getSingleplayerServer();
+                        if (server != null) {
+                            holder = server.getAdvancements().get(rl);
+                        }
+                    }
+
+                    if (holder != null) {
+                        var displayOpt = holder.value().display();
+                        if (displayOpt.isPresent()) {
+                            DisplayInfo di = displayOpt.get();
                             advName = di.getTitle().getString();
+                            icon = di.getIcon();
                         }
                     }
 
@@ -270,6 +284,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
                     curY[0] += LINE_ITEM_ROW;
                 }
+
+
             }
             curY[0] += 2;
         }

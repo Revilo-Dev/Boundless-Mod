@@ -3,7 +3,7 @@
   "id": "blazing",
   "name": "Blazing",
   "icon": "minecraft:blaze_rod",
-  "description": "Collect blaze rods and create a brewing stand",
+  "description": "Obtain Enough Blaze Rods For Eyes Of Ender And Brewing",
   "dependencies": "the_nether",
   "optional": "false",
   "type": "collection",
@@ -11,7 +11,7 @@
     "items": [
       {
         "item": "minecraft:blaze_rod",
-        "count": 16
+        "count": 14
       }
     ]
   },

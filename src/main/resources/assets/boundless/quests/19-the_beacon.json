@@ -3,7 +3,7 @@
   "id": "the_beacon",
   "name": "The Beacon",
   "icon": "minecraft:beacon",
-  "description": "Harness the power of a beacon to empower your world.",
+  "description": "Create A Beacon To Obtain An Infinite Status Effect In A Ranged Area",
   "dependencies": "skys_the_limit",
   "optional": "true",
   "type": "collection",

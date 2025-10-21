@@ -3,7 +3,7 @@
   "id": "brew_master",
   "name": "Brew master",
   "icon": "minecraft:brewing_stand",
-  "description": "Brew your first potion with a brewing stand.",
+  "description": "Use The Brewing Stand To Brew Your First Potion",
   "dependencies": "blazing",
   "optional": "true",
   "type": "collection",

@@ -3,7 +3,7 @@
   "id": "artisan",
   "name": "Artisan",
   "icon": "minecraft:anvil",
-  "description": "Obtain an anvil to repair and enchant your gear.",
+  "description": "Obtain An Anvil In Order To Repair, Combine And Enchant Gear",
   "dependencies": "iron_age",
   "optional": "false",
   "type": "collection",
@@ -11,6 +11,6 @@
     "item": "minecraft:anvil", "count": 1
   },
   "reward": {
-    "item": "minecraft:iron_ingot", "count": 10
+    "item": "minecraft:bottle_of_experience", "count": 32
   }
 }

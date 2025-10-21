@@ -3,7 +3,7 @@
   "id": "skys_the_limit",
   "name": "Sky’s the Limit",
   "icon": "minecraft:elytra",
-  "description": "Take to the skies with the elytra.",
+  "description": "Obtain An Elytra, Elytras Can Be Used For Gliding Or Flying With Rockets",
   "dependencies": "shulker_storage",
   "optional": "false",
   "type": "collection",

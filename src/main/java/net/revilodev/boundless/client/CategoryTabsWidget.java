@@ -29,6 +29,7 @@ public final class CategoryTabsWidget extends AbstractWidget {
     private int cellW = 26;
     private int cellH = 26;
     private int gap = 2;
+    private static final int MAX_TABS = 5;
 
     public CategoryTabsWidget(int x, int y, int w, int h, Consumer<String> onSelect) {
         super(x, y, w, h, Component.empty());
@@ -44,10 +45,12 @@ public final class CategoryTabsWidget extends AbstractWidget {
 
     public void setCategories(List<QuestData.Category> list) {
         categories.clear();
+        int count = 0;
         for (QuestData.Category c : list) {
-            if (!Config.disabledCategories().contains(c.id)) {
-                categories.add(c);
-            }
+            if (Config.disabledCategories().contains(c.id)) continue;
+            categories.add(c);
+            count++;
+            if (count >= MAX_TABS) break;
         }
     }
 
@@ -69,6 +72,7 @@ public final class CategoryTabsWidget extends AbstractWidget {
             boolean hover = mouseX >= x && mouseX < x + cellW && mouseY >= top && mouseY < top + cellH;
             if (hover) gg.renderTooltip(mc.font, Component.literal(c.name), mouseX, mouseY);
             i++;
+            if (i >= MAX_TABS) break;
         }
     }
 
@@ -77,7 +81,7 @@ public final class CategoryTabsWidget extends AbstractWidget {
         if (button != 0) return false;
         int x = getX();
         int y = getY();
-        for (int i = 0; i < categories.size(); i++) {
+        for (int i = 0; i < Math.min(categories.size(), MAX_TABS); i++) {
             int top = y + i * (cellH + gap);
             if (mouseX >= x && mouseX < x + cellW && mouseY >= top && mouseY < top + cellH) {
                 String id = categories.get(i).id;

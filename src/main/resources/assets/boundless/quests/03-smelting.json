@@ -3,7 +3,7 @@
   "id": "smelting",
   "name": "Smelting",
   "icon": "minecraft:furnace",
-  "description": "Build a furnace to cook food and smelt ores.",
+  "description": "Create A Furnace To Smelt Ores and Cook Food",
   "dependencies": "stone_age",
   "optional": "false",
   "type": "collection",

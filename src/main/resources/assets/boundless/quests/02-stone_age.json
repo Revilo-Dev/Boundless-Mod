@@ -3,7 +3,7 @@
   "id": "stone_age",
   "name": "Stone Age",
   "icon": "minecraft:stone",
-  "description": "Mine 16 cobblestone to progress to stone tools",
+  "description": "Collect 16 Pieces Of Cobblestone, Create Your First Set Of Stone Tools",
   "dependencies": "getting_started",
   "optional": "false",
   "type": "submit",

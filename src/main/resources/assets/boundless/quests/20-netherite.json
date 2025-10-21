@@ -3,7 +3,7 @@
   "id": "netherite",
   "name": "Netherite",
   "icon": "minecraft:netherite_chestplate",
-  "description": "Progress to the best gear in the game.",
+  "description": "Obtain A Full Set Of Netherite Gear",
   "dependencies": "skys_the_limit",
   "optional": "false",
   "type": "collection",

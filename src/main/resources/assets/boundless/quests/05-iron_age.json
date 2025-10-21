@@ -3,7 +3,7 @@
   "id": "iron_age",
   "name": "Iron Age",
   "icon": "minecraft:iron_ingot",
-  "description": "Iron is the first set of reliable gear, craft a pickaxe, sword and chestplate.",
+  "description": "Create A Set Of Iron Tools, Earn Extra Iron Ingots As A Bonus",
   "dependencies": "first_night",
   "optional": "false",
   "type": "collection",

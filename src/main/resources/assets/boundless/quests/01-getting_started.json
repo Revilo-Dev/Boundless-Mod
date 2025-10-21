@@ -4,7 +4,7 @@
   "name": "Getting Started",
   "order": "01",
   "icon": "minecraft:crafting_table",
-  "description": "Craft your first workbench. Every adventure starts with a block of wood.",
+  "description": "Create Your First Crafting Table",
   "dependencies": "",
   "optional": "false",
   "type": "collection",

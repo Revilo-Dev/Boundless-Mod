@@ -1,10 +1,10 @@
 {
   "category": "minecraft",
-  "id": "diamonds",
-  "name": "Diamonds",
-  "icon": "minecraft:diamond",
-  "description": "Create Your First Set Of Diamond Tools, Receive Ingredients For An Enchanting Table As A Reward ",
-  "dependencies": "iron_age",
+  "id": "enchanting",
+  "name": "Enchanting",
+  "icon": "minecraft:enchanting_table",
+  "description": "Obtain An Enchanting Table To Enchant Your Gear",
+  "dependencies": "diamonds",
   "optional": "false",
   "type": "collection",
   "completion": {

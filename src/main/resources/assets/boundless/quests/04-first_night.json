@@ -3,7 +3,7 @@
   "id": "first_night",
   "name": "First Night",
   "icon": "minecraft:white_bed",
-  "description": "Set your spawn and rest through the night.",
+  "description": "Create A Bed To Skip Through The Night, Additionally A Bed Can Be Used To Set A New Spawn Point",
   "dependencies": "smelting",
   "optional": "false",
   "type": "collection",

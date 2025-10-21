@@ -1,10 +1,10 @@
 {
   "category": "minecraft",
   "id": "wither_bones",
-  "name": "Wither Bones",
+  "name": "Wither Skeletons",
   "icon": "minecraft:wither_skeleton_skull",
-  "description": "A dangerous trophy from a wither skeleton. Essential for summoning the Wither.",
-  "dependencies": "brew_master",
+  "description": "Obtain A Skull From A Wither Skeleton, Essential For Summoning The Wither.",
+  "dependencies": "the_nether",
   "optional": "true",
   "type": "collection",
   "completion": {
