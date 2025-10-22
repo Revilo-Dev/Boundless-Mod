@@ -40,6 +40,12 @@ public final class QuestTracker {
         return CLIENT_STATES.getOrDefault(q.id, Status.INCOMPLETE);
     }
 
+    public static Status getStatus(String questId, Player player) {
+        QuestWorldState st = state(player);
+        if (st != null) return st.get(questId);
+        return CLIENT_STATES.getOrDefault(questId, Status.INCOMPLETE);
+    }
+
     public static boolean isVisible(QuestData.Quest q, Player player) {
         Status s = getStatus(q, player);
         return s == Status.INCOMPLETE || s == Status.COMPLETED;
@@ -64,7 +70,6 @@ public final class QuestTracker {
         if (player == null || q == null || q.completion == null) return false;
         if (!dependenciesMet(q, player)) return false;
         if (q.completion.targets == null || q.completion.targets.isEmpty()) return false;
-
         for (QuestData.Target t : q.completion.targets) {
             if (t.isItem() && getCountInInventory(t.id, player) < t.count) return false;
             if (t.isEntity() && getKillCount(player, t.id) < t.count) return false;
@@ -79,6 +84,10 @@ public final class QuestTracker {
             if (getStatus(q, player) == Status.COMPLETED) return true;
         }
         return false;
+    }
+
+    public static boolean hasCompleted(Player player, String questId) {
+        return getStatus(questId, player) == Status.REDEEMED;
     }
 
     public static int getCountInInventory(String id, Player player) {
@@ -131,7 +140,6 @@ public final class QuestTracker {
 
     public static boolean hasAdvancement(Player player, String advId) {
         ResourceLocation rl = ResourceLocation.parse(advId);
-
         if (player instanceof ServerPlayer sp) {
             AdvancementHolder holder = sp.server.getAdvancements().get(rl);
             if (holder == null) return false;
@@ -140,11 +148,9 @@ public final class QuestTracker {
             CLIENT_ADV_DONE.put(rl.toString(), done);
             return done;
         }
-
         if (player.level().isClientSide) {
             return CLIENT_ADV_DONE.getOrDefault(rl.toString(), false);
         }
-
         return false;
     }
 
@@ -152,7 +158,6 @@ public final class QuestTracker {
         QuestWorldState st = state(player);
         if (st == null) return false;
         if (st.get(q.id) == Status.REDEEMED) return false;
-
         if (q.rewards != null && q.rewards.items != null) {
             for (QuestData.RewardEntry r : q.rewards.items) {
                 ResourceLocation rl = ResourceLocation.parse(r.item);
@@ -162,13 +167,11 @@ public final class QuestTracker {
                 }
             }
         }
-
         if (q.rewards != null && q.rewards.command != null && !q.rewards.command.isBlank()) {
             String raw = q.rewards.command.startsWith("/") ? q.rewards.command.substring(1) : q.rewards.command;
             CommandSourceStack source = player.createCommandSourceStack().withPermission(4);
             player.server.getCommands().performPrefixedCommand(source, raw);
         }
-
         st.set(q.id, Status.REDEEMED);
         return true;
     }
@@ -209,6 +212,13 @@ public final class QuestTracker {
         if (!player.level().isClientSide) return;
         QuestData.loadClient(false);
         for (QuestData.Quest q : QuestData.all()) {
+            if (q == null) continue;
+            if (!"all".equalsIgnoreCase(q.category)) {
+                var cat = QuestData.categoryById(q.category).orElse(null);
+                if (cat != null && !QuestData.isCategoryUnlocked(cat, player)) {
+                    continue;
+                }
+            }
             Status current = getStatus(q, player);
             if (current == Status.REDEEMED || current == Status.REJECTED) continue;
             boolean ready = dependenciesMet(q, player) && isReady(q, player);

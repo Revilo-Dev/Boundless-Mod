@@ -58,10 +58,24 @@ public final class QuestListWidget extends AbstractWidget {
         this.height = h;
     }
 
+    private boolean categoryUnlocked(String catId) {
+        var c = QuestData.categoryById(catId).orElse(null);
+        if (mc.player == null) return true;
+        return QuestData.isCategoryUnlocked(c, mc.player);
+    }
+
+    private boolean includeInAll(QuestData.Quest q) {
+        if (mc.player == null) return true;
+        return QuestData.includeQuestInAll(q, mc.player);
+    }
+
     private boolean matchesCategory(QuestData.Quest q) {
         if (Config.disabledCategories().contains(q.category)) return false;
-        if ("all".equalsIgnoreCase(category)) return true;
-        return q.category != null && q.category.equalsIgnoreCase(category);
+        if ("all".equalsIgnoreCase(category)) {
+            return includeInAll(q);
+        }
+        if (!q.category.equalsIgnoreCase(category)) return false;
+        return categoryUnlocked(q.category);
     }
 
     private int contentHeight() {

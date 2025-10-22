@@ -211,17 +211,34 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     curY[0] += LINE_ITEM_ROW;
 
                 } else if (t.isEntity()) {
+                    gg.drawString(mc.font, "Kill:", x + 4, curY[0], 0x1d9633, false);
+                    curY[0] += mc.font.lineHeight + 2;
+
                     ResourceLocation rl = ResourceLocation.parse(t.id);
                     EntityType<?> et = BuiltInRegistries.ENTITY_TYPE.getOptional(rl).orElse(null);
                     String eName = et == null ? rl.toString() : et.getDescription().getString();
+
                     int have = QuestTracker.getKillCount(mc.player, t.id);
                     int color = have >= t.count ? 0x55FF55 : 0xFF5555;
 
-                    gg.drawString(mc.font, "Kill: " + have + "/" + t.count, x + 24, curY[0] + 6, color, false);
-                    gg.renderItem(new ItemStack(Items.DIAMOND_SWORD), x + 4, curY[0]);
+                    Item iconItem = null;
+                    if (et != null) {
+                        // Try to find a spawn egg for the entity
+                        ResourceLocation eggRl = ResourceLocation.fromNamespaceAndPath(rl.getNamespace(), rl.getPath() + "_spawn_egg");
+                        iconItem = BuiltInRegistries.ITEM.getOptional(eggRl).orElse(Items.DIAMOND_SWORD);
+                    } else {
+                        iconItem = Items.DIAMOND_SWORD;
+                    }
+
+                    ItemStack icon = new ItemStack(iconItem);
+                    gg.renderItem(icon, x + 4, curY[0]);
+
                     if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= curY[0] && mouseY <= curY[0] + 18)
                         hoveredTooltips.add(Component.literal(eName));
+
+                    gg.drawString(mc.font, have + "/" + t.count, x + 24, curY[0] + 4, color, false);
                     curY[0] += LINE_ITEM_ROW;
+
 
                 } else if (t.isEffect()) {
                     gg.drawString(mc.font, "Have effect:", x + 4, curY[0], 0x55FFFF, false);

@@ -10,15 +10,7 @@
   "completion": {
     "items": [
       {
-        "item": "minecraft:diamond_pickaxe",
-        "count": 1
-      },
-      {
-        "item": "minecraft:diamond_sword",
-        "count": 1
-      },
-      {
-        "item": "minecraft:diamond_axe",
+        "item": "minecraft:enchanting_table",
         "count": 1
       }
     ]
@@ -26,12 +18,12 @@
   "reward": {
     "items": [
       {
-        "item": "minecraft:obsidian",
-        "count": 4
+        "item": "minecraft:bookshelf",
+        "count": 5
       },
       {
         "item": "minecraft:book",
-        "count": 1
+        "count": 3
       }
     ]
   }

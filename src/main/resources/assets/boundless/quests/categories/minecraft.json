@@ -3,6 +3,7 @@
   "id": "minecraft",
   "icon":"minecraft:grass_block",
   "name": "Minecraft",
-  "order": "1"
-
+  "order": "1",
+  "exclude_from_all": "false",
+  "dependency": ""
 }
