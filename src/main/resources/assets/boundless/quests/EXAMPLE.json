@@ -19,22 +19,23 @@
   "//OPTIONAL": "Set to 'true' if the quest is optional, and 'false' if it is mandatory. It's not recommended to mark quests with dependencies as optional.",
   "optional": "true",
 
-  "//TYPE": "Defines the quest type: - 'collection' (gather items) - 'submission' (turn in items)  - 'kill' (defeat mobs)  - 'effect' (player must have a specific effect active)  - 'advancement' (player must complete a specific advancement)",
-  "type": "collection",
+  "//TYPE": "Defines the quest type: - 'collection' (gather items) - 'submission' (turn in items)  - 'kill' (defeat mobs)  - 'effect' (player must have a specific effect active)  - 'advancement' (player must complete a specific advancement) - 'stat' (player must have a certain stat)",
+  "type": "stat",
 
   "//COMPLETION": "The completion variable for the quest: items is only compatible with collection or submission | targets is only compatible with kill | effect only works with effect | advancement only works with advancement",
   "completion": {
     "items": [ {"item": "minecraft:", "count": 1} ],
     "targets": [ { "entity": "minecraft:zombie", "count": 5 } ],
     "effects": [ {"effect": "minecraft:hero_of_the_village", "count": 1} ],
-    "advancements": [{ "advancement": "minecraft:story/mine_stone", "count": 1}]
+    "advancements": [{ "advancement": "minecraft:story/mine_stone", "count": 1}],
+    "stats": [{ "stat": "minecraft:jump", "count": 100 }]
   },
 
   "//REWARD": "2 Reward types: item or command | This defines the rewards the player receives. This can be a single reward or multiple rewards",
 
   "reward": {
     "items": [ {"item": "minecraft:", "count": 1} ],
-    "command": "/worldborder add 10"
+    "command": "/kill @a"
 
   },
 

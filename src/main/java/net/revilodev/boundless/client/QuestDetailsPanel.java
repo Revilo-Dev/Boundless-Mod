@@ -11,6 +11,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.stats.Stats;
 import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.effect.MobEffect;
@@ -223,7 +224,6 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
                     Item iconItem = null;
                     if (et != null) {
-                        // Try to find a spawn egg for the entity
                         ResourceLocation eggRl = ResourceLocation.fromNamespaceAndPath(rl.getNamespace(), rl.getPath() + "_spawn_egg");
                         iconItem = BuiltInRegistries.ITEM.getOptional(eggRl).orElse(Items.DIAMOND_SWORD);
                     } else {
@@ -238,7 +238,6 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
                     gg.drawString(mc.font, have + "/" + t.count, x + 24, curY[0] + 4, color, false);
                     curY[0] += LINE_ITEM_ROW;
-
 
                 } else if (t.isEffect()) {
                     gg.drawString(mc.font, "Have effect:", x + 4, curY[0], 0x55FFFF, false);
@@ -273,7 +272,6 @@ public final class QuestDetailsPanel extends AbstractWidget {
                         holder = mc.getConnection().getAdvancements().get(rl);
                     }
 
-
                     if (holder == null && mc.hasSingleplayerServer()) {
                         var server = mc.getSingleplayerServer();
                         if (server != null) {
@@ -300,9 +298,22 @@ public final class QuestDetailsPanel extends AbstractWidget {
                         hoveredTooltips.add(Component.literal(advName));
 
                     curY[0] += LINE_ITEM_ROW;
+
+                } else if (t.isStat()) {
+                    gg.drawString(mc.font, "Stat:", x + 4, curY[0], 0x1d9633, false);
+                    curY[0] += mc.font.lineHeight + 2;
+
+                    ResourceLocation rl = ResourceLocation.parse(t.id);
+                    int have = mc.player.getStats().getValue(Stats.CUSTOM.get(rl));
+                    int color = have >= t.count ? 0x55FF55 : 0xFF5555;
+
+                    ItemStack icon = new ItemStack(Items.PAPER);
+                    gg.renderItem(icon, x + 4, curY[0]);
+                    gg.drawString(mc.font, have + "/" + t.count, x + 24, curY[0] + 4, color, false);
+                    if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= curY[0] && mouseY <= curY[0] + 18)
+                        hoveredTooltips.add(Component.literal(rl.toString()));
+                    curY[0] += LINE_ITEM_ROW;
                 }
-
-
             }
             curY[0] += 2;
         }

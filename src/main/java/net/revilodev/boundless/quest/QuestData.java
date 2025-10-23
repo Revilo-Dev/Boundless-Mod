@@ -109,6 +109,7 @@ public final class QuestData {
         public boolean isEntity() { return "entity".equals(kind); }
         public boolean isEffect() { return "effect".equals(kind); }
         public boolean isAdvancement() { return "advancement".equals(kind); }
+        public boolean isStat() { return "stat".equals(kind); }
     }
 
     public static final class Category {
@@ -325,6 +326,16 @@ public final class QuestData {
                 }
                 return new Completion(out);
             }
+            if (obj.has("stats") && obj.get("stats").isJsonArray()) {
+                for (JsonElement e : obj.getAsJsonArray("stats")) {
+                    if (!e.isJsonObject()) continue;
+                    JsonObject o = e.getAsJsonObject();
+                    String stat = optString(o, "stat");
+                    int count = o.has("count") ? o.get("count").getAsInt() : 1;
+                    if (stat != null && !stat.isBlank()) out.add(new Target("stat", stat, count));
+                }
+                return new Completion(out);
+            }
             if (obj.has("item")) {
                 String item = optString(obj, "item");
                 int count = obj.has("count") ? obj.get("count").getAsInt() : 1;
@@ -366,6 +377,10 @@ public final class QuestData {
         } else if (o.has("advancement")) {
             String adv = optString(o, "advancement");
             if (adv != null && !adv.isBlank()) out.add(new Target("advancement", adv, 1));
+        } else if (o.has("stat")) {
+            String stat = optString(o, "stat");
+            int count = o.has("count") ? o.get("count").getAsInt() : 1;
+            if (stat != null && !stat.isBlank()) out.add(new Target("stat", stat, count));
         }
     }
 

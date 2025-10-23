@@ -2,14 +2,14 @@ package net.revilodev.boundless.quest;
 
 import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.AdvancementProgress;
-import net.minecraft.client.Minecraft;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.Holder;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.tags.TagKey;
+import net.minecraft.stats.Stats;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
@@ -27,6 +27,7 @@ public final class QuestTracker {
     private static final Map<String, Status> CLIENT_STATES = new HashMap<>();
     private static final Map<String, Integer> CLIENT_KILLS = new HashMap<>();
     private static final Map<String, Boolean> CLIENT_ADV_DONE = new HashMap<>();
+    private static final Map<String, Integer> CLIENT_STATS = new HashMap<>();
 
     private static QuestWorldState state(Player player) {
         if (player == null) return null;
@@ -75,8 +76,83 @@ public final class QuestTracker {
             if (t.isEntity() && getKillCount(player, t.id) < t.count) return false;
             if (t.isEffect() && !hasEffect(player, t.id)) return false;
             if (t.isAdvancement() && !hasAdvancement(player, t.id)) return false;
+            if (t.isStat() && getStatCount(player, t.id) < t.count) return false;
         }
         return true;
+    }
+
+    public static int getStatCount(Player player, String statId) {
+        if (player == null || statId == null || statId.isBlank()) return 0;
+
+        int value = 0;
+
+        if (player instanceof ServerPlayer sp) {
+            try {
+                // Support typed prefixes (custom:, mine_block:, use_item:, kill_entity:)
+                // and also bare custom stats like "minecraft:talked_to_villager".
+                String id = statId.trim();
+
+                // 1) Explicit typed prefixes
+                int colon = id.indexOf(':');
+                int secondColon = colon >= 0 ? id.indexOf(':', colon + 1) : -1;
+                boolean looksTyped = secondColon > colon; // e.g. "mine_block:minecraft:stone" or "custom:minecraft:jump"
+
+                if (looksTyped) {
+                    String type = id.substring(0, colon);
+                    String rest = id.substring(colon + 1);
+                    ResourceLocation rl = ResourceLocation.tryParse(rest);
+                    if (rl == null) return 0;
+
+                    switch (type) {
+                        case "custom": {
+                            // Only proceed if it’s a registered custom stat
+                            if (!BuiltInRegistries.CUSTOM_STAT.containsKey(rl)) return 0;
+                            value = sp.getStats().getValue(Stats.CUSTOM.get(rl));
+                            break;
+                        }
+                        case "mine_block": {
+                            var block = BuiltInRegistries.BLOCK.getOptional(rl).orElse(null);
+                            if (block == null) return 0;
+                            value = sp.getStats().getValue(Stats.BLOCK_MINED.get(block));
+                            break;
+                        }
+                        case "use_item": {
+                            var item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+                            if (item == null) return 0;
+                            value = sp.getStats().getValue(Stats.ITEM_USED.get(item));
+                            break;
+                        }
+                        case "kill_entity": {
+                            var et = BuiltInRegistries.ENTITY_TYPE.getOptional(rl).orElse(null);
+                            if (et == null) return 0;
+                            value = sp.getStats().getValue(Stats.ENTITY_KILLED.get(et));
+                            break;
+                        }
+                        default:
+                            return 0;
+                    }
+                } else {
+                    // 2) Bare id -> treat as CUSTOM stat (e.g. "minecraft:talked_to_villager")
+                    ResourceLocation rl = ResourceLocation.tryParse(id);
+                    if (rl == null) return 0;
+                    if (!BuiltInRegistries.CUSTOM_STAT.containsKey(rl)) return 0;
+                    value = sp.getStats().getValue(Stats.CUSTOM.get(rl));
+                }
+
+                CLIENT_STATS.put(statId, value);
+            } catch (Exception ignored) {
+                return 0;
+            }
+        } else if (player.level().isClientSide) {
+            value = CLIENT_STATS.getOrDefault(statId, 0);
+        }
+
+        return value;
+    }
+
+
+    private static ResourceLocation safeParse(String s) {
+        try { return ResourceLocation.parse(s); } catch (Throwable t) { return null; }
     }
 
     public static boolean hasAnyCompleted(Player player) {
@@ -95,27 +171,18 @@ public final class QuestTracker {
         boolean explicitHash = id.startsWith("#");
         String key = explicitHash ? id.substring(1) : id;
         ResourceLocation rl = ResourceLocation.parse(key);
-        Item direct = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+        Item direct = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
         int found = 0;
         if (explicitHash || direct == null) {
-            TagKey<Item> itemTag = TagKey.create(Registries.ITEM, rl);
-            for (ItemStack s : player.getInventory().items) {
-                if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
-            }
+            var itemTag = net.minecraft.tags.TagKey.create(Registries.ITEM, rl);
+            for (ItemStack s : player.getInventory().items) if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
             if (found == 0) {
-                var blockTag = TagKey.create(Registries.BLOCK, rl);
-                for (ItemStack s : player.getInventory().items) {
-                    if (!s.isEmpty() && s.getItem() instanceof BlockItem bi &&
-                            bi.getBlock().builtInRegistryHolder().is(blockTag)) {
+                var blockTag = net.minecraft.tags.TagKey.create(Registries.BLOCK, rl);
+                for (ItemStack s : player.getInventory().items)
+                    if (!s.isEmpty() && s.getItem() instanceof BlockItem bi && bi.getBlock().builtInRegistryHolder().is(blockTag))
                         found += s.getCount();
-                    }
-                }
             }
-        } else {
-            for (ItemStack s : player.getInventory().items) {
-                if (!s.isEmpty() && s.is(direct)) found += s.getCount();
-            }
-        }
+        } else for (ItemStack s : player.getInventory().items) if (!s.isEmpty() && s.is(direct)) found += s.getCount();
         return found;
     }
 
@@ -132,7 +199,7 @@ public final class QuestTracker {
     public static boolean hasEffect(Player player, String effectId) {
         if (player == null) return false;
         ResourceLocation rl = ResourceLocation.parse(effectId);
-        var opt = net.minecraft.core.registries.BuiltInRegistries.MOB_EFFECT.getHolder(rl);
+        var opt = BuiltInRegistries.MOB_EFFECT.getHolder(rl);
         if (opt.isEmpty()) return false;
         Holder<MobEffect> holder = opt.get();
         return player.hasEffect(holder);
@@ -148,9 +215,7 @@ public final class QuestTracker {
             CLIENT_ADV_DONE.put(rl.toString(), done);
             return done;
         }
-        if (player.level().isClientSide) {
-            return CLIENT_ADV_DONE.getOrDefault(rl.toString(), false);
-        }
+        if (player.level().isClientSide) return CLIENT_ADV_DONE.getOrDefault(rl.toString(), false);
         return false;
     }
 
@@ -161,10 +226,8 @@ public final class QuestTracker {
         if (q.rewards != null && q.rewards.items != null) {
             for (QuestData.RewardEntry r : q.rewards.items) {
                 ResourceLocation rl = ResourceLocation.parse(r.item);
-                Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-                if (item != null) {
-                    player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
-                }
+                Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+                if (item != null) player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
             }
         }
         if (q.rewards != null && q.rewards.command != null && !q.rewards.command.isBlank()) {
@@ -191,21 +254,12 @@ public final class QuestTracker {
         CLIENT_STATES.clear();
         CLIENT_KILLS.clear();
         CLIENT_ADV_DONE.clear();
+        CLIENT_STATS.clear();
     }
 
-    public static void clientSetStatus(String questId, Status status) {
-        CLIENT_STATES.put(questId, status);
-    }
-
-    public static void clientSetKill(String entityId, int count) {
-        CLIENT_KILLS.put(entityId, Math.max(0, count));
-    }
-
-    public static void clientClearAll() {
-        CLIENT_STATES.clear();
-        CLIENT_KILLS.clear();
-        CLIENT_ADV_DONE.clear();
-    }
+    public static void clientSetStatus(String questId, Status status) { CLIENT_STATES.put(questId, status); }
+    public static void clientSetKill(String entityId, int count) { CLIENT_KILLS.put(entityId, Math.max(0, count)); }
+    public static void clientClearAll() { CLIENT_STATES.clear(); CLIENT_KILLS.clear(); CLIENT_ADV_DONE.clear(); CLIENT_STATS.clear(); }
 
     public static void tickPlayer(Player player) {
         if (player == null) return;
@@ -215,18 +269,13 @@ public final class QuestTracker {
             if (q == null) continue;
             if (!"all".equalsIgnoreCase(q.category)) {
                 var cat = QuestData.categoryById(q.category).orElse(null);
-                if (cat != null && !QuestData.isCategoryUnlocked(cat, player)) {
-                    continue;
-                }
+                if (cat != null && !QuestData.isCategoryUnlocked(cat, player)) continue;
             }
             Status current = getStatus(q, player);
             if (current == Status.REDEEMED || current == Status.REJECTED) continue;
             boolean ready = dependenciesMet(q, player) && isReady(q, player);
-            if (ready && current == Status.INCOMPLETE) {
-                clientSetStatus(q.id, Status.COMPLETED);
-            } else if (!ready && current == Status.COMPLETED) {
-                clientSetStatus(q.id, Status.INCOMPLETE);
-            }
+            if (ready && current == Status.INCOMPLETE) clientSetStatus(q.id, Status.COMPLETED);
+            else if (!ready && current == Status.COMPLETED) clientSetStatus(q.id, Status.INCOMPLETE);
         }
     }
 

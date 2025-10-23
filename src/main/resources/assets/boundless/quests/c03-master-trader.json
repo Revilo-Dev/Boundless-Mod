@@ -1,0 +1,22 @@
+{
+  "category": "minecraft",
+  "id": "trade_master",
+  "name": "Master Trader",
+  "icon": "minecraft:emerald",
+  "description": "Trade or interact with villagers 10 times.",
+  "dependencies": "",
+  "optional": false,
+  "type": "stat",
+  "completion": {
+    "stats": [
+      {
+        "stat": "minecraft:talked_to_villager",
+        "count": 10
+      }
+    ]
+  },
+  "reward": {
+    "item": "minecraft:emerald",
+    "count": 128
+  }
+}
