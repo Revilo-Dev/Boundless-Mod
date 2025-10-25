@@ -36,22 +36,13 @@ public final class BoundlessMod {
 
     public BoundlessMod(ModContainer modContainer, IEventBus modBus) {
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC, MOD_ID + "-common.toml");
-
-        // Setup listeners
         modBus.addListener(this::commonSetup);
         modBus.addListener(this::addCreative);
-
         if (net.neoforged.fml.loading.FMLEnvironment.dist == Dist.CLIENT) {
             modBus.addListener(this::clientSetup);
         }
-
-        // Network
         BoundlessNetwork.bootstrap(modBus);
-
-        // Global events
         NeoForge.EVENT_BUS.register(this);
-
-        // Quest tick events
         NeoForge.EVENT_BUS.addListener(QuestEvents::onPlayerTick);
     }
 
@@ -91,10 +82,8 @@ public final class BoundlessMod {
         if (!(event.getEntity() instanceof LivingEntity victim)) return;
         if (!(event.getSource().getEntity() instanceof ServerPlayer sp)) return;
         if (!(sp.level() instanceof ServerLevel server)) return;
-
         ResourceLocation rl = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(victim.getType());
         if (rl == null) return;
-
         KillCounterState.get(server).inc(sp.getUUID(), rl.toString());
         int count = KillCounterState.get(server).get(sp.getUUID(), rl.toString());
         BoundlessNetwork.KillEntry entry = new BoundlessNetwork.KillEntry(rl.toString(), count);

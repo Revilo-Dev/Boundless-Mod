@@ -83,72 +83,69 @@ public final class QuestTracker {
 
     public static int getStatCount(Player player, String statId) {
         if (player == null || statId == null || statId.isBlank()) return 0;
-
         int value = 0;
 
-        if (player instanceof ServerPlayer sp) {
-            try {
-                // Support typed prefixes (custom:, mine_block:, use_item:, kill_entity:)
-                // and also bare custom stats like "minecraft:talked_to_villager".
+        try {
+            if (player instanceof ServerPlayer sp) {
                 String id = statId.trim();
+                int first = id.indexOf(':');
+                int second = id.indexOf(':', first + 1);
 
-                // 1) Explicit typed prefixes
-                int colon = id.indexOf(':');
-                int secondColon = colon >= 0 ? id.indexOf(':', colon + 1) : -1;
-                boolean looksTyped = secondColon > colon; // e.g. "mine_block:minecraft:stone" or "custom:minecraft:jump"
+                boolean typed = second > first;
+                String type = typed ? id.substring(0, first) : "custom";
+                String name = typed ? id.substring(first + 1) : id;
 
-                if (looksTyped) {
-                    String type = id.substring(0, colon);
-                    String rest = id.substring(colon + 1);
-                    ResourceLocation rl = ResourceLocation.tryParse(rest);
-                    if (rl == null) return 0;
+                ResourceLocation rl = ResourceLocation.tryParse(name);
+                if (rl == null) return 0; // ✨ prevent null crash
 
-                    switch (type) {
-                        case "custom": {
-                            // Only proceed if it’s a registered custom stat
-                            if (!BuiltInRegistries.CUSTOM_STAT.containsKey(rl)) return 0;
-                            value = sp.getStats().getValue(Stats.CUSTOM.get(rl));
-                            break;
-                        }
-                        case "mine_block": {
-                            var block = BuiltInRegistries.BLOCK.getOptional(rl).orElse(null);
-                            if (block == null) return 0;
-                            value = sp.getStats().getValue(Stats.BLOCK_MINED.get(block));
-                            break;
-                        }
-                        case "use_item": {
-                            var item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-                            if (item == null) return 0;
-                            value = sp.getStats().getValue(Stats.ITEM_USED.get(item));
-                            break;
-                        }
-                        case "kill_entity": {
-                            var et = BuiltInRegistries.ENTITY_TYPE.getOptional(rl).orElse(null);
-                            if (et == null) return 0;
-                            value = sp.getStats().getValue(Stats.ENTITY_KILLED.get(et));
-                            break;
-                        }
-                        default:
-                            return 0;
+                switch (type) {
+                    case "custom" -> {
+                        if (!BuiltInRegistries.CUSTOM_STAT.containsKey(rl)) return 0;
+                        value = sp.getStats().getValue(Stats.CUSTOM.get(rl));
                     }
-                } else {
-                    // 2) Bare id -> treat as CUSTOM stat (e.g. "minecraft:talked_to_villager")
-                    ResourceLocation rl = ResourceLocation.tryParse(id);
-                    if (rl == null) return 0;
-                    if (!BuiltInRegistries.CUSTOM_STAT.containsKey(rl)) return 0;
-                    value = sp.getStats().getValue(Stats.CUSTOM.get(rl));
+                    case "mine_block" -> {
+                        var block = BuiltInRegistries.BLOCK.getOptional(rl).orElse(null);
+                        if (block == null) return 0;
+                        value = sp.getStats().getValue(Stats.BLOCK_MINED.get(block));
+                    }
+                    case "use_item" -> {
+                        var item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+                        if (item == null) return 0;
+                        value = sp.getStats().getValue(Stats.ITEM_USED.get(item));
+                    }
+                    case "kill_entity" -> {
+                        var et = BuiltInRegistries.ENTITY_TYPE.getOptional(rl).orElse(null);
+                        if (et == null) return 0;
+                        value = sp.getStats().getValue(Stats.ENTITY_KILLED.get(et));
+                    }
+                    default -> {
+                        // unknown stat type → ignore safely
+                        return 0;
+                    }
                 }
 
                 CLIENT_STATS.put(statId, value);
-            } catch (Exception ignored) {
-                return 0;
+
+            } else if (player.level().isClientSide && player instanceof net.minecraft.client.player.LocalPlayer lp) {
+                var stats = lp.getStats();
+                if (stats != null) {
+                    ResourceLocation rl = ResourceLocation.tryParse(statId);
+                    if (rl != null && BuiltInRegistries.CUSTOM_STAT.containsKey(rl)) {
+                        value = stats.getValue(Stats.CUSTOM.get(rl));
+                    }
+                }
+            } else {
+                value = CLIENT_STATS.getOrDefault(statId, 0);
             }
-        } else if (player.level().isClientSide) {
-            value = CLIENT_STATS.getOrDefault(statId, 0);
+        } catch (Exception e) {
+            // safeguard all stat failures — prevents tick crash
+            return 0;
         }
 
         return value;
     }
+
+
 
 
     private static ResourceLocation safeParse(String s) {

@@ -11,8 +11,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.stats.Stats;
-import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.entity.EntityType;
@@ -303,15 +301,14 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     gg.drawString(mc.font, "Stat:", x + 4, curY[0], 0x1d9633, false);
                     curY[0] += mc.font.lineHeight + 2;
 
-                    ResourceLocation rl = ResourceLocation.parse(t.id);
-                    int have = mc.player.getStats().getValue(Stats.CUSTOM.get(rl));
+                    int have = QuestTracker.getStatCount(mc.player, t.id);
                     int color = have >= t.count ? 0x55FF55 : 0xFF5555;
 
                     ItemStack icon = new ItemStack(Items.PAPER);
                     gg.renderItem(icon, x + 4, curY[0]);
                     gg.drawString(mc.font, have + "/" + t.count, x + 24, curY[0] + 4, color, false);
                     if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= curY[0] && mouseY <= curY[0] + 18)
-                        hoveredTooltips.add(Component.literal(rl.toString()));
+                        hoveredTooltips.add(Component.literal(t.id));
                     curY[0] += LINE_ITEM_ROW;
                 }
             }
@@ -399,11 +396,11 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
     private List<Item> resolveTagItems(ResourceLocation tagId) {
         List<Item> out = new ArrayList<>();
-        TagKey<Item> itemTag = TagKey.create(Registries.ITEM, tagId);
+        var itemTag = net.minecraft.tags.TagKey.create(Registries.ITEM, tagId);
         for (Item it : BuiltInRegistries.ITEM)
             if (it.builtInRegistryHolder().is(itemTag)) out.add(it);
         if (out.isEmpty()) {
-            var blockTag = TagKey.create(Registries.BLOCK, tagId);
+            var blockTag = net.minecraft.tags.TagKey.create(Registries.BLOCK, tagId);
             for (Item it : BuiltInRegistries.ITEM)
                 if (it instanceof BlockItem bi && bi.getBlock().builtInRegistryHolder().is(blockTag)) out.add(it);
         }
