@@ -18,6 +18,7 @@ import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.revilodev.boundless.network.BoundlessNetwork;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -84,20 +85,16 @@ public final class QuestTracker {
     public static int getStatCount(Player player, String statId) {
         if (player == null || statId == null || statId.isBlank()) return 0;
         int value = 0;
-
         try {
             if (player instanceof ServerPlayer sp) {
                 String id = statId.trim();
                 int first = id.indexOf(':');
                 int second = id.indexOf(':', first + 1);
-
                 boolean typed = second > first;
                 String type = typed ? id.substring(0, first) : "custom";
                 String name = typed ? id.substring(first + 1) : id;
-
                 ResourceLocation rl = ResourceLocation.tryParse(name);
-                if (rl == null) return 0; // ✨ prevent null crash
-
+                if (rl == null) return 0;
                 switch (type) {
                     case "custom" -> {
                         if (!BuiltInRegistries.CUSTOM_STAT.containsKey(rl)) return 0;
@@ -119,13 +116,10 @@ public final class QuestTracker {
                         value = sp.getStats().getValue(Stats.ENTITY_KILLED.get(et));
                     }
                     default -> {
-                        // unknown stat type → ignore safely
                         return 0;
                     }
                 }
-
                 CLIENT_STATS.put(statId, value);
-
             } else if (player.level().isClientSide && player instanceof net.minecraft.client.player.LocalPlayer lp) {
                 var stats = lp.getStats();
                 if (stats != null) {
@@ -138,18 +132,9 @@ public final class QuestTracker {
                 value = CLIENT_STATS.getOrDefault(statId, 0);
             }
         } catch (Exception e) {
-            // safeguard all stat failures — prevents tick crash
             return 0;
         }
-
         return value;
-    }
-
-
-
-
-    private static ResourceLocation safeParse(String s) {
-        try { return ResourceLocation.parse(s); } catch (Throwable t) { return null; }
     }
 
     public static boolean hasAnyCompleted(Player player) {
@@ -261,8 +246,9 @@ public final class QuestTracker {
     public static void tickPlayer(Player player) {
         if (player == null) return;
         if (!player.level().isClientSide) return;
-        QuestData.loadClient(false);
-        for (QuestData.Quest q : QuestData.all()) {
+        if (QuestData.isEmpty()) QuestData.loadClient(false);
+        var snapshot = new ArrayList<>(QuestData.all());
+        for (QuestData.Quest q : snapshot) {
             if (q == null) continue;
             if (!"all".equalsIgnoreCase(q.category)) {
                 var cat = QuestData.categoryById(q.category).orElse(null);
@@ -279,7 +265,8 @@ public final class QuestTracker {
     public static void serverCheckAndMarkComplete(ServerPlayer sp) {
         QuestWorldState st = state(sp);
         if (st == null) return;
-        for (QuestData.Quest q : QuestData.allServer(sp.server)) {
+        var snapshot = new ArrayList<>(QuestData.allServer(sp.server));
+        for (QuestData.Quest q : snapshot) {
             Status cur = st.get(q.id);
             if (cur == Status.REDEEMED || cur == Status.REJECTED) continue;
             boolean ready = dependenciesMet(q, sp) && isReady(q, sp);

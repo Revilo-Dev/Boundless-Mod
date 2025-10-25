@@ -1,9 +1,0 @@
-{
-
-  "id": "challenges",
-  "icon":"minecraft:compass",
-  "name": "Challenges",
-  "order": "2",
-  "exclude_from_all": "true",
-  "dependency": "diamonds"
-}
