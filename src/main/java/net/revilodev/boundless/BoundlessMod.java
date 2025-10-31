@@ -13,6 +13,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -35,12 +36,14 @@ public final class BoundlessMod {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public BoundlessMod(ModContainer modContainer, IEventBus modBus) {
-        modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC, MOD_ID + "-common.toml");
+        modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
         modBus.addListener(this::commonSetup);
         modBus.addListener(this::addCreative);
-        if (net.neoforged.fml.loading.FMLEnvironment.dist == Dist.CLIENT) {
+
+        if (FMLEnvironment.dist == Dist.CLIENT) {
             modBus.addListener(this::clientSetup);
         }
+
         BoundlessNetwork.bootstrap(modBus);
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.addListener(QuestEvents::onPlayerTick);
@@ -82,8 +85,13 @@ public final class BoundlessMod {
         if (!(event.getEntity() instanceof LivingEntity victim)) return;
         if (!(event.getSource().getEntity() instanceof ServerPlayer sp)) return;
         if (!(sp.level() instanceof ServerLevel server)) return;
-        ResourceLocation rl = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(victim.getType());
+
+        ResourceLocation rl = server.registryAccess()
+                .registryOrThrow(net.minecraft.core.registries.Registries.ENTITY_TYPE)
+                .getKey(victim.getType());
+
         if (rl == null) return;
+
         KillCounterState.get(server).inc(sp.getUUID(), rl.toString());
         int count = KillCounterState.get(server).get(sp.getUUID(), rl.toString());
         BoundlessNetwork.KillEntry entry = new BoundlessNetwork.KillEntry(rl.toString(), count);
