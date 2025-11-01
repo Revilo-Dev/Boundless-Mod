@@ -4,7 +4,6 @@ import java.util.List;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.common.ModConfigSpec;
-import net.neoforged.neoforge.common.NeoForge;
 
 public final class Config {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
@@ -15,26 +14,19 @@ public final class Config {
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 
-    static {
-        // 1.20.1 requires explicit registration to the event bus
-        NeoForge.EVENT_BUS.register(Config.class);
-    }
-
     public static List<? extends String> disabledCategories() {
         return DISABLED_CATEGORIES.get();
     }
 
     @SubscribeEvent
-    public static void onLoad(ModConfigEvent.Loading event) {
-        if (event.getConfig().getSpec() == SPEC) {
+    public static void onLoad(ModConfigEvent.Loading e) {
+        if (e.getConfig().getSpec() == SPEC)
             BoundlessMod.LOGGER.info("[Boundless] Config loaded: {}", disabledCategories());
-        }
     }
 
     @SubscribeEvent
-    public static void onReload(ModConfigEvent.Reloading event) {
-        if (event.getConfig().getSpec() == SPEC) {
+    public static void onReload(ModConfigEvent.Reloading e) {
+        if (e.getConfig().getSpec() == SPEC)
             BoundlessMod.LOGGER.info("[Boundless] Config reloaded: {}", disabledCategories());
-        }
     }
 }

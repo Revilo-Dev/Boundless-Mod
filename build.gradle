@@ -1,28 +1,25 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
-    id 'net.neoforged.gradle.userdev' version '7.0.142'
+    id 'net.neoforged.gradle.userdev' version '7.0.192'
 }
 
-version = mod_version
-group = mod_group_id
+tasks.named('wrapper', Wrapper).configure {
+    distributionType = Wrapper.DistributionType.BIN
+}
+
+version = mod_version          // pulled from gradle.properties
+group = mod_group_id           // pulled from gradle.properties
 
 base {
     archivesName = mod_id
 }
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(17) // Java 17 for 1.20.1
+// Mojang ships Java 21 for 1.21.1, so we target Java 21
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 repositories {
-    mavenCentral()
-}
-
-dependencies {
-    implementation "net.neoforged:neoforge:${neo_version}"
-}
-
-tasks.named('wrapper', Wrapper).configure {
-    distributionType = Wrapper.DistributionType.BIN
+    // Add additional repositories if needed
 }
 
 runs {
@@ -41,6 +38,10 @@ runs {
         argument '--nogui'
     }
 
+    gameTestServer {
+        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+    }
+
     data {
         arguments.addAll '--mod', project.mod_id, '--all',
                 '--output', file('src/generated/resources/').absolutePath,
@@ -48,12 +49,20 @@ runs {
     }
 }
 
+// Include data-generated resources in the main resource set
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
+// Optional runtime configuration
 configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
+dependencies {
+    implementation "net.neoforged:neoforge:${neo_version}"
+    // other mod/library dependencies can go here
+}
+
+// Replace properties inside neoforge.mods.toml with gradle.properties values
 tasks.withType(ProcessResources).configureEach {
     def replaceProperties = [
             minecraft_version      : minecraft_version,
@@ -68,11 +77,13 @@ tasks.withType(ProcessResources).configureEach {
             mod_description        : mod_description
     ]
     inputs.properties replaceProperties
+
     filesMatching('META-INF/neoforge.mods.toml') {
         expand replaceProperties
     }
 }
 
+// Publishing setup (local maven repo under ./repo)
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
@@ -86,10 +97,12 @@ publishing {
     }
 }
 
+// Compile settings
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
+// IntelliJ IDEA sources + javadoc download
 idea {
     module {
         downloadSources = true

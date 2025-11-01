@@ -13,7 +13,6 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
-import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -36,16 +35,23 @@ public final class BoundlessMod {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public BoundlessMod(ModContainer modContainer, IEventBus modBus) {
-        modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC, MOD_ID + "-common.toml");
+
+        // Setup listeners
         modBus.addListener(this::commonSetup);
         modBus.addListener(this::addCreative);
 
-        if (FMLEnvironment.dist == Dist.CLIENT) {
+        if (net.neoforged.fml.loading.FMLEnvironment.dist == Dist.CLIENT) {
             modBus.addListener(this::clientSetup);
         }
 
+        // Network
         BoundlessNetwork.bootstrap(modBus);
+
+        // Global events
         NeoForge.EVENT_BUS.register(this);
+
+        // Quest tick events
         NeoForge.EVENT_BUS.addListener(QuestEvents::onPlayerTick);
     }
 
@@ -86,10 +92,7 @@ public final class BoundlessMod {
         if (!(event.getSource().getEntity() instanceof ServerPlayer sp)) return;
         if (!(sp.level() instanceof ServerLevel server)) return;
 
-        ResourceLocation rl = server.registryAccess()
-                .registryOrThrow(net.minecraft.core.registries.Registries.ENTITY_TYPE)
-                .getKey(victim.getType());
-
+        ResourceLocation rl = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(victim.getType());
         if (rl == null) return;
 
         KillCounterState.get(server).inc(sp.getUUID(), rl.toString());
