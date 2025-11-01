@@ -11,6 +11,6 @@
     "item": "#minecraft:beds", "count": 1
   },
   "reward": {
-    "item": "minecraft:bread", "count": 12
+    "item": "", "count": 0
   }
 }
