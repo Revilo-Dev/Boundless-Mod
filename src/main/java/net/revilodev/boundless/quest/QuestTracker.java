@@ -138,7 +138,6 @@ public final class QuestTracker {
                 value = CLIENT_STATS.getOrDefault(statId, 0);
             }
         } catch (Exception e) {
-            // safeguard all stat failures — prevents tick crash
             return 0;
         }
 
