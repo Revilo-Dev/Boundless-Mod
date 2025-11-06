@@ -2,7 +2,6 @@
   "category": "minecraft",
   "id": "getting_started",
   "name": "Getting Started",
-  "order": "01",
   "icon": "minecraft:crafting_table",
   "description": "Create Your First Crafting Table",
   "dependencies": "",
