@@ -1,4 +1,3 @@
-
 package net.revilodev.boundless.client;
 
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -71,9 +70,7 @@ public final class QuestListWidget extends AbstractWidget {
 
     private boolean matchesCategory(QuestData.Quest q) {
         if (Config.disabledCategories().contains(q.category)) return false;
-        if ("all".equalsIgnoreCase(category)) {
-            return includeInAll(q);
-        }
+        if ("all".equalsIgnoreCase(category)) return includeInAll(q);
         if (!q.category.equalsIgnoreCase(category)) return false;
         return categoryUnlocked(q.category);
     }
@@ -88,23 +85,29 @@ public final class QuestListWidget extends AbstractWidget {
         return visible * (rowHeight + rowPad);
     }
 
+    // ---- Rendering ----
+    // Do NOT annotate with @Override, since mappings differ between Forge / NeoForge
     protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
         if (!this.visible) return;
         RenderSystem.enableBlend();
         gg.enableScissor(getX(), getY(), getX() + width, getY() + height);
         int yOff = this.getY() - Mth.floor(scrollY);
         int drawn = 0;
+
         for (QuestData.Quest q : quests) {
             if (mc.player == null) continue;
             if (!matchesCategory(q)) continue;
             if (!QuestTracker.isVisible(q, mc.player)) continue;
+
             int top = yOff + drawn * (rowHeight + rowPad);
             drawn++;
             if (top > this.getY() + this.height) break;
             if (top + rowHeight < this.getY()) continue;
+
             boolean deps = QuestTracker.dependenciesMet(q, mc.player);
             ResourceLocation rowTex = deps ? ROW_TEX : ROW_TEX_DISABLED;
             gg.blit(rowTex, this.getX(), top, 0, 0, 127, 27, 127, 27);
+
             Item iconItem = q.iconItem().orElse(null);
             if (iconItem != null) {
                 gg.renderItem(new ItemStack(iconItem), this.getX() + 6, top + 5);
@@ -120,7 +123,9 @@ public final class QuestListWidget extends AbstractWidget {
                 gg.drawString(mc.font, name, this.getX() + 30, top + 9, deps ? 0xFFFFFF : 0xA0A0A0, false);
             }
         }
+
         gg.disableScissor();
+
         int content = contentHeight();
         if (content > this.height) {
             float ratio = (float) this.height / content;
@@ -130,6 +135,8 @@ public final class QuestListWidget extends AbstractWidget {
         }
     }
 
+    // ---- Input handling ----
+    // NeoForge 1.20.1 uses this exact signature
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
         if (!this.visible || !this.active) return false;
         int content = contentHeight();
@@ -140,23 +147,19 @@ public final class QuestListWidget extends AbstractWidget {
         return true;
     }
 
+    // Helper overload for screens calling the 4-arg version (not part of superclass)
     public boolean mouseScrolled(double mouseX, double mouseY, double deltaX, double deltaY) {
-        if (!this.visible || !this.active) return false;
-        int content = contentHeight();
-        int view = this.height;
-        if (content <= view) return false;
-        float max = content - view;
-        scrollY = Mth.clamp(scrollY - (float) (deltaY * 12), 0f, max);
-        return true;
+        return mouseScrolled(mouseX, mouseY, deltaY);
     }
 
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (!this.visible || !this.active || !this.isMouseOver(mouseX, mouseY)) return false;
         if (button != 0) return false;
         if (mc.player == null) return false;
-        int localY = (int)(mouseY - this.getY() + scrollY);
+        int localY = (int) (mouseY - this.getY() + scrollY);
         int idx = localY / (rowHeight + rowPad);
         int visibleIndex = 0;
+
         for (QuestData.Quest q : quests) {
             if (!matchesCategory(q)) continue;
             if (!QuestTracker.isVisible(q, mc.player)) continue;
@@ -169,5 +172,7 @@ public final class QuestListWidget extends AbstractWidget {
         return false;
     }
 
-    protected void updateWidgetNarration(NarrationElementOutput narration) {}
+    protected void updateWidgetNarration(NarrationElementOutput narration) {
+        // no narration
+    }
 }

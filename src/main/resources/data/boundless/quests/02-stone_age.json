@@ -8,7 +8,7 @@
   "optional": "false",
   "type": "submit",
   "completion": {
-    "item": "minecraft:cobblestone", "count": 16
+    "collect": "minecraft:cobblestone", "count": 16
   },
   "reward": {
     "item": "minecraft:stone_pickaxe", "count": 1

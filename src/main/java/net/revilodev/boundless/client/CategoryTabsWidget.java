@@ -1,4 +1,3 @@
-// src/main/java/net/revilodev/boundless/client/CategoryTabsWidget.java
 package net.revilodev.boundless.client;
 
 import net.minecraft.client.Minecraft;
@@ -58,6 +57,7 @@ public final class CategoryTabsWidget extends AbstractWidget {
         this.selected = id == null ? "all" : id;
     }
 
+    @Override
     protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
         if (!visible) return;
         int x = getX();
@@ -76,6 +76,7 @@ public final class CategoryTabsWidget extends AbstractWidget {
         }
     }
 
+    @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (!visible || !active) return false;
         if (button != 0) return false;
@@ -93,5 +94,6 @@ public final class CategoryTabsWidget extends AbstractWidget {
         return false;
     }
 
+    @Override
     protected void updateWidgetNarration(NarrationElementOutput narration) {}
 }

@@ -8,6 +8,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.util.GsonHelper;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.loading.FMLEnvironment;
@@ -29,6 +30,8 @@ public final class QuestData {
     private static boolean loadedClient = false;
     private static boolean loadedServer = false;
 
+    // ------------------ Model ------------------
+
     public static final class Quest {
         public final String id;
         public final String name;
@@ -42,8 +45,8 @@ public final class QuestData {
         public final String category;
 
         public Quest(String id, String name, String icon, String description,
-                     List<String> dependencies, boolean optional, Rewards rewards, String type, Completion completion,
-                     String category) {
+                     List<String> dependencies, boolean optional,
+                     Rewards rewards, String type, Completion completion, String category) {
             this.id = Objects.requireNonNull(id);
             this.name = name == null ? id : name;
             this.icon = icon == null ? "minecraft:book" : icon;
@@ -53,13 +56,12 @@ public final class QuestData {
             this.rewards = rewards;
             this.type = type == null ? "collection" : type;
             this.completion = completion;
-            this.category = category == null || category.isBlank() ? "misc" : category;
+            this.category = (category == null || category.isBlank()) ? "misc" : category;
         }
 
         public Optional<Item> iconItem() {
             try {
-                ResourceLocation rl = ResourceLocation.parse(icon);
-                return Optional.ofNullable(BuiltInRegistries.ITEM.get(rl));
+                return Optional.ofNullable(BuiltInRegistries.ITEM.get(ResourceLocation.parse(icon)));
             } catch (Exception ignored) {
                 return Optional.empty();
             }
@@ -69,17 +71,14 @@ public final class QuestData {
     public static final class Rewards {
         public final List<RewardEntry> items;
         public final String command;
-
         public Rewards(List<RewardEntry> items, String command) {
             this.items = items == null ? List.of() : List.copyOf(items);
             this.command = command == null ? "" : command;
         }
     }
-
     public static final class RewardEntry {
         public final String item;
         public final int count;
-
         public RewardEntry(String item, int count) {
             this.item = item;
             this.count = Math.max(1, count);
@@ -88,7 +87,6 @@ public final class QuestData {
 
     public static final class Completion {
         public final List<Target> targets;
-
         public Completion(List<Target> targets) {
             this.targets = targets == null ? List.of() : List.copyOf(targets);
         }
@@ -98,18 +96,16 @@ public final class QuestData {
         public final String kind;
         public final String id;
         public final int count;
-
         public Target(String kind, String id, int count) {
             this.kind = kind;
             this.id = id;
             this.count = Math.max(1, count);
         }
-
-        public boolean isItem() { return "item".equals(kind); }
-        public boolean isEntity() { return "entity".equals(kind); }
-        public boolean isEffect() { return "effect".equals(kind); }
+        public boolean isItem()        { return "item".equals(kind); }
+        public boolean isEntity()      { return "entity".equals(kind); }
+        public boolean isEffect()      { return "effect".equals(kind); }
         public boolean isAdvancement() { return "advancement".equals(kind); }
-        public boolean isStat() { return "stat".equals(kind); }
+        public boolean isStat()        { return "stat".equals(kind); }
     }
 
     public static final class Category {
@@ -120,102 +116,92 @@ public final class QuestData {
         public final boolean excludeFromAll;
         public final String dependency;
 
-        public Category(String id, String icon, String name, int order, boolean excludeFromAll, String dependency) {
+        public Category(String id, String icon, String name, int order,
+                        boolean excludeFromAll, String dependency) {
             this.id = id;
-            this.icon = icon == null || icon.isBlank() ? "minecraft:book" : icon;
-            this.name = name == null || name.isBlank() ? id : name;
+            this.icon = (icon == null || icon.isBlank()) ? "minecraft:book" : icon;
+            this.name = (name == null || name.isBlank()) ? id : name;
             this.order = order;
             this.excludeFromAll = excludeFromAll;
-            this.dependency = dependency == null ? "" : dependency;
+            this.dependency = (dependency == null) ? "" : dependency;
         }
 
         public Optional<Item> iconItem() {
             try {
-                ResourceLocation rl = ResourceLocation.parse(icon);
-                return Optional.ofNullable(BuiltInRegistries.ITEM.get(rl));
+                return Optional.ofNullable(BuiltInRegistries.ITEM.get(ResourceLocation.parse(icon)));
             } catch (Exception ignored) {
                 return Optional.empty();
             }
         }
     }
 
+    // ------------------ Loading ------------------
+
     private static synchronized void load(ResourceManager rm, boolean forceReload) {
         if ((loadedClient || loadedServer) && !forceReload && !QUESTS.isEmpty()) return;
+
         QUESTS.clear();
         CATEGORIES.clear();
 
-        Map<ResourceLocation, List<Resource>> catFiles = rm.listResourceStacks(ROOT + "/categories", p -> p.getPath().endsWith(".json"));
-        for (Map.Entry<ResourceLocation, List<Resource>> entry : catFiles.entrySet()) {
+        // categories
+        var catStacks = rm.listResourceStacks(ROOT + "/categories", rl -> rl.getPath().endsWith(".json"));
+        for (var entry : catStacks.entrySet()) {
             if (!"boundless".equals(entry.getKey().getNamespace())) continue;
-            List<Resource> stack = entry.getValue();
+            var stack = entry.getValue();
             if (stack.isEmpty()) continue;
-            Resource top = stack.get(stack.size() - 1);
+            var top = stack.get(stack.size() - 1);
             try (Reader raw = top.openAsReader(); Reader reader = new BufferedReader(raw)) {
-                JsonElement el = GsonHelper.fromJson(GSON, reader, JsonElement.class);
+                var el = GsonHelper.fromJson(GSON, reader, JsonElement.class);
                 if (el == null || !el.isJsonObject()) continue;
-                JsonObject obj = el.getAsJsonObject();
-                String id = optString(obj, "id");
+                var obj = el.getAsJsonObject();
+                String id   = optString(obj, "id");
                 String icon = optString(obj, "icon");
-                String cname = optString(obj, "name");
-                int order = 0;
-                if (obj.has("order")) {
-                    JsonPrimitive prim = obj.getAsJsonPrimitive("order");
-                    if (prim.isNumber()) order = prim.getAsInt();
-                    else try { order = Integer.parseInt(prim.getAsString()); } catch (NumberFormatException ignored) {}
-                }
-                boolean excludeFromAll = false;
-                if (obj.has("exclude_from_all")) {
-                    JsonPrimitive prim = obj.getAsJsonPrimitive("exclude_from_all");
-                    if (prim.isBoolean()) excludeFromAll = prim.getAsBoolean();
-                    else excludeFromAll = Boolean.parseBoolean(prim.getAsString());
-                }
-                String dependency = optString(obj, "dependency");
+                String name = optString(obj, "name");
+                int order   = parseIntFlexible(obj, "order", 0);
+                boolean exclude = parseBoolFlexible(obj, "exclude_from_all", false);
+                String dep  = optString(obj, "dependency");
                 if (id != null && !id.isBlank()) {
-                    CATEGORIES.put(id, new Category(id, icon, cname, order, excludeFromAll, dependency));
+                    CATEGORIES.put(id, new Category(id, icon, name, order, exclude, dep));
                 }
             } catch (Exception ex) {
                 BoundlessMod.LOGGER.error("Bad category json {}: {}", entry.getKey(), ex.toString());
             }
         }
 
-        Map<ResourceLocation, List<Resource>> files = rm.listResourceStacks(ROOT, path -> path.getPath().endsWith(".json"));
-        for (Map.Entry<ResourceLocation, List<Resource>> entry : files.entrySet()) {
+        // quests (everything under quests/ except categories/)
+        var stacks = rm.listResourceStacks(ROOT, rl -> rl.getPath().endsWith(".json"));
+        for (var entry : stacks.entrySet()) {
             if (!"boundless".equals(entry.getKey().getNamespace())) continue;
             String path = entry.getKey().getPath();
-            if (path.contains("/categories/") || path.contains("/catagories/")) continue;
-            List<Resource> stack = entry.getValue();
+            if (path.contains("/categories/") || path.contains("/catagories/")) continue; // typo safety
+
+            var stack = entry.getValue();
             if (stack.isEmpty()) continue;
-            Resource top = stack.get(stack.size() - 1);
+            var top = stack.get(stack.size() - 1);
+
             try (Reader raw = top.openAsReader(); Reader reader = new BufferedReader(raw)) {
-                JsonElement el = GsonHelper.fromJson(GSON, reader, JsonElement.class);
+                var el = GsonHelper.fromJson(GSON, reader, JsonElement.class);
                 if (el == null || !el.isJsonObject()) continue;
-                JsonObject obj = el.getAsJsonObject();
+                var obj = el.getAsJsonObject();
 
                 String id = optString(obj, "id");
                 if (id == null || id.isBlank()) {
                     String p = entry.getKey().getPath();
-                    int lastSlash = p.lastIndexOf('/');
-                    String n = (lastSlash >= 0 ? p.substring(lastSlash + 1) : p);
+                    int i = p.lastIndexOf('/');
+                    String n = (i >= 0 ? p.substring(i + 1) : p);
                     id = n.endsWith(".json") ? n.substring(0, n.length() - 5) : n;
                 }
 
                 String name = optString(obj, "name");
                 String icon = optString(obj, "icon");
                 String description = optString(obj, "description");
+                boolean optional = parseBoolFlexible(obj, "optional", false);
+                String type = optString(obj, "type");
+                String category = optString(obj, "category");
 
                 List<String> deps = parseDependencies(obj);
-
-                boolean optional = false;
-                if (obj.has("optional") && obj.get("optional").isJsonPrimitive()) {
-                    JsonPrimitive prim = obj.getAsJsonPrimitive("optional");
-                    if (prim.isBoolean()) optional = prim.getAsBoolean();
-                    else optional = Boolean.parseBoolean(prim.getAsString());
-                }
-
                 Rewards rewards = parseRewards(obj.get("reward"));
-                String type = optString(obj, "type");
                 Completion completion = parseCompletion(obj.get("completion"), type);
-                String category = optString(obj, "category");
 
                 Quest q = new Quest(id, name, icon, description, deps, optional, rewards, type, completion, category);
                 QUESTS.put(q.id, q);
@@ -229,57 +215,124 @@ public final class QuestData {
         if (!CATEGORIES.containsKey("all")) {
             CATEGORIES.put("all", new Category("all", "minecraft:book", "All", Integer.MIN_VALUE, false, ""));
         }
+
         BoundlessMod.LOGGER.info("Loaded {} quest(s), {} category(ies).", QUESTS.size(), CATEGORIES.size());
     }
 
     private static List<String> parseDependencies(JsonObject obj) {
-        List<String> deps = new ArrayList<>();
-        if (obj.has("dependencies") && obj.get("dependencies").isJsonArray()) {
-            for (JsonElement d : obj.getAsJsonArray("dependencies")) {
-                if (d.isJsonPrimitive()) deps.add(d.getAsString());
+        List<String> out = new ArrayList<>();
+        if (obj.has("dependencies")) {
+            var el = obj.get("dependencies");
+            if (el.isJsonArray()) for (var d : el.getAsJsonArray()) if (d.isJsonPrimitive()) out.add(d.getAsString());
+            else if (el.isJsonPrimitive()) {
+                String s = el.getAsString();
+                if (!s.isBlank()) out.add(s);
             }
-        } else if (obj.has("dependencies") && obj.get("dependencies").isJsonPrimitive()) {
-            String s = obj.get("dependencies").getAsString();
-            if (!s.isBlank()) deps.add(s);
         }
-        return deps;
+        return out;
     }
 
     private static Rewards parseRewards(JsonElement el) {
         if (el == null) return new Rewards(List.of(), "");
-        List<RewardEntry> out = new ArrayList<>();
+        List<RewardEntry> items = new ArrayList<>();
         String cmd = "";
         if (el.isJsonArray()) {
-            for (JsonElement e : el.getAsJsonArray()) {
+            for (var e : el.getAsJsonArray()) {
                 if (!e.isJsonObject()) continue;
-                JsonObject r = e.getAsJsonObject();
-                String item = optString(r, "item");
-                int count = r.has("count") ? r.get("count").getAsInt() : 1;
-                if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
+                var o = e.getAsJsonObject();
+                String item = optString(o, "item");
+                int count = o.has("count") ? o.get("count").getAsInt() : 1;
+                if (item != null && !item.isBlank()) items.add(new RewardEntry(item, count));
             }
-            return new Rewards(out, "");
+            return new Rewards(items, "");
         }
         if (el.isJsonObject()) {
-            JsonObject obj = el.getAsJsonObject();
-            if (obj.has("items") && obj.get("items").isJsonArray()) {
-                for (JsonElement e : obj.getAsJsonArray("items")) {
+            var o = el.getAsJsonObject();
+            if (o.has("items") && o.get("items").isJsonArray()) {
+                for (var e : o.getAsJsonArray("items")) {
                     if (!e.isJsonObject()) continue;
-                    JsonObject r = e.getAsJsonObject();
+                    var r = e.getAsJsonObject();
                     String item = optString(r, "item");
                     int count = r.has("count") ? r.get("count").getAsInt() : 1;
-                    if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
+                    if (item != null && !item.isBlank()) items.add(new RewardEntry(item, count));
                 }
             } else {
-                String item = optString(obj, "item");
-                int count = obj.has("count") ? obj.get("count").getAsInt() : 1;
-                if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
+                String item = optString(o, "item");
+                int count = o.has("count") ? o.get("count").getAsInt() : 1;
+                if (item != null && !item.isBlank()) items.add(new RewardEntry(item, count));
             }
-            if (obj.has("command") && obj.get("command").isJsonPrimitive()) {
-                cmd = obj.get("command").getAsString();
-            }
-            return new Rewards(out, cmd);
+            if (o.has("command") && o.get("command").isJsonPrimitive()) cmd = o.get("command").getAsString();
+            return new Rewards(items, cmd);
         }
         return new Rewards(List.of(), "");
+    }
+
+    private static Completion parseCompletion(JsonElement el, String type) {
+        if (el == null) return new Completion(List.of());
+        List<Target> out = new ArrayList<>();
+        if (el.isJsonArray()) {
+            for (var e : el.getAsJsonArray()) if (e.isJsonObject()) parseTargetObject(e.getAsJsonObject(), out);
+            return new Completion(out);
+        }
+        if (el.isJsonObject()) {
+            var obj = el.getAsJsonObject();
+            if (obj.has("targets") && obj.get("targets").isJsonArray()) {
+                for (var e : obj.getAsJsonArray("targets")) if (e.isJsonObject()) parseTargetObject(e.getAsJsonObject(), out);
+                return new Completion(out);
+            }
+            // legacy conveniences
+            if (obj.has("items")) for (var e : obj.getAsJsonArray("items")) if (e.isJsonObject()) {
+                var o = e.getAsJsonObject(); out.add(new Target("item", optString(o, "item"), o.has("count") ? o.get("count").getAsInt() : 1));
+            }
+            if (obj.has("entities")) for (var e : obj.getAsJsonArray("entities")) if (e.isJsonObject()) {
+                var o = e.getAsJsonObject(); out.add(new Target("entity", optString(o, "entity"), o.has("count") ? o.get("count").getAsInt() : 1));
+            }
+            if (obj.has("stats")) for (var e : obj.getAsJsonArray("stats")) if (e.isJsonObject()) {
+                var o = e.getAsJsonObject(); out.add(new Target("stat", optString(o, "stat"), o.has("count") ? o.get("count").getAsInt() : 1));
+            }
+            if (obj.has("item"))       out.add(new Target("item",        optString(obj, "item"),        obj.has("count") ? obj.get("count").getAsInt() : 1));
+            if (obj.has("entity"))     out.add(new Target("entity",      optString(obj, "entity"),      obj.has("count") ? obj.get("count").getAsInt() : 1));
+            if (obj.has("effect"))     out.add(new Target("effect",      optString(obj, "effect"),      1));
+            if (obj.has("advancement"))out.add(new Target("advancement", optString(obj, "advancement"), 1));
+            return new Completion(out);
+        }
+        return new Completion(List.of());
+    }
+
+    private static void parseTargetObject(JsonObject o, List<Target> out) {
+        if (o.has("item"))        out.add(new Target("item",        optString(o, "item"),        o.has("count") ? o.get("count").getAsInt() : 1));
+        else if (o.has("entity")) out.add(new Target("entity",      optString(o, "entity"),      o.has("count") ? o.get("count").getAsInt() : 1));
+        else if (o.has("effect")) out.add(new Target("effect",      optString(o, "effect"),      1));
+        else if (o.has("advancement")) out.add(new Target("advancement", optString(o, "advancement"), 1));
+        else if (o.has("stat"))   out.add(new Target("stat",        optString(o, "stat"),        o.has("count") ? o.get("count").getAsInt() : 1));
+    }
+
+    // ------------------ Public API ------------------
+
+    public static synchronized void loadClient(boolean forceReload) {
+        if (loadedClient && !forceReload && !QUESTS.isEmpty()) return;
+        var rm = Minecraft.getInstance().getResourceManager();
+        load(rm, forceReload);
+        loadedClient = true;
+    }
+
+    public static synchronized void loadServer(MinecraftServer server, boolean forceReload) {
+        if (loadedServer && !forceReload && !QUESTS.isEmpty()) return;
+        var rm = server.getServerResources().resourceManager();
+        load(rm, forceReload);
+        loadedServer = true;
+
+        // Keep the client copy in sync for singleplayer
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            load(Minecraft.getInstance().getResourceManager(), true);
+        }
+    }
+
+    public static boolean isEmpty() { return QUESTS.isEmpty(); }
+
+    public static Collection<Quest> all() {
+        loadClient(false);
+        return Collections.unmodifiableCollection(QUESTS.values());
     }
 
     public static Collection<Quest> allServer(MinecraftServer server) {
@@ -287,145 +340,22 @@ public final class QuestData {
         return Collections.unmodifiableCollection(QUESTS.values());
     }
 
-    private static Completion parseCompletion(JsonElement el, String type) {
-        if (el == null) return new Completion(List.of());
-        List<Target> out = new ArrayList<>();
-        if (el.isJsonArray()) {
-            for (JsonElement e : el.getAsJsonArray()) {
-                if (!e.isJsonObject()) continue;
-                parseTargetObject(e.getAsJsonObject(), out);
-            }
-            return new Completion(out);
-        }
-        if (el.isJsonObject()) {
-            JsonObject obj = el.getAsJsonObject();
-            if (obj.has("targets") && obj.get("targets").isJsonArray()) {
-                for (JsonElement e : obj.getAsJsonArray("targets")) {
-                    if (!e.isJsonObject()) continue;
-                    parseTargetObject(e.getAsJsonObject(), out);
-                }
-                return new Completion(out);
-            }
-            if (obj.has("items") && obj.get("items").isJsonArray()) {
-                for (JsonElement e : obj.getAsJsonArray("items")) {
-                    if (!e.isJsonObject()) continue;
-                    JsonObject o = e.getAsJsonObject();
-                    String item = optString(o, "item");
-                    int count = o.has("count") ? o.get("count").getAsInt() : 1;
-                    if (item != null && !item.isBlank()) out.add(new Target("item", item, count));
-                }
-                return new Completion(out);
-            }
-            if (obj.has("entities") && obj.get("entities").isJsonArray()) {
-                for (JsonElement e : obj.getAsJsonArray("entities")) {
-                    if (!e.isJsonObject()) continue;
-                    JsonObject o = e.getAsJsonObject();
-                    String entity = optString(o, "entity");
-                    int count = o.has("count") ? o.get("count").getAsInt() : 1;
-                    if (entity != null && !entity.isBlank()) out.add(new Target("entity", entity, count));
-                }
-                return new Completion(out);
-            }
-            if (obj.has("stats") && obj.get("stats").isJsonArray()) {
-                for (JsonElement e : obj.getAsJsonArray("stats")) {
-                    if (!e.isJsonObject()) continue;
-                    JsonObject o = e.getAsJsonObject();
-                    String stat = optString(o, "stat");
-                    int count = o.has("count") ? o.get("count").getAsInt() : 1;
-                    if (stat != null && !stat.isBlank()) out.add(new Target("stat", stat, count));
-                }
-                return new Completion(out);
-            }
-            if (obj.has("item")) {
-                String item = optString(obj, "item");
-                int count = obj.has("count") ? obj.get("count").getAsInt() : 1;
-                if (item != null && !item.isBlank()) out.add(new Target("item", item, count));
-                return new Completion(out);
-            }
-            if (obj.has("entity")) {
-                String entity = optString(obj, "entity");
-                int count = obj.has("count") ? obj.get("count").getAsInt() : 1;
-                if (entity != null && !entity.isBlank()) out.add(new Target("entity", entity, count));
-                return new Completion(out);
-            }
-            if (obj.has("effect")) {
-                String effect = optString(obj, "effect");
-                if (effect != null && !effect.isBlank()) out.add(new Target("effect", effect, 1));
-                return new Completion(out);
-            }
-            if (obj.has("advancement")) {
-                String adv = optString(obj, "advancement");
-                if (adv != null && !adv.isBlank()) out.add(new Target("advancement", adv, 1));
-                return new Completion(out);
-            }
-        }
-        return new Completion(List.of());
-    }
-
-    private static void parseTargetObject(JsonObject o, List<Target> out) {
-        if (o.has("item")) {
-            String item = optString(o, "item");
-            int count = o.has("count") ? o.get("count").getAsInt() : 1;
-            if (item != null && !item.isBlank()) out.add(new Target("item", item, count));
-        } else if (o.has("entity")) {
-            String entity = optString(o, "entity");
-            int count = o.has("count") ? o.get("count").getAsInt() : 1;
-            if (entity != null && !entity.isBlank()) out.add(new Target("entity", entity, count));
-        } else if (o.has("effect")) {
-            String effect = optString(o, "effect");
-            if (effect != null && !effect.isBlank()) out.add(new Target("effect", effect, 1));
-        } else if (o.has("advancement")) {
-            String adv = optString(o, "advancement");
-            if (adv != null && !adv.isBlank()) out.add(new Target("advancement", adv, 1));
-        } else if (o.has("stat")) {
-            String stat = optString(o, "stat");
-            int count = o.has("count") ? o.get("count").getAsInt() : 1;
-            if (stat != null && !stat.isBlank()) out.add(new Target("stat", stat, count));
-        }
-    }
-
-    public static synchronized void loadClient(boolean forceReload) {
-        if (loadedClient && !forceReload && !QUESTS.isEmpty()) return;
-        ResourceManager rm = Minecraft.getInstance().getResourceManager();
-        load(rm, forceReload);
-        loadedClient = true;
-    }
-
-    public static synchronized void loadServer(MinecraftServer server, boolean forceReload) {
-        if (loadedServer && !forceReload && !QUESTS.isEmpty()) return;
-        var resources = server.getServerResources();
-        ResourceManager rm = resources.resourceManager();
-        load(rm, forceReload);
-        loadedServer = true;
-        if (FMLEnvironment.dist == Dist.CLIENT) {
-            ResourceManager crm = Minecraft.getInstance().getResourceManager();
-            load(crm, true);
-        }
-    }
-
-    public static boolean isEmpty() { return QUESTS.isEmpty(); }
-
-    public static Collection<Quest> all() {
-        if (!loadedClient) loadClient(false);
-        return Collections.unmodifiableCollection(QUESTS.values());
-    }
-
     public static Optional<Quest> byId(String id) {
-        if (!loadedClient) loadClient(false);
+        loadClient(false);
         return Optional.ofNullable(QUESTS.get(id));
     }
 
     public static Optional<Quest> byIdServer(MinecraftServer server, String id) {
-        if (!loadedServer) loadServer(server, false);
+        loadServer(server, false);
         return Optional.ofNullable(QUESTS.get(id));
     }
 
     public static Optional<Category> categoryById(String id) {
-        if (!loadedClient) loadClient(false);
+        loadClient(false);
         return Optional.ofNullable(CATEGORIES.get(id));
     }
 
-    public static boolean isCategoryUnlocked(Category c, net.minecraft.world.entity.player.Player player) {
+    public static boolean isCategoryUnlocked(Category c, Player player) {
         if (c == null) return true;
         if (c.dependency == null || c.dependency.isBlank()) return true;
         var q = byId(c.dependency).orElse(null);
@@ -433,18 +363,19 @@ public final class QuestData {
         return QuestTracker.getStatus(q, player) == QuestTracker.Status.REDEEMED;
     }
 
-    public static boolean includeQuestInAll(Quest q, net.minecraft.world.entity.player.Player player) {
+    public static boolean includeQuestInAll(Quest q, Player player) {
         if (q == null) return false;
-        Category c = CATEGORIES.getOrDefault(q.category, null);
+        var c = CATEGORIES.get(q.category);
         if (c == null) return true;
         if (c.excludeFromAll) return false;
         return isCategoryUnlocked(c, player);
     }
 
     public static List<Category> categoriesOrdered() {
-        if (!loadedClient) loadClient(false);
-        if (!CATEGORIES.containsKey("all")) CATEGORIES.put("all", new Category("all", "minecraft:book", "All", Integer.MIN_VALUE, false, ""));
-        List<Category> list = new ArrayList<>(CATEGORIES.values());
+        loadClient(false);
+        if (!CATEGORIES.containsKey("all"))
+            CATEGORIES.put("all", new Category("all", "minecraft:book", "All", Integer.MIN_VALUE, false, ""));
+        var list = new ArrayList<>(CATEGORIES.values());
         list.sort((a, b) -> {
             if ("all".equals(a.id)) return -1;
             if ("all".equals(b.id)) return 1;
@@ -454,7 +385,21 @@ public final class QuestData {
         return list;
     }
 
+    // ------------------ helpers ------------------
+
     private static String optString(JsonObject o, String key) {
         return o.has(key) && o.get(key).isJsonPrimitive() ? o.get(key).getAsString() : null;
+    }
+    private static int parseIntFlexible(JsonObject o, String key, int def) {
+        if (!o.has(key)) return def;
+        var p = o.getAsJsonPrimitive(key);
+        if (p.isNumber()) return p.getAsInt();
+        try { return Integer.parseInt(p.getAsString()); } catch (Exception ignored) { return def; }
+    }
+    private static boolean parseBoolFlexible(JsonObject o, String key, boolean def) {
+        if (!o.has(key)) return def;
+        var p = o.getAsJsonPrimitive(key);
+        if (p.isBoolean()) return p.getAsBoolean();
+        try { return Boolean.parseBoolean(p.getAsString()); } catch (Exception ignored) { return def; }
     }
 }
