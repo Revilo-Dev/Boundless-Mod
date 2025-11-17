@@ -408,6 +408,24 @@ public final class QuestData {
         }
         if (el.isJsonObject()) {
             JsonObject obj = el.getAsJsonObject();
+
+            if (obj.has("collect")) {
+                JsonElement cEl = obj.get("collect");
+                int count = obj.has("count") && obj.get("count").isJsonPrimitive() && obj.getAsJsonPrimitive("count").isNumber()
+                        ? obj.get("count").getAsInt() : 1;
+                if (cEl.isJsonArray()) {
+                    for (JsonElement ce : cEl.getAsJsonArray()) {
+                        if (!ce.isJsonPrimitive()) continue;
+                        String id = ce.getAsString();
+                        if (!id.isBlank()) out.add(new Target("item", id, count));
+                    }
+                } else if (cEl.isJsonPrimitive()) {
+                    String id = cEl.getAsString();
+                    if (!id.isBlank()) out.add(new Target("item", id, count));
+                }
+                return new Completion(out);
+            }
+
             if (obj.has("targets") && obj.get("targets").isJsonArray()) {
                 for (JsonElement e : obj.getAsJsonArray("targets")) {
                     if (!e.isJsonObject()) continue;
