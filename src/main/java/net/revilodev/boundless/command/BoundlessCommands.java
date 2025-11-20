@@ -5,6 +5,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.QuestData;
@@ -14,7 +15,18 @@ public final class BoundlessCommands {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
                 Commands.literal("boundless")
-                        .requires(s -> s.hasPermission(0))
+                        .requires(s -> s.hasPermission(2))
+                        .then(Commands.literal("reload")
+                                .executes(ctx -> {
+                                    MinecraftServer server = ctx.getSource().getServer();
+                                    QuestData.loadServer(server, true);
+                                    for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                                        QuestTracker.reset(p);
+                                        BoundlessNetwork.syncPlayer(p);
+                                    }
+                                    ctx.getSource().sendSuccess(() -> Component.literal("Boundless quests reloaded."), true);
+                                    return 1;
+                                }))
                         .then(Commands.literal("reset")
                                 .executes(ctx -> {
                                     ServerPlayer player = ctx.getSource().getPlayer();
@@ -29,7 +41,6 @@ public final class BoundlessCommands {
                                         .executes(ctx -> {
                                             ServerPlayer player = ctx.getSource().getPlayer();
                                             if (player == null) return 0;
-
                                             String id = ResourceLocationArgument.getId(ctx, "id").toString();
                                             QuestData.byId(id).ifPresent(q -> {
                                                 if (QuestTracker.isReady(q, player)) {
@@ -48,7 +59,6 @@ public final class BoundlessCommands {
                                         .executes(ctx -> {
                                             ServerPlayer player = ctx.getSource().getPlayer();
                                             if (player == null) return 0;
-
                                             String id = ResourceLocationArgument.getId(ctx, "id").toString();
                                             BoundlessNetwork.sendToastTo(player, id);
                                             ctx.getSource().sendSuccess(() -> Component.literal("Toast sent for " + id), false);

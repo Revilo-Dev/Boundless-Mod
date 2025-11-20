@@ -20,11 +20,22 @@
   "optional": "true",
 
   "//COMPLETION": "The completion variable for the quest: items is only compatible with collection or submission | targets is only compatible with kill | effect only works with effect | advancement only works with advancement",
-  "completion": {
-    "items": [ {"item": "minecraft:", "count": 1} ],
-    "targets": [ { "entity": "minecraft:zombie", "count": 5 } ],
-    "effects": [ {"effect": "minecraft:hero_of_the_village", "count": 1} ],
-    "advancements": [{ "advancement": "minecraft:story/mine_stone", "count": 1}]
+  "complete": {
+    "collect": [
+      { "item": "minecraft:crafting_table", "count": 1 }
+    ],
+    "submit": [
+      { "item": "minecraft:diamond", "count": 1 }
+    ],
+    "kill": [
+      { "entity": "minecraft:zombie", "count": 5 }
+    ],
+    "achieve": [
+      { "advancement": "minecraft:story/mine_stone", "count": 1 }
+    ],
+    "effect": [
+      { "effect": "minecraft:haste", "count": 1 }
+    ]
   },
 
   "//REWARD": "2 Reward types: item or command | This defines the rewards the player receives. This can be a single reward or multiple rewards",

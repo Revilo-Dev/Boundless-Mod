@@ -17,6 +17,7 @@ import net.revilodev.boundless.quest.KillCounterState;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestTracker;
 import net.revilodev.boundless.quest.QuestWorldState;
+import net.revilodev.boundless.Config;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,8 +29,6 @@ public final class BoundlessNetwork {
     public static void bootstrap(IEventBus modBus) {
         modBus.addListener(BoundlessNetwork::register);
     }
-
-    // --------------------- PAYLOADS ---------------------
 
     public record RedeemPayload(String questId) implements CustomPacketPayload {
         public static final Type<RedeemPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "redeem"));
@@ -88,8 +87,6 @@ public final class BoundlessNetwork {
         public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
-    // --------------------- REGISTRATION ---------------------
-
     public static void register(final RegisterPayloadHandlersEvent event) {
         PayloadRegistrar reg = event.registrar("1").executesOn(HandlerThread.MAIN);
         reg.playToServer(RedeemPayload.TYPE, RedeemPayload.STREAM_CODEC, BoundlessNetwork::handleRedeem);
@@ -100,17 +97,12 @@ public final class BoundlessNetwork {
         reg.playToClient(ToastPayload.TYPE, ToastPayload.STREAM_CODEC, BoundlessNetwork::handleToast);
     }
 
-    // --------------------- SYNC LOGIC ---------------------
-
     public static void syncPlayer(ServerPlayer player) {
-
         syncClear(player);
-
         QuestWorldState qs = QuestWorldState.get(player.serverLevel());
         for (Map.Entry<String, String> e : qs.snapshot().entrySet()) {
             PacketDistributor.sendToPlayer(player, new SyncStatusPayload(e.getKey(), e.getValue()));
         }
-
         Map<String, Integer> kills = KillCounterState.get(player.serverLevel()).snapshotFor(player.getUUID());
         List<KillEntry> list = new ArrayList<>();
         for (Map.Entry<String, Integer> e : kills.entrySet()) list.add(new KillEntry(e.getKey(), e.getValue()));
@@ -122,15 +114,17 @@ public final class BoundlessNetwork {
     }
 
     public static void sendToastTo(ServerPlayer player, String questId) {
-        PacketDistributor.sendToPlayer(player, new ToastPayload(questId));
+        QuestData.byIdServer(player.server, questId).ifPresent(q -> {
+            if (Config.disabledCategories().contains(q.category)) return;
+            PacketDistributor.sendToPlayer(player, new ToastPayload(questId));
+        });
     }
-
-    // --------------------- HANDLERS ---------------------
 
     private static void handleRedeem(final RedeemPayload payload, final IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer sp)) return;
             QuestData.byIdServer(sp.server, payload.questId()).ifPresent(q -> {
+                if (Config.disabledCategories().contains(q.category)) return;
                 if (!QuestTracker.isReady(q, sp)) return;
                 boolean changed = QuestTracker.completeAndRedeem(q, sp);
                 if (changed) {
@@ -145,6 +139,7 @@ public final class BoundlessNetwork {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer sp)) return;
             QuestData.byIdServer(sp.server, payload.questId()).ifPresent(q -> {
+                if (Config.disabledCategories().contains(q.category)) return;
                 if (QuestTracker.reject(q, sp)) {
                     PacketDistributor.sendToPlayer(sp, new SyncStatusPayload(q.id, QuestTracker.Status.REJECTED.name()));
                 }
@@ -172,6 +167,7 @@ public final class BoundlessNetwork {
     private static void handleToast(final ToastPayload payload, final IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             QuestData.byId(payload.questId()).ifPresent(q -> {
+                if (Config.disabledCategories().contains(q.category)) return;
                 QuestUnlockedToast.show(q.name, q.iconItem().orElse(null));
             });
         });
