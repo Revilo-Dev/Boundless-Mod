@@ -24,6 +24,7 @@ import net.revilodev.boundless.client.QuestPanelClient;
 import net.revilodev.boundless.command.BoundlessCommands;
 import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.KillCounterState;
+import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestEvents;
 import org.slf4j.Logger;
 
@@ -37,7 +38,6 @@ public final class BoundlessMod {
     public BoundlessMod(ModContainer modContainer, IEventBus modBus) {
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC, MOD_ID + "-common.toml");
 
-        // Setup listeners
         modBus.addListener(this::commonSetup);
         modBus.addListener(this::addCreative);
 
@@ -45,13 +45,10 @@ public final class BoundlessMod {
             modBus.addListener(this::clientSetup);
         }
 
-        // Network
         BoundlessNetwork.bootstrap(modBus);
 
-        // Global events
         NeoForge.EVENT_BUS.register(this);
 
-        // Quest tick events
         NeoForge.EVENT_BUS.addListener(QuestEvents::onPlayerTick);
     }
 
@@ -77,6 +74,7 @@ public final class BoundlessMod {
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
         LOGGER.info("Boundless server starting");
+        QuestData.loadServer(event.getServer(), true);
     }
 
     @SubscribeEvent

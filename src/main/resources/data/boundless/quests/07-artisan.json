@@ -11,6 +11,6 @@
     "item": "minecraft:anvil", "count": 1
   },
   "reward": {
-    "item": "minecraft:bottle_of_experience", "count": 32
+    "exp": "points", "count": 45
   }
 }

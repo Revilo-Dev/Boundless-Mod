@@ -96,7 +96,7 @@ public final class QuestTracker {
                 String name = typed ? id.substring(first + 1) : id;
 
                 ResourceLocation rl = ResourceLocation.tryParse(name);
-                if (rl == null) return 0; // ✨ prevent null crash
+                if (rl == null) return 0;
 
                 switch (type) {
                     case "custom" -> {
@@ -119,7 +119,6 @@ public final class QuestTracker {
                         value = sp.getStats().getValue(Stats.ENTITY_KILLED.get(et));
                     }
                     default -> {
-                        // unknown stat type → ignore safely
                         return 0;
                     }
                 }
@@ -143,9 +142,6 @@ public final class QuestTracker {
 
         return value;
     }
-
-
-
 
     private static ResourceLocation safeParse(String s) {
         try { return ResourceLocation.parse(s); } catch (Throwable t) { return null; }
@@ -216,22 +212,32 @@ public final class QuestTracker {
     }
 
     public static boolean completeAndRedeem(QuestData.Quest q, ServerPlayer player) {
+        if (q == null || player == null) return false;
         QuestWorldState st = state(player);
         if (st == null) return false;
-        if (st.get(q.id) == Status.REDEEMED) return false;
+        Status cur = st.get(q.id);
+        if (cur == Status.REDEEMED || cur == Status.REJECTED) return false;
+        if (!dependenciesMet(q, player) || !isReady(q, player)) return false;
+
         if (q.rewards != null && q.rewards.items != null) {
             for (QuestData.RewardEntry r : q.rewards.items) {
                 ResourceLocation rl = ResourceLocation.parse(r.item);
                 Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-                if (item != null) player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
+                if (item != null) {
+                    player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
+                }
             }
         }
+
         if (q.rewards != null && q.rewards.command != null && !q.rewards.command.isBlank()) {
             String raw = q.rewards.command.startsWith("/") ? q.rewards.command.substring(1) : q.rewards.command;
             CommandSourceStack source = player.createCommandSourceStack().withPermission(4);
             player.server.getCommands().performPrefixedCommand(source, raw);
         }
+
         st.set(q.id, Status.REDEEMED);
+        PacketDistributor.sendToPlayer(player, new BoundlessNetwork.SyncStatusPayload(q.id, Status.REDEEMED.name()));
+        BoundlessNetwork.sendToastTo(player, q.id);
         return true;
     }
 
@@ -278,17 +284,23 @@ public final class QuestTracker {
     public static void serverCheckAndMarkComplete(ServerPlayer sp) {
         QuestWorldState st = state(sp);
         if (st == null) return;
+        boolean dedicated = sp.server.isDedicatedServer();
         for (QuestData.Quest q : QuestData.allServer(sp.server)) {
             Status cur = st.get(q.id);
             if (cur == Status.REDEEMED || cur == Status.REJECTED) continue;
             boolean ready = dependenciesMet(q, sp) && isReady(q, sp);
-            if (ready && cur == Status.INCOMPLETE) {
-                st.set(q.id, Status.COMPLETED);
-                PacketDistributor.sendToPlayer(sp, new BoundlessNetwork.SyncStatusPayload(q.id, Status.COMPLETED.name()));
-                BoundlessNetwork.sendToastTo(sp, q.id);
-            } else if (!ready && cur == Status.COMPLETED) {
-                st.set(q.id, Status.INCOMPLETE);
-                PacketDistributor.sendToPlayer(sp, new BoundlessNetwork.SyncStatusPayload(q.id, Status.INCOMPLETE.name()));
+
+            if (dedicated) {
+                if (ready) completeAndRedeem(q, sp);
+            } else {
+                if (ready && cur == Status.INCOMPLETE) {
+                    st.set(q.id, Status.COMPLETED);
+                    PacketDistributor.sendToPlayer(sp, new BoundlessNetwork.SyncStatusPayload(q.id, Status.COMPLETED.name()));
+                    BoundlessNetwork.sendToastTo(sp, q.id);
+                } else if (!ready && cur == Status.COMPLETED) {
+                    st.set(q.id, Status.INCOMPLETE);
+                    PacketDistributor.sendToPlayer(sp, new BoundlessNetwork.SyncStatusPayload(q.id, Status.INCOMPLETE.name()));
+                }
             }
         }
     }
