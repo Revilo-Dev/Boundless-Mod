@@ -76,11 +76,17 @@ public final class QuestData {
     public static final class Rewards {
         public final List<RewardEntry> items;
         public final String command;
-        public Rewards(List<RewardEntry> items, String command) {
+        public final String expType;
+        public final int expAmount;
+        public Rewards(List<RewardEntry> items, String command, String expType, int expAmount) {
             this.items = items == null ? List.of() : List.copyOf(items);
             this.command = command == null ? "" : command;
+            this.expType = expType == null ? "" : expType;
+            this.expAmount = Math.max(0, expAmount);
         }
+        public boolean hasExp() { return !expType.isBlank() && expAmount > 0; }
     }
+
 
     public static final class RewardEntry {
         public final String item;
@@ -305,19 +311,12 @@ public final class QuestData {
     }
 
     private static Rewards parseRewards(JsonElement el) {
-        if (el == null) return new Rewards(List.of(), "");
+        if (el == null) return new Rewards(List.of(), "", "", 0);
         List<RewardEntry> out = new ArrayList<>();
         String cmd = "";
-        if (el.isJsonArray()) {
-            for (JsonElement e : el.getAsJsonArray()) {
-                if (!e.isJsonObject()) continue;
-                JsonObject r = e.getAsJsonObject();
-                String item = optString(r, "item");
-                int count = r.has("count") ? r.get("count").getAsInt() : 1;
-                if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
-            }
-            return new Rewards(out, "");
-        }
+        String expType = "";
+        int expAmount = 0;
+
         if (el.isJsonObject()) {
             JsonObject obj = el.getAsJsonObject();
             if (obj.has("items") && obj.get("items").isJsonArray()) {
@@ -328,21 +327,45 @@ public final class QuestData {
                     int count = r.has("count") ? r.get("count").getAsInt() : 1;
                     if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
                 }
-            } else {
+            } else if (obj.has("item")) {
                 String item = optString(obj, "item");
                 int count = obj.has("count") ? obj.get("count").getAsInt() : 1;
                 if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
             }
+
             if (obj.has("command") && obj.get("command").isJsonPrimitive())
                 cmd = obj.get("command").getAsString();
-            return new Rewards(out, cmd);
+
+            if (obj.has("exp")) {
+                JsonElement ex = obj.get("exp");
+                if (ex.isJsonPrimitive()) expType = ex.getAsString();
+            }
+
+            if (obj.has("count") && obj.get("count").isJsonPrimitive() && obj.getAsJsonPrimitive("count").isNumber())
+                expAmount = obj.getAsJsonPrimitive("count").getAsInt();
+
+            return new Rewards(out, cmd, expType, expAmount);
         }
+
+        if (el.isJsonArray()) {
+            for (JsonElement e : el.getAsJsonArray()) {
+                if (!e.isJsonObject()) continue;
+                JsonObject r = e.getAsJsonObject();
+                String item = optString(r, "item");
+                int count = r.has("count") ? r.get("count").getAsInt() : 1;
+                if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
+            }
+            return new Rewards(out, "", "", 0);
+        }
+
         if (el.isJsonPrimitive()) {
             String maybeCmd = el.getAsString();
-            if (!maybeCmd.isBlank()) return new Rewards(List.of(), maybeCmd);
+            if (!maybeCmd.isBlank()) return new Rewards(List.of(), maybeCmd, "", 0);
         }
-        return new Rewards(List.of(), "");
+
+        return new Rewards(List.of(), "", "", 0);
     }
+
 
     private static Completion parseCompletion(JsonElement el, String type) {
         if (el == null) return new Completion(List.of());
@@ -469,6 +492,8 @@ public final class QuestData {
         load(rm, forceReload);
         loadedClient = true;
     }
+
+
 
     public static synchronized void loadServer(MinecraftServer server, boolean forceReload) {
         if (loadedServer && !forceReload && !QUESTS.isEmpty()) return;

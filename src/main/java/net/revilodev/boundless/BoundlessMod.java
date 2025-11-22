@@ -5,6 +5,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.CreativeModeTabs;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -23,6 +24,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.revilodev.boundless.client.ClientQuestEvents;
 import net.revilodev.boundless.client.QuestPanelClient;
 import net.revilodev.boundless.command.BoundlessCommands;
+import net.revilodev.boundless.item.ModItems;
 import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.KillCounterState;
 import net.revilodev.boundless.quest.QuestData;
@@ -38,6 +40,8 @@ public final class BoundlessMod {
 
     public BoundlessMod(ModContainer modContainer, IEventBus modBus) {
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC, MOD_ID + "-common.toml");
+
+        ModItems.register(modBus);
 
         modBus.addListener(this::commonSetup);
         modBus.addListener(this::addCreative);
@@ -67,7 +71,11 @@ public final class BoundlessMod {
         NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLevelUnload);
     }
 
-    private void addCreative(BuildCreativeModeTabContentsEvent event) {}
+    private void addCreative(BuildCreativeModeTabContentsEvent event) {
+        if (event.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) {
+            event.accept(ModItems.QUEST_BOOK.get());
+        }
+    }
 
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {

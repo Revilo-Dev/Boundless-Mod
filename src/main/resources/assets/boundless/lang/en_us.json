@@ -3,5 +3,7 @@
 
   "toast.boundless.quest_unlocked": "Quest Unlocked!",
 
-  "quest.boundless.toggle": "Quest completed!"
+  "quest.boundless.toggle": "Quest completed!",
+
+  "item.boundless.quest_book": "Quest Book"
 }

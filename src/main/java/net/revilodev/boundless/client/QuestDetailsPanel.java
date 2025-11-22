@@ -313,8 +313,11 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         boolean hasItemRewards = quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty();
         boolean hasCommandReward = quest.rewards != null && quest.rewards.command != null && !quest.rewards.command.isBlank();
+        boolean hasExpReward = quest.rewards != null && quest.rewards.hasExp();
 
-        if (hasItemRewards || hasCommandReward) {
+
+
+        if (hasItemRewards || hasCommandReward || hasExpReward) {
             gg.drawWordWrap(mc.font, Component.literal("Reward:"), x + 4, curY[0], w - 8, 0xA8FFA8);
             curY[0] += mc.font.wordWrapHeight("Reward:", w - 8) + 4;
 
@@ -344,6 +347,18 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     hoveredTooltips.add(Component.literal("Command Reward"));
                 curY[0] += LINE_ITEM_ROW;
             }
+
+            if (hasExpReward) {
+                int lineY = curY[0];
+                gg.renderItem(new ItemStack(Items.EXPERIENCE_BOTTLE), x + 4, lineY);
+                String txt = quest.rewards.expType.equals("levels") ? ("Levels: " + quest.rewards.expAmount)
+                        : ("XP: " + quest.rewards.expAmount);
+                gg.drawString(mc.font, txt, x + 24, lineY + 6, 0xA8FFA8, false);
+                if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16)
+                    hoveredTooltips.add(Component.literal(txt));
+                curY[0] += LINE_ITEM_ROW;
+            }
+
 
             curY[0] += 2;
         }
@@ -380,11 +395,14 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         boolean hasItemRewards = quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty();
         boolean hasCommandReward = quest.rewards != null && quest.rewards.command != null && !quest.rewards.command.isBlank();
+        boolean hasExpReward = quest.rewards != null && quest.rewards.hasExp();
 
-        if (hasItemRewards || hasCommandReward) {
+
+        if (hasItemRewards || hasCommandReward || hasExpReward) {
             y += mc.font.wordWrapHeight("Reward:", w - 8) + 4;
             if (hasItemRewards) y += quest.rewards.items.size() * LINE_ITEM_ROW;
             if (hasCommandReward) y += LINE_ITEM_ROW;
+            if (hasExpReward) y += LINE_ITEM_ROW;
             y += 2;
         }
         return y;

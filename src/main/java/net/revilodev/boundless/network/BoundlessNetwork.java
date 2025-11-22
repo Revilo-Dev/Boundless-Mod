@@ -165,12 +165,18 @@ public final class BoundlessNetwork {
             QuestData.byIdServer(sp.server, p.questId()).ifPresent(q -> {
                 if (QuestTracker.isReady(q, sp)) {
                     boolean ok = QuestTracker.serverRedeem(q, sp);
-                    if (ok)
+                    if (ok) {
+                        if (q.rewards.hasExp()) {
+                            if ("points".equals(q.rewards.expType)) sp.giveExperiencePoints(q.rewards.expAmount);
+                            else if ("levels".equals(q.rewards.expType)) sp.giveExperienceLevels(q.rewards.expAmount);
+                        }
                         sendStatus(sp, q.id, QuestTracker.Status.REDEEMED.name());
+                    }
                 }
             });
         });
     }
+
 
     private static void handleReject(Reject p, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
