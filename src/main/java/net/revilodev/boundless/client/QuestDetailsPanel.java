@@ -64,7 +64,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         this.complete = new CompleteButton(getX(), getY(), () -> {
             if (quest != null && mc.player != null) {
-                PacketDistributor.sendToServer(new BoundlessNetwork.RedeemPayload(quest.id));
+                PacketDistributor.sendToServer(new BoundlessNetwork.Redeem(quest.id));
                 QuestTracker.clientSetStatus(quest.id, QuestTracker.Status.REDEEMED);
                 if (this.onBack != null) this.onBack.run();
             }
@@ -74,7 +74,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         this.reject = new RejectButton(getX(), getY(), () -> {
             if (quest != null && mc.player != null && quest.optional) {
-                PacketDistributor.sendToServer(new BoundlessNetwork.RejectPayload(quest.id));
+                PacketDistributor.sendToServer(new BoundlessNetwork.Reject(quest.id));
                 QuestTracker.clientSetStatus(quest.id, QuestTracker.Status.REJECTED);
                 if (this.onBack != null) this.onBack.run();
             }
@@ -155,9 +155,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     if (status == QuestTracker.Status.REDEEMED) color = 0x55FF55;
                 }
 
-                if (depQuest != null) {
-                    depQuest.iconItem().ifPresent(icon -> gg.renderItem(new ItemStack(icon), x + 4, lineY));
-                }
+                if (depQuest != null) depQuest.iconItem().ifPresent(icon -> gg.renderItem(new ItemStack(icon), x + 4, lineY));
 
                 gg.drawString(mc.font, depName, textX, lineY + 4, color, false);
                 gg.fill(textX, lineY + 14, textX + textW, lineY + 15, color);
@@ -224,9 +222,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     if (et != null) {
                         ResourceLocation eggRl = ResourceLocation.fromNamespaceAndPath(rl.getNamespace(), rl.getPath() + "_spawn_egg");
                         iconItem = BuiltInRegistries.ITEM.getOptional(eggRl).orElse(Items.DIAMOND_SWORD);
-                    } else {
-                        iconItem = Items.DIAMOND_SWORD;
-                    }
+                    } else iconItem = Items.DIAMOND_SWORD;
 
                     ItemStack icon = new ItemStack(iconItem);
                     gg.renderItem(icon, x + 4, curY[0]);

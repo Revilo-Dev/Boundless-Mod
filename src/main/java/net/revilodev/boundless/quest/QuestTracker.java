@@ -1,5 +1,8 @@
 package net.revilodev.boundless.quest;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
 import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.AdvancementProgress;
 import net.minecraft.commands.CommandSourceStack;
@@ -7,7 +10,6 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.stats.Stats;
 import net.minecraft.world.effect.MobEffect;
@@ -15,62 +17,187 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.loading.FMLEnvironment;
+import net.revilodev.boundless.Config;
 import net.revilodev.boundless.network.BoundlessNetwork;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 public final class QuestTracker {
+
     public enum Status { INCOMPLETE, COMPLETED, REDEEMED, REJECTED }
 
-    private static final Map<String, Status> CLIENT_STATES = new HashMap<>();
+    private static final Gson GSON = new GsonBuilder().setLenient().create();
+
+    private static final Map<String, Map<String, Status>> WORLD_STATES = new HashMap<>();
     private static final Map<String, Integer> CLIENT_KILLS = new HashMap<>();
     private static final Map<String, Boolean> CLIENT_ADV_DONE = new HashMap<>();
     private static final Map<String, Integer> CLIENT_STATS = new HashMap<>();
 
-    private static QuestWorldState state(Player player) {
-        if (player == null) return null;
-        if (player.level() instanceof ServerLevel server) return QuestWorldState.get(server);
-        return null;
+    private static String ACTIVE_KEY = null;
+
+    private QuestTracker() {}
+
+    private static String sanitize(String s) {
+        return s.replaceAll("[^a-zA-Z0-9._-]", "_");
+    }
+
+    private static String computeClientKey(Player player) {
+        try {
+            if (FMLEnvironment.dist != Dist.CLIENT) return "server";
+            var mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc == null) return "default";
+
+            if (mc.getSingleplayerServer() != null) {
+                String name = mc.getSingleplayerServer().getWorldData().getLevelName();
+                if (name == null || name.isBlank()) name = "world";
+                return "sp_" + sanitize(name);
+            }
+
+            if (mc.getCurrentServer() != null) {
+                String ip = mc.getCurrentServer().ip;
+                if (ip == null || ip.isBlank()) ip = "multiplayer";
+                return "mp_" + sanitize(ip);
+            }
+        } catch (Throwable ignored) {}
+
+        return "default";
+    }
+
+    private static Map<String, Status> activeStateMap() {
+        String key = ACTIVE_KEY;
+        if (key == null) key = "default";
+        return WORLD_STATES.computeIfAbsent(key, k -> new LinkedHashMap<>());
+    }
+
+    private static Path clientSavePath(String key) {
+        var mc = net.minecraft.client.Minecraft.getInstance();
+        File dir = new File(mc.gameDirectory, "config/boundless/quest_state");
+        return new File(dir, key + ".json").toPath();
+    }
+
+    private static void loadClientState(String key) {
+        Map<String, Status> map = WORLD_STATES.computeIfAbsent(key, k -> new LinkedHashMap<>());
+        map.clear();
+        try {
+            Path p = clientSavePath(key);
+            if (!Files.exists(p)) return;
+            try (BufferedReader r = new BufferedReader(new FileReader(p.toFile()))) {
+                JsonObject obj = GSON.fromJson(r, JsonObject.class);
+                if (obj == null) return;
+                for (String qid : obj.keySet()) {
+                    try {
+                        Status st = Status.valueOf(obj.get(qid).getAsString());
+                        map.put(qid, st);
+                    } catch (Exception ignored) {}
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static void saveClientState(String key) {
+        try {
+            Path p = clientSavePath(key);
+            Files.createDirectories(p.getParent());
+            JsonObject obj = new JsonObject();
+            Map<String, Status> map = WORLD_STATES.get(key);
+            if (map != null) map.forEach((qid, st) -> obj.addProperty(qid, st.name()));
+            try (BufferedWriter w = new BufferedWriter(new FileWriter(p.toFile()))) {
+                GSON.toJson(obj, w);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    public static void forceSave() {
+        if (FMLEnvironment.dist != Dist.CLIENT) return;
+        try {
+            if (ACTIVE_KEY == null) {
+                var p = net.minecraft.client.Minecraft.getInstance().player;
+                if (p != null) ensureClientStateLoaded(p);
+            }
+        } catch (Throwable ignored) {}
+        if (ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
+    }
+
+    private static void ensureClientStateLoaded(Player player) {
+        if (FMLEnvironment.dist != Dist.CLIENT) return;
+        String key = computeClientKey(player);
+        if (!key.equals(ACTIVE_KEY)) {
+            if (ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
+            ACTIVE_KEY = key;
+            loadClientState(key);
+        }
+    }
+
+    private static Status decodeStatus(String raw) {
+        if (raw == null || raw.isBlank()) return Status.INCOMPLETE;
+        try {
+            return Status.valueOf(raw);
+        } catch (Exception ignored) {
+            return Status.INCOMPLETE;
+        }
+    }
+
+    private static Status getServerStatus(ServerPlayer player, String questId) {
+        String raw = QuestProgressState.get(player.serverLevel()).get(player.getUUID(), questId);
+        return decodeStatus(raw);
+    }
+
+    private static void setServerStatus(ServerPlayer player, String questId, Status st) {
+        QuestProgressState data = QuestProgressState.get(player.serverLevel());
+        if (st == null || st == Status.INCOMPLETE || st == Status.COMPLETED) {
+            data.set(player.getUUID(), questId, null);
+        } else {
+            data.set(player.getUUID(), questId, st.name());
+        }
     }
 
     public static Status getStatus(QuestData.Quest q, Player player) {
-        QuestWorldState st = state(player);
-        if (st != null) return st.get(q.id);
-        return CLIENT_STATES.getOrDefault(q.id, Status.INCOMPLETE);
+        if (q == null) return Status.INCOMPLETE;
+        if (player instanceof ServerPlayer sp) return getServerStatus(sp, q.id);
+        if (player != null && player.level().isClientSide) ensureClientStateLoaded(player);
+        return activeStateMap().getOrDefault(q.id, Status.INCOMPLETE);
     }
 
     public static Status getStatus(String questId, Player player) {
-        QuestWorldState st = state(player);
-        if (st != null) return st.get(questId);
-        return CLIENT_STATES.getOrDefault(questId, Status.INCOMPLETE);
-    }
-
-    public static boolean isVisible(QuestData.Quest q, Player player) {
-        Status s = getStatus(q, player);
-        return s == Status.INCOMPLETE || s == Status.COMPLETED;
+        if (player instanceof ServerPlayer sp) return getServerStatus(sp, questId);
+        if (player != null && player.level().isClientSide) ensureClientStateLoaded(player);
+        return activeStateMap().getOrDefault(questId, Status.INCOMPLETE);
     }
 
     public static boolean dependenciesMet(QuestData.Quest q, Player player) {
-        if (q == null || q.dependencies == null || q.dependencies.isEmpty()) return true;
+        if (q == null || q.dependencies.isEmpty()) return true;
         for (String depId : q.dependencies) {
-            QuestData.Quest dep;
-            if (player.level().isClientSide) dep = QuestData.byId(depId).orElse(null);
-            else {
-                ServerLevel sl = (ServerLevel) player.level();
-                dep = QuestData.byIdServer(sl.getServer(), depId).orElse(null);
-            }
+            var dep = QuestData.byId(depId).orElse(null);
             if (dep == null) return false;
             if (getStatus(dep, player) != Status.REDEEMED) return false;
         }
         return true;
     }
 
+    public static boolean isVisible(QuestData.Quest q, Player player) {
+        if (q == null || player == null) return false;
+        if (Config.disabledCategories().contains(q.category)) return false;
+        Status st = getStatus(q, player);
+        if (st == Status.REDEEMED || st == Status.REJECTED)
+            return false;
+        return true;
+    }
+
     public static boolean isReady(QuestData.Quest q, Player player) {
         if (player == null || q == null || q.completion == null) return false;
         if (!dependenciesMet(q, player)) return false;
-        if (q.completion.targets == null || q.completion.targets.isEmpty()) return false;
+
         for (QuestData.Target t : q.completion.targets) {
             if (t.isItem() && getCountInInventory(t.id, player) < t.count) return false;
             if (t.isEntity() && getKillCount(player, t.id) < t.count) return false;
@@ -83,71 +210,45 @@ public final class QuestTracker {
 
     public static int getStatCount(Player player, String statId) {
         if (player == null || statId == null || statId.isBlank()) return 0;
-        int value = 0;
-
         try {
             if (player instanceof ServerPlayer sp) {
-                String id = statId.trim();
-                int first = id.indexOf(':');
-                int second = id.indexOf(':', first + 1);
+                int first = statId.indexOf(':');
+                int second = statId.indexOf(':', first + 1);
 
                 boolean typed = second > first;
-                String type = typed ? id.substring(0, first) : "custom";
-                String name = typed ? id.substring(first + 1) : id;
+                String type = typed ? statId.substring(0, first) : "custom";
+                String name = typed ? statId.substring(first + 1) : statId;
 
                 ResourceLocation rl = ResourceLocation.tryParse(name);
                 if (rl == null) return 0;
 
-                switch (type) {
-                    case "custom" -> {
-                        if (!BuiltInRegistries.CUSTOM_STAT.containsKey(rl)) return 0;
-                        value = sp.getStats().getValue(Stats.CUSTOM.get(rl));
-                    }
+                return switch (type) {
+                    case "custom" -> sp.getStats().getValue(Stats.CUSTOM.get(rl));
                     case "mine_block" -> {
                         var block = BuiltInRegistries.BLOCK.getOptional(rl).orElse(null);
-                        if (block == null) return 0;
-                        value = sp.getStats().getValue(Stats.BLOCK_MINED.get(block));
+                        yield block == null ? 0 : sp.getStats().getValue(Stats.BLOCK_MINED.get(block));
                     }
                     case "use_item" -> {
                         var item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-                        if (item == null) return 0;
-                        value = sp.getStats().getValue(Stats.ITEM_USED.get(item));
+                        yield item == null ? 0 : sp.getStats().getValue(Stats.ITEM_USED.get(item));
                     }
                     case "kill_entity" -> {
                         var et = BuiltInRegistries.ENTITY_TYPE.getOptional(rl).orElse(null);
-                        if (et == null) return 0;
-                        value = sp.getStats().getValue(Stats.ENTITY_KILLED.get(et));
+                        yield et == null ? 0 : sp.getStats().getValue(Stats.ENTITY_KILLED.get(et));
                     }
-                    default -> {
-                        return 0;
-                    }
-                }
-
-                CLIENT_STATS.put(statId, value);
-
-            } else if (player.level().isClientSide && player instanceof net.minecraft.client.player.LocalPlayer lp) {
-                var stats = lp.getStats();
-                if (stats != null) {
-                    ResourceLocation rl = ResourceLocation.tryParse(statId);
-                    if (rl != null && BuiltInRegistries.CUSTOM_STAT.containsKey(rl)) {
-                        value = stats.getValue(Stats.CUSTOM.get(rl));
-                    }
-                }
-            } else {
-                value = CLIENT_STATS.getOrDefault(statId, 0);
+                    default -> 0;
+                };
             }
-        } catch (Exception e) {
-            return 0;
-        }
 
-        return value;
-    }
+            if (player.level().isClientSide)
+                return CLIENT_STATS.getOrDefault(statId, 0);
 
-    private static ResourceLocation safeParse(String s) {
-        try { return ResourceLocation.parse(s); } catch (Throwable t) { return null; }
+        } catch (Exception ignored) {}
+        return 0;
     }
 
     public static boolean hasAnyCompleted(Player player) {
+        if (player != null && player.level().isClientSide) ensureClientStateLoaded(player);
         for (QuestData.Quest q : QuestData.all()) {
             if (getStatus(q, player) == Status.COMPLETED) return true;
         }
@@ -160,45 +261,56 @@ public final class QuestTracker {
 
     public static int getCountInInventory(String id, Player player) {
         if (player == null || id == null || id.isBlank()) return 0;
-        boolean explicitHash = id.startsWith("#");
-        String key = explicitHash ? id.substring(1) : id;
+
+        boolean isTagSyntax = id.startsWith("#");
+        String key = isTagSyntax ? id.substring(1) : id;
+
         ResourceLocation rl = ResourceLocation.parse(key);
         Item direct = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+
         int found = 0;
-        if (explicitHash || direct == null) {
+
+        if (isTagSyntax || direct == null) {
             var itemTag = net.minecraft.tags.TagKey.create(Registries.ITEM, rl);
-            for (ItemStack s : player.getInventory().items) if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
+            for (ItemStack s : player.getInventory().items)
+                if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
+
             if (found == 0) {
                 var blockTag = net.minecraft.tags.TagKey.create(Registries.BLOCK, rl);
                 for (ItemStack s : player.getInventory().items)
-                    if (!s.isEmpty() && s.getItem() instanceof BlockItem bi && bi.getBlock().builtInRegistryHolder().is(blockTag))
+                    if (!s.isEmpty() && s.getItem() instanceof BlockItem bi
+                            && bi.getBlock().builtInRegistryHolder().is(blockTag))
                         found += s.getCount();
             }
-        } else for (ItemStack s : player.getInventory().items) if (!s.isEmpty() && s.is(direct)) found += s.getCount();
+        } else {
+            for (ItemStack s : player.getInventory().items)
+                if (!s.isEmpty() && s.is(direct)) found += s.getCount();
+        }
+
         return found;
     }
 
     public static int getKillCount(Player player, String entityId) {
         if (player == null || entityId == null || entityId.isBlank()) return 0;
-        if (player.level() instanceof ServerLevel sl) {
-            var map = KillCounterState.get(sl).snapshotFor(player.getUUID());
-            Integer v = map.get(entityId);
-            return v == null ? 0 : v;
+
+        if (player instanceof ServerPlayer sp) {
+            return KillCounterState.get(sp.serverLevel())
+                    .snapshotFor(player.getUUID())
+                    .getOrDefault(entityId, 0);
         }
+
         return CLIENT_KILLS.getOrDefault(entityId, 0);
     }
 
     public static boolean hasEffect(Player player, String effectId) {
-        if (player == null) return false;
         ResourceLocation rl = ResourceLocation.parse(effectId);
-        var opt = BuiltInRegistries.MOB_EFFECT.getHolder(rl);
-        if (opt.isEmpty()) return false;
-        Holder<MobEffect> holder = opt.get();
-        return player.hasEffect(holder);
+        Holder<MobEffect> opt = BuiltInRegistries.MOB_EFFECT.getHolder(rl).orElse(null);
+        return opt != null && player.hasEffect(opt);
     }
 
     public static boolean hasAdvancement(Player player, String advId) {
         ResourceLocation rl = ResourceLocation.parse(advId);
+
         if (player instanceof ServerPlayer sp) {
             AdvancementHolder holder = sp.server.getAdvancements().get(rl);
             if (holder == null) return false;
@@ -207,100 +319,117 @@ public final class QuestTracker {
             CLIENT_ADV_DONE.put(rl.toString(), done);
             return done;
         }
-        if (player.level().isClientSide) return CLIENT_ADV_DONE.getOrDefault(rl.toString(), false);
+
+        if (player.level().isClientSide)
+            return CLIENT_ADV_DONE.getOrDefault(rl.toString(), false);
+
         return false;
     }
 
-    public static boolean completeAndRedeem(QuestData.Quest q, ServerPlayer player) {
+    public static boolean serverRedeem(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return false;
-        QuestWorldState st = state(player);
-        if (st == null) return false;
-        Status cur = st.get(q.id);
-        if (cur == Status.REDEEMED || cur == Status.REJECTED) return false;
-        if (!dependenciesMet(q, player) || !isReady(q, player)) return false;
 
-        if (q.rewards != null && q.rewards.items != null) {
+        if (q.rewards != null && q.rewards.items != null)
             for (QuestData.RewardEntry r : q.rewards.items) {
                 ResourceLocation rl = ResourceLocation.parse(r.item);
                 Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-                if (item != null) {
+                if (item != null)
                     player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
-                }
             }
-        }
 
         if (q.rewards != null && q.rewards.command != null && !q.rewards.command.isBlank()) {
-            String raw = q.rewards.command.startsWith("/") ? q.rewards.command.substring(1) : q.rewards.command;
-            CommandSourceStack source = player.createCommandSourceStack().withPermission(4);
-            player.server.getCommands().performPrefixedCommand(source, raw);
+            String cmd = q.rewards.command.startsWith("/") ? q.rewards.command.substring(1) : q.rewards.command;
+            CommandSourceStack css = player.createCommandSourceStack().withPermission(4);
+            player.server.getCommands().performPrefixedCommand(css, cmd);
         }
 
-        st.set(q.id, Status.REDEEMED);
-        PacketDistributor.sendToPlayer(player, new BoundlessNetwork.SyncStatusPayload(q.id, Status.REDEEMED.name()));
-        BoundlessNetwork.sendToastTo(player, q.id);
+        setServerStatus(player, q.id, Status.REDEEMED);
         return true;
     }
 
-    public static boolean reject(QuestData.Quest q, ServerPlayer player) {
-        QuestWorldState st = state(player);
-        if (st == null) return false;
+    public static boolean serverReject(QuestData.Quest q, ServerPlayer player) {
+        if (q == null || player == null) return false;
         if (!q.optional) return false;
-        if (st.get(q.id) == Status.REDEEMED) return false;
-        st.set(q.id, Status.REJECTED);
+        setServerStatus(player, q.id, Status.REJECTED);
         return true;
     }
 
     public static void reset(Player player) {
-        QuestWorldState st = state(player);
-        if (st != null) st.reset();
-        CLIENT_STATES.clear();
         CLIENT_KILLS.clear();
         CLIENT_ADV_DONE.clear();
         CLIENT_STATS.clear();
-    }
 
-    public static void clientSetStatus(String questId, Status status) { CLIENT_STATES.put(questId, status); }
-    public static void clientSetKill(String entityId, int count) { CLIENT_KILLS.put(entityId, Math.max(0, count)); }
-    public static void clientClearAll() { CLIENT_STATES.clear(); CLIENT_KILLS.clear(); CLIENT_ADV_DONE.clear(); CLIENT_STATS.clear(); }
+        if (player instanceof ServerPlayer sp) {
+            QuestProgressState.get(sp.serverLevel()).clear(sp.getUUID());
+            BoundlessNetwork.syncPlayer(sp);
+            return;
+        }
 
-    public static void tickPlayer(Player player) {
-        if (player == null) return;
-        if (!player.level().isClientSide) return;
-        QuestData.loadClient(false);
-        for (QuestData.Quest q : QuestData.all()) {
-            if (q == null) continue;
-            if (!"all".equalsIgnoreCase(q.category)) {
-                var cat = QuestData.categoryById(q.category).orElse(null);
-                if (cat != null && !QuestData.isCategoryUnlocked(cat, player)) continue;
-            }
-            Status current = getStatus(q, player);
-            if (current == Status.REDEEMED || current == Status.REJECTED) continue;
-            boolean ready = dependenciesMet(q, player) && isReady(q, player);
-            if (ready && current == Status.INCOMPLETE) clientSetStatus(q.id, Status.COMPLETED);
-            else if (!ready && current == Status.COMPLETED) clientSetStatus(q.id, Status.INCOMPLETE);
+        if (player.level().isClientSide) {
+            ensureClientStateLoaded(player);
+            activeStateMap().clear();
+            if (ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
         }
     }
 
-    public static void serverCheckAndMarkComplete(ServerPlayer sp) {
-        QuestWorldState st = state(sp);
-        if (st == null) return;
-        boolean dedicated = sp.server.isDedicatedServer();
-        for (QuestData.Quest q : QuestData.allServer(sp.server)) {
-            Status cur = st.get(q.id);
-            if (cur == Status.REDEEMED || cur == Status.REJECTED) continue;
-            boolean ready = dependenciesMet(q, sp) && isReady(q, sp);
+    public static void clientSetStatus(String questId, Status st) {
+        if (questId == null || st == null) return;
 
-            if (dedicated) {
-                if (ready) completeAndRedeem(q, sp);
-            } else {
-                if (ready && cur == Status.INCOMPLETE) {
-                    st.set(q.id, Status.COMPLETED);
-                    PacketDistributor.sendToPlayer(sp, new BoundlessNetwork.SyncStatusPayload(q.id, Status.COMPLETED.name()));
-                    BoundlessNetwork.sendToastTo(sp, q.id);
-                } else if (!ready && cur == Status.COMPLETED) {
-                    st.set(q.id, Status.INCOMPLETE);
-                    PacketDistributor.sendToPlayer(sp, new BoundlessNetwork.SyncStatusPayload(q.id, Status.INCOMPLETE.name()));
-                }
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            try {
+                var p = net.minecraft.client.Minecraft.getInstance().player;
+                if (p != null) ensureClientStateLoaded(p);
+            } catch (Throwable ignored) {}
+        }
+
+        activeStateMap().put(questId, st);
+
+        if (FMLEnvironment.dist == Dist.CLIENT && ACTIVE_KEY != null)
+            saveClientState(ACTIVE_KEY);
+    }
+
+    public static void clientSetKill(String entityId, int count) {
+        CLIENT_KILLS.put(entityId, Math.max(0, count));
+    }
+
+    public static void clientClearAll() {
+        CLIENT_KILLS.clear();
+        CLIENT_ADV_DONE.clear();
+        CLIENT_STATS.clear();
+
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            try {
+                var p = net.minecraft.client.Minecraft.getInstance().player;
+                if (p != null) ensureClientStateLoaded(p);
+            } catch (Throwable ignored) {}
+
+            activeStateMap().clear();
+            if (ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
+        }
+    }
+
+    public static void tickPlayer(Player player) {
+        if (player == null || !player.level().isClientSide) return;
+
+        ensureClientStateLoaded(player);
+        QuestData.loadClient(false);
+
+        for (QuestData.Quest q : QuestData.all()) {
+            if (q == null) continue;
+
+            Status cur = getStatus(q, player);
+            if (cur == Status.REDEEMED || cur == Status.REJECTED) continue;
+
+            boolean ready = dependenciesMet(q, player) && isReady(q, player);
+
+            if (ready && cur == Status.INCOMPLETE) {
+                clientSetStatus(q.id, Status.COMPLETED);
+                BoundlessNetwork.sendToastLocal(q.id);
+                continue;
+            }
+
+            if (!ready && cur == Status.COMPLETED) {
+                clientSetStatus(q.id, Status.INCOMPLETE);
             }
         }
     }

@@ -20,6 +20,7 @@ import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.revilodev.boundless.client.ClientQuestEvents;
 import net.revilodev.boundless.client.QuestPanelClient;
 import net.revilodev.boundless.command.BoundlessCommands;
 import net.revilodev.boundless.network.BoundlessNetwork;
@@ -48,7 +49,6 @@ public final class BoundlessMod {
         BoundlessNetwork.bootstrap(modBus);
 
         NeoForge.EVENT_BUS.register(this);
-
         NeoForge.EVENT_BUS.addListener(QuestEvents::onPlayerTick);
     }
 
@@ -62,6 +62,9 @@ public final class BoundlessMod {
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPost);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPre);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseScrolled);
+
+        NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLogout);
+        NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLevelUnload);
     }
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {}
@@ -96,7 +99,7 @@ public final class BoundlessMod {
         KillCounterState.get(server).inc(sp.getUUID(), rl.toString());
         int count = KillCounterState.get(server).get(sp.getUUID(), rl.toString());
         BoundlessNetwork.KillEntry entry = new BoundlessNetwork.KillEntry(rl.toString(), count);
-        BoundlessNetwork.SyncKillsPayload payload = new BoundlessNetwork.SyncKillsPayload(List.of(entry));
+        BoundlessNetwork.SyncKills payload = new BoundlessNetwork.SyncKills(List.of(entry));
         PacketDistributor.sendToPlayer(sp, payload);
     }
 }

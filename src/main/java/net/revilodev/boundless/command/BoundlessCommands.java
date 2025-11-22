@@ -21,7 +21,6 @@ public final class BoundlessCommands {
                                     MinecraftServer server = ctx.getSource().getServer();
                                     QuestData.loadServer(server, true);
                                     for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-                                        QuestTracker.reset(p);
                                         BoundlessNetwork.syncPlayer(p);
                                     }
                                     ctx.getSource().sendSuccess(() -> Component.literal("Boundless quests reloaded."), true);
@@ -42,11 +41,11 @@ public final class BoundlessCommands {
                                             ServerPlayer player = ctx.getSource().getPlayer();
                                             if (player == null) return 0;
                                             String id = ResourceLocationArgument.getId(ctx, "id").toString();
-                                            QuestData.byId(id).ifPresent(q -> {
+                                            QuestData.byIdServer(player.server, id).ifPresent(q -> {
                                                 if (QuestTracker.isReady(q, player)) {
-                                                    if (QuestTracker.completeAndRedeem(q, player)) {
-                                                        BoundlessNetwork.sendToastTo(player, q.id);
-                                                        ctx.getSource().sendSuccess(() -> Component.literal("Completed quest " + q.id), false);
+                                                    if (QuestTracker.serverRedeem(q, player)) {
+                                                        BoundlessNetwork.sendStatus(player, q.id, QuestTracker.Status.REDEEMED.name());
+                                                        ctx.getSource().sendSuccess(() -> Component.literal("Redeemed quest " + q.id), false);
                                                     }
                                                 } else {
                                                     ctx.getSource().sendFailure(Component.literal("Not ready: " + id));
@@ -60,7 +59,7 @@ public final class BoundlessCommands {
                                             ServerPlayer player = ctx.getSource().getPlayer();
                                             if (player == null) return 0;
                                             String id = ResourceLocationArgument.getId(ctx, "id").toString();
-                                            BoundlessNetwork.sendToastTo(player, id);
+                                            BoundlessNetwork.sendToast(player, id);
                                             ctx.getSource().sendSuccess(() -> Component.literal("Toast sent for " + id), false);
                                             return 1;
                                         })))
