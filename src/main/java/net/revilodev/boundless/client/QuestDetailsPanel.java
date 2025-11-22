@@ -18,6 +18,8 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.QuestData;
@@ -26,6 +28,8 @@ import net.revilodev.boundless.quest.QuestTracker;
 import java.util.ArrayList;
 import java.util.List;
 
+
+@OnlyIn(Dist.CLIENT)
 public final class QuestDetailsPanel extends AbstractWidget {
     private static final int LINE_ITEM_ROW = 22;
     private static final int BOTTOM_PADDING = 28;

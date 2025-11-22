@@ -1,7 +1,10 @@
 package net.revilodev.boundless.client;
 
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.common.NeoForge;
 
+@OnlyIn(Dist.CLIENT)
 public final class BoundlessClient {
     private BoundlessClient() {}
 

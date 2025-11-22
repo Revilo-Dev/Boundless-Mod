@@ -5,6 +5,8 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -44,6 +46,7 @@ public final class BoundlessNetwork {
         r.playToClient(SyncKills.TYPE, SyncKills.CODEC, BoundlessNetwork::handleSyncKills);
         r.playToClient(SyncClear.TYPE, SyncClear.CODEC, BoundlessNetwork::handleSyncClear);
         r.playToClient(Toast.TYPE, Toast.CODEC, BoundlessNetwork::handleToast);
+        r.playToClient(OpenQuestBook.TYPE, OpenQuestBook.CODEC, BoundlessNetwork::handleOpenQuestBook);
     }
 
     public record Redeem(String questId) implements CustomPacketPayload {
@@ -125,24 +128,26 @@ public final class BoundlessNetwork {
         @Override public Type<Toast> type() { return TYPE; }
     }
 
+    public record OpenQuestBook() implements CustomPacketPayload {
+        public static final Type<OpenQuestBook> TYPE =
+                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "open_quest_book"));
+        public static final StreamCodec<FriendlyByteBuf, OpenQuestBook> CODEC =
+                StreamCodec.of((buf, p) -> {}, buf -> new OpenQuestBook());
+        @Override public Type<OpenQuestBook> type() { return TYPE; }
+    }
+
     public static void syncPlayer(ServerPlayer p) {
         PacketDistributor.sendToPlayer(p, new SyncClear());
 
         KillCounterState.get(p.serverLevel()).snapshotFor(p.getUUID())
-                .forEach((id, ct) -> {
-                    PacketDistributor.sendToPlayer(
-                            p,
-                            new SyncKills(List.of(new KillEntry(id, ct)))
-                    );
-                });
+                .forEach((id, ct) -> PacketDistributor.sendToPlayer(
+                        p, new SyncKills(List.of(new KillEntry(id, ct)))
+                ));
 
         QuestProgressState.get(p.serverLevel()).snapshotFor(p.getUUID())
-                .forEach((questId, status) -> {
-                    PacketDistributor.sendToPlayer(
-                            p,
-                            new SyncStatus(questId, status)
-                    );
-                });
+                .forEach((questId, status) -> PacketDistributor.sendToPlayer(
+                        p, new SyncStatus(questId, status)
+                ));
     }
 
     public static void sendStatus(ServerPlayer p, String questId, String status) {
@@ -151,6 +156,10 @@ public final class BoundlessNetwork {
 
     public static void sendToast(ServerPlayer p, String questId) {
         PacketDistributor.sendToPlayer(p, new Toast(questId));
+    }
+
+    public static void sendOpenQuestBook(ServerPlayer p) {
+        PacketDistributor.sendToPlayer(p, new OpenQuestBook());
     }
 
     public static void sendToastLocal(String questId) {
@@ -176,7 +185,6 @@ public final class BoundlessNetwork {
             });
         });
     }
-
 
     private static void handleReject(Reject p, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
@@ -212,4 +220,21 @@ public final class BoundlessNetwork {
                 )
         );
     }
+
+    private static void handleOpenQuestBook(OpenQuestBook p, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            if (ctx.player().level().isClientSide()) {
+                ClientOnly.openQuestBook();
+            }
+        });
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static final class ClientOnly {
+        private static void openQuestBook() {
+            net.minecraft.client.Minecraft.getInstance()
+                    .setScreen(new net.revilodev.boundless.client.screen.StandaloneQuestBookScreen());
+        }
+    }
+
 }

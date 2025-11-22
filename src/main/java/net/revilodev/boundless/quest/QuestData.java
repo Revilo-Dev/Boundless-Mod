@@ -1,20 +1,16 @@
 package net.revilodev.boundless.quest;
 
 import com.google.gson.*;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.packs.PackResources;
 import net.minecraft.server.packs.resources.IoSupplier;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
-import net.minecraft.server.packs.repository.Pack;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.world.item.Item;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.loading.FMLEnvironment;
-import net.revilodev.boundless.BoundlessMod;
 import net.revilodev.boundless.Config;
 
 import java.io.BufferedReader;
@@ -87,7 +83,6 @@ public final class QuestData {
         public boolean hasExp() { return !expType.isBlank() && expAmount > 0; }
     }
 
-
     public static final class RewardEntry {
         public final String item;
         public final int count;
@@ -122,13 +117,6 @@ public final class QuestData {
         public boolean isStat() { return "stat".equals(kind); }
     }
 
-    public static void forceReloadAll(MinecraftServer server) {
-        loadedClient = false;
-        loadedServer = false;
-        loadServer(server, true);
-    }
-
-
     public static final class Category {
         public final String id;
         public final String icon;
@@ -160,12 +148,19 @@ public final class QuestData {
         return Config.disabledCategories().contains(q.category);
     }
 
+    public static void forceReloadAll(MinecraftServer server) {
+        loadedClient = false;
+        loadedServer = false;
+        loadServer(server, true);
+    }
+
     private static synchronized void load(ResourceManager rm, boolean forceReload) {
         if ((loadedClient || loadedServer) && !forceReload && !QUESTS.isEmpty()) return;
         QUESTS.clear();
         CATEGORIES.clear();
 
-        Map<ResourceLocation, List<Resource>> catStacks = rm.listResourceStacks(PATH_CATEGORIES, rl -> rl.getPath().endsWith(".json"));
+        Map<ResourceLocation, List<Resource>> catStacks =
+                rm.listResourceStacks(PATH_CATEGORIES, rl -> rl.getPath().endsWith(".json"));
         for (Map.Entry<ResourceLocation, List<Resource>> e : catStacks.entrySet()) {
             List<Resource> stack = e.getValue();
             if (stack.isEmpty()) continue;
@@ -185,7 +180,8 @@ public final class QuestData {
             } catch (Exception ignored) {}
         }
 
-        Map<ResourceLocation, List<Resource>> questStacks = rm.listResourceStacks(PATH_QUESTS, rl -> rl.getPath().endsWith(".json"));
+        Map<ResourceLocation, List<Resource>> questStacks =
+                rm.listResourceStacks(PATH_QUESTS, rl -> rl.getPath().endsWith(".json"));
         for (Map.Entry<ResourceLocation, List<Resource>> e : questStacks.entrySet()) {
             ResourceLocation rl = e.getKey();
             if (rl.getPath().contains("/categories/")) continue;
@@ -201,64 +197,8 @@ public final class QuestData {
             } catch (Exception ignored) {}
         }
 
-        if (FMLEnvironment.dist == Dist.CLIENT) scanSelectedResourcePacksData();
-
         if (!CATEGORIES.containsKey("all"))
             CATEGORIES.put("all", new Category("all", "minecraft:book", "All", Integer.MIN_VALUE, false, ""));
-    }
-
-    private static void scanSelectedResourcePacksData() {
-        try {
-            var repo = Minecraft.getInstance().getResourcePackRepository();
-            Collection<Pack> selected = repo.getSelectedPacks();
-            for (Pack p : selected) {
-                try (PackResources res = p.open()) {
-                    Set<String> namespaces = res.getNamespaces(net.minecraft.server.packs.PackType.SERVER_DATA);
-                    for (String ns : namespaces) {
-                        listDataCategoriesFromPack(p.getId(), res, ns);
-                        listDataQuestsFromPack(p.getId(), res, ns);
-                    }
-                } catch (Throwable ignored) {}
-            }
-        } catch (Throwable ignored) {}
-    }
-
-    private static int listDataCategoriesFromPack(String packId, PackResources res, String ns) {
-        final int[] count = {0};
-        res.listResources(net.minecraft.server.packs.PackType.SERVER_DATA, ns, PATH_CATEGORIES, (loc, supplier) -> {
-            if (!loc.getPath().endsWith(".json")) return;
-            try (Reader r = supplierToReader(supplier)) {
-                JsonObject obj = safeObject(r);
-                if (obj == null) return;
-                String id = optString(obj, "id");
-                String icon = optString(obj, "icon");
-                String cname = optString(obj, "name");
-                int order = parseIntFlexible(obj, "order", 0);
-                boolean excludeFromAll = parseBoolFlexible(obj, "exclude_from_all", false);
-                String dependency = optString(obj, "dependency");
-                if (id != null && !id.isBlank())
-                    CATEGORIES.put(id, new Category(id, icon, cname, order, excludeFromAll, dependency));
-                count[0]++;
-            } catch (Exception ignored) {}
-        });
-        return count[0];
-    }
-
-    private static int listDataQuestsFromPack(String packId, PackResources res, String ns) {
-        final int[] count = {0};
-        res.listResources(net.minecraft.server.packs.PackType.SERVER_DATA, ns, PATH_QUESTS, (loc, supplier) -> {
-            if (!loc.getPath().endsWith(".json")) return;
-            if (loc.getPath().contains("/categories/")) return;
-            try (Reader r = supplierToReader(supplier)) {
-                JsonObject obj = safeObject(r);
-                if (obj == null) return;
-                Quest q = parseQuestObject(obj, loc);
-                if (q != null && !isQuestDisabled(q))
-                    QUESTS.put(q.id, q);
-                count[0]++;
-            } catch (Exception ignored) {}
-        });
-        return count[0];
     }
 
     private static Reader supplierToReader(IoSupplier<java.io.InputStream> supplier) throws IOException {
@@ -365,7 +305,6 @@ public final class QuestData {
 
         return new Rewards(List.of(), "", "", 0);
     }
-
 
     private static Completion parseCompletion(JsonElement el, String type) {
         if (el == null) return new Completion(List.of());
@@ -484,16 +423,18 @@ public final class QuestData {
 
     public static synchronized void loadClient(boolean forceReload) {
         if (loadedClient && !forceReload && !QUESTS.isEmpty()) return;
+        if (FMLEnvironment.dist != Dist.CLIENT) return;
+
         try {
-            var repo = Minecraft.getInstance().getResourcePackRepository();
-            repo.getSelectedPacks();
+            Class<?> mcClass = Class.forName("net.minecraft.client.Minecraft");
+            Object mc = mcClass.getMethod("getInstance").invoke(null);
+            Object rmObj = mcClass.getMethod("getResourceManager").invoke(mc);
+            if (rmObj instanceof ResourceManager rm) {
+                load(rm, forceReload);
+                loadedClient = true;
+            }
         } catch (Throwable ignored) {}
-        ResourceManager rm = Minecraft.getInstance().getResourceManager();
-        load(rm, forceReload);
-        loadedClient = true;
     }
-
-
 
     public static synchronized void loadServer(MinecraftServer server, boolean forceReload) {
         if (loadedServer && !forceReload && !QUESTS.isEmpty()) return;
@@ -501,10 +442,6 @@ public final class QuestData {
         ResourceManager rm = resources.resourceManager();
         load(rm, forceReload);
         loadedServer = true;
-        if (FMLEnvironment.dist == Dist.CLIENT) {
-            ResourceManager crm = Minecraft.getInstance().getResourceManager();
-            load(crm, true);
-        }
     }
 
     public static boolean isEmpty() { return QUESTS.isEmpty(); }
