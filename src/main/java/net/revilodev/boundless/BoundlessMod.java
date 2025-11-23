@@ -29,7 +29,6 @@ import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.KillCounterState;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestEvents;
-import net.revilodev.boundless.quest.ServerQuestEvents;
 import org.slf4j.Logger;
 
 import java.util.List;
@@ -41,21 +40,15 @@ public final class BoundlessMod {
 
     public BoundlessMod(ModContainer modContainer, IEventBus modBus) {
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC, MOD_ID + "-common.toml");
-
         ModItems.register(modBus);
-
         modBus.addListener(this::commonSetup);
         modBus.addListener(this::addCreative);
-
         if (net.neoforged.fml.loading.FMLEnvironment.dist == Dist.CLIENT) {
             modBus.addListener(this::clientSetup);
         }
-
         BoundlessNetwork.bootstrap(modBus);
-
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.addListener(QuestEvents::onPlayerTick);
-        NeoForge.EVENT_BUS.addListener(ServerQuestEvents::onPlayerLogout);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
@@ -68,7 +61,6 @@ public final class BoundlessMod {
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPost);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPre);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseScrolled);
-
         NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLogout);
         NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLevelUnload);
     }
@@ -102,10 +94,8 @@ public final class BoundlessMod {
         if (!(event.getEntity() instanceof LivingEntity victim)) return;
         if (!(event.getSource().getEntity() instanceof ServerPlayer sp)) return;
         if (!(sp.level() instanceof ServerLevel server)) return;
-
         ResourceLocation rl = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(victim.getType());
         if (rl == null) return;
-
         KillCounterState.get(server).inc(sp.getUUID(), rl.toString());
         int count = KillCounterState.get(server).get(sp.getUUID(), rl.toString());
         BoundlessNetwork.KillEntry entry = new BoundlessNetwork.KillEntry(rl.toString(), count);

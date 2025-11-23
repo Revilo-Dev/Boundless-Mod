@@ -501,6 +501,129 @@ public final class QuestData {
         return list;
     }
 
+    public static synchronized List<Category> categoriesOrderedServer(MinecraftServer server) {
+        loadServer(server, false);
+        if (!CATEGORIES.containsKey("all"))
+            CATEGORIES.put("all", new Category("all", "minecraft:book", "All", Integer.MIN_VALUE, false, ""));
+        List<Category> list = new ArrayList<>(CATEGORIES.values());
+        list.sort((a, b) -> {
+            if ("all".equals(a.id)) return -1;
+            if ("all".equals(b.id)) return 1;
+            if (a.order != b.order) return Integer.compare(a.order, b.order);
+            return a.name.compareToIgnoreCase(b.name);
+        });
+        return list;
+    }
+
+    public static synchronized void applyNetworkJson(String json) {
+        QUESTS.clear();
+        CATEGORIES.clear();
+        try {
+            JsonElement rootEl = GSON.fromJson(json, JsonElement.class);
+            if (rootEl == null || !rootEl.isJsonObject()) {
+                loadedClient = false;
+                return;
+            }
+            JsonObject root = rootEl.getAsJsonObject();
+
+            if (root.has("categories") && root.get("categories").isJsonArray()) {
+                for (JsonElement el : root.getAsJsonArray("categories")) {
+                    if (!el.isJsonObject()) continue;
+                    JsonObject o = el.getAsJsonObject();
+                    String id = optString(o, "id");
+                    if (id == null || id.isBlank()) continue;
+                    String icon = optString(o, "icon");
+                    String name = optString(o, "name");
+                    int order = parseIntFlexible(o, "order", 0);
+                    boolean excludeFromAll = parseBoolFlexible(o, "excludeFromAll", false);
+                    String dependency = optString(o, "dependency");
+                    CATEGORIES.put(id, new Category(id, icon, name, order, excludeFromAll, dependency));
+                }
+            }
+
+            if (root.has("quests") && root.get("quests").isJsonArray()) {
+                for (JsonElement el : root.getAsJsonArray("quests")) {
+                    if (!el.isJsonObject()) continue;
+                    JsonObject o = el.getAsJsonObject();
+                    String id = optString(o, "id");
+                    if (id == null || id.isBlank()) continue;
+                    String name = optString(o, "name");
+                    String icon = optString(o, "icon");
+                    String description = optString(o, "description");
+
+                    List<String> deps = new ArrayList<>();
+                    if (o.has("dependencies") && o.get("dependencies").isJsonArray()) {
+                        for (JsonElement d : o.getAsJsonArray("dependencies")) {
+                            if (d.isJsonPrimitive()) {
+                                String s = d.getAsString();
+                                if (!s.isBlank()) deps.add(s);
+                            }
+                        }
+                    }
+
+                    boolean optional = parseBoolFlexible(o, "optional", false);
+
+                    Rewards rewards;
+                    if (o.has("rewards") && o.get("rewards").isJsonObject()) {
+                        JsonObject ro = o.getAsJsonObject("rewards");
+                        List<RewardEntry> rItems = new ArrayList<>();
+                        if (ro.has("items") && ro.get("items").isJsonArray()) {
+                            for (JsonElement ie : ro.getAsJsonArray("items")) {
+                                if (!ie.isJsonObject()) continue;
+                                JsonObject io = ie.getAsJsonObject();
+                                String item = optString(io, "item");
+                                int count = io.has("count") ? io.get("count").getAsInt() : 1;
+                                if (item != null && !item.isBlank()) rItems.add(new RewardEntry(item, count));
+                            }
+                        }
+                        String cmd = optString(ro, "command");
+                        String expType = optString(ro, "expType");
+                        int expAmount = ro.has("expAmount") && ro.get("expAmount").isJsonPrimitive() && ro.getAsJsonPrimitive("expAmount").isNumber()
+                                ? ro.get("expAmount").getAsInt() : 0;
+                        rewards = new Rewards(rItems, cmd, expType, expAmount);
+                    } else {
+                        rewards = new Rewards(List.of(), "", "", 0);
+                    }
+
+                    String type = optString(o, "type");
+
+                    Completion completion;
+                    if (o.has("completion") && o.get("completion").isJsonObject()) {
+                        JsonObject co = o.getAsJsonObject("completion");
+                        List<Target> targets = new ArrayList<>();
+                        if (co.has("targets") && co.get("targets").isJsonArray()) {
+                            for (JsonElement te : co.getAsJsonArray("targets")) {
+                                if (!te.isJsonObject()) continue;
+                                JsonObject to = te.getAsJsonObject();
+                                String kind = optString(to, "kind");
+                                String tid = optString(to, "id");
+                                int count = to.has("count") ? to.get("count").getAsInt() : 1;
+                                if (kind != null && !kind.isBlank() && tid != null && !tid.isBlank())
+                                    targets.add(new Target(kind, tid, count));
+                            }
+                        }
+                        completion = new Completion(targets);
+                    } else {
+                        completion = new Completion(List.of());
+                    }
+
+                    String category = optString(o, "category");
+                    Quest q = new Quest(id, name, icon, description, deps, optional, rewards, type, completion, category);
+                    if (!isQuestDisabled(q)) QUESTS.put(q.id, q);
+                }
+            }
+
+            if (!CATEGORIES.containsKey("all"))
+                CATEGORIES.put("all", new Category("all", "minecraft:book", "All", Integer.MIN_VALUE, false, ""));
+
+            loadedClient = true;
+        } catch (Exception e) {
+            QUESTS.clear();
+            CATEGORIES.clear();
+            loadedClient = false;
+        }
+    }
+
     private static String optString(JsonObject o, String key) {
         return o.has(key) && o.get(key).isJsonPrimitive() ? o.get(key).getAsString() : null;
     }

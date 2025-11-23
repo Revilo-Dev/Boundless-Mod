@@ -1,19 +1,16 @@
 package net.revilodev.boundless.quest;
 
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 
 public final class ServerQuestEvents {
+    private ServerQuestEvents() {
+    }
 
-    private ServerQuestEvents() {}
-
-    public static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer sp)) return;
-
-        ServerLevel level = sp.serverLevel();
-        QuestProgressState state = QuestProgressState.get(level);
+    public static void onLogout(PlayerEvent.PlayerLoggedOutEvent e) {
+        if (!(e.getEntity() instanceof ServerPlayer sp)) return;
+        QuestProgressState state = QuestProgressState.get(sp.serverLevel());
         state.setDirty();
-        level.getServer().overworld().getDataStorage().save();
+        sp.server.overworld().getDataStorage().save();
     }
 }
