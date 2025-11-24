@@ -8,7 +8,7 @@
   "optional": "false",
   "type": "collection",
   "completion": {
-    "effect": "minecraft:hero_of_the_village",
+    "advancement": "minecraft:story/follow_ender_eye",
     "count": 1
   },
   "reward": {
