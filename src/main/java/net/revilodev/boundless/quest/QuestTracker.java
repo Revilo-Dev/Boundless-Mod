@@ -57,13 +57,11 @@ public final class QuestTracker {
             if (FMLEnvironment.dist != Dist.CLIENT) return "server";
             var mc = net.minecraft.client.Minecraft.getInstance();
             if (mc == null) return "default";
-
             if (mc.getSingleplayerServer() != null) {
                 String name = mc.getSingleplayerServer().getWorldData().getLevelName();
                 if (name == null || name.isBlank()) name = "world";
                 return "sp_" + sanitize(name);
             }
-
             if (mc.getCurrentServer() != null) {
                 String ip = mc.getCurrentServer().ip;
                 if (ip == null || ip.isBlank()) ip = "multiplayer";
@@ -193,6 +191,22 @@ public final class QuestTracker {
 
     public static boolean isReady(QuestData.Quest q, Player player) {
         if (player == null || q == null || q.completion == null) return false;
+
+        // Collection quests: once they hit COMPLETED, they stay "ready" forever,
+        // regardless of whether the items are still in the inventory.
+        if (q.completion.targets != null && !q.completion.targets.isEmpty()) {
+            boolean hasItemTargets = false;
+            for (QuestData.Target t : q.completion.targets) {
+                if (t.isItem()) {
+                    hasItemTargets = true;
+                    break;
+                }
+            }
+            if (hasItemTargets && getStatus(q, player) == Status.COMPLETED) {
+                return true;
+            }
+        }
+
         if (!dependenciesMet(q, player)) return false;
 
         for (QuestData.Target t : q.completion.targets) {
@@ -205,6 +219,7 @@ public final class QuestTracker {
 
         return true;
     }
+
 
     public static int getStatCount(Player player, String statId) {
         if (player == null || statId == null || statId.isBlank()) return 0;
@@ -259,12 +274,10 @@ public final class QuestTracker {
         ResourceLocation rl = ResourceLocation.parse(key);
         Item direct = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
         int found = 0;
-
         if (isTagSyntax || direct == null) {
             var itemTag = net.minecraft.tags.TagKey.create(Registries.ITEM, rl);
             for (ItemStack s : player.getInventory().items)
                 if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
-
             if (found == 0) {
                 var blockTag = net.minecraft.tags.TagKey.create(Registries.BLOCK, rl);
                 for (ItemStack s : player.getInventory().items)
@@ -276,7 +289,6 @@ public final class QuestTracker {
             for (ItemStack s : player.getInventory().items)
                 if (!s.isEmpty() && s.is(direct)) found += s.getCount();
         }
-
         return found;
     }
 
@@ -298,24 +310,21 @@ public final class QuestTracker {
 
     public static boolean hasAdvancement(Player player, String advId) {
         ResourceLocation rl = ResourceLocation.parse(advId);
-
         if (player instanceof ServerPlayer sp) {
             AdvancementHolder holder = sp.server.getAdvancements().get(rl);
             if (holder == null) return false;
             AdvancementProgress prog = sp.getAdvancements().getOrStartProgress(holder);
-            return prog.isDone();
+            boolean done = prog.isDone();
+            CLIENT_ADV_DONE.put(rl.toString(), done);
+            return done;
         }
-
-        if (player.level().isClientSide) {
+        if (player.level().isClientSide)
             return CLIENT_ADV_DONE.getOrDefault(rl.toString(), false);
-        }
-
         return false;
     }
 
     public static boolean serverRedeem(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return false;
-
         if (q.rewards != null && q.rewards.items != null)
             for (QuestData.RewardEntry r : q.rewards.items) {
                 ResourceLocation rl = ResourceLocation.parse(r.item);
@@ -323,13 +332,11 @@ public final class QuestTracker {
                 if (item != null)
                     player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
             }
-
         if (q.rewards != null && q.rewards.command != null && !q.rewards.command.isBlank()) {
             String cmd = q.rewards.command.startsWith("/") ? q.rewards.command.substring(1) : q.rewards.command;
             CommandSourceStack css = player.createCommandSourceStack().withPermission(4);
             player.server.getCommands().performPrefixedCommand(css, cmd);
         }
-
         setServerStatus(player, q.id, Status.REDEEMED);
         return true;
     }
@@ -345,13 +352,11 @@ public final class QuestTracker {
         CLIENT_KILLS.clear();
         CLIENT_ADV_DONE.clear();
         CLIENT_STATS.clear();
-
         if (player instanceof ServerPlayer sp) {
             QuestProgressState.get(sp.serverLevel()).clear(sp.getUUID());
             BoundlessNetwork.syncPlayer(sp);
             return;
         }
-
         if (player.level().isClientSide) {
             ensureClientStateLoaded(player);
             activeStateMap().clear();
@@ -375,17 +380,10 @@ public final class QuestTracker {
         CLIENT_KILLS.put(entityId, Math.max(0, count));
     }
 
-    public static void clientSetAdvancement(String advId, boolean done) {
-        if (advId == null || advId.isBlank()) return;
-        if (done) CLIENT_ADV_DONE.put(advId, true);
-        else CLIENT_ADV_DONE.remove(advId);
-    }
-
     public static void clientClearAll() {
         CLIENT_KILLS.clear();
         CLIENT_ADV_DONE.clear();
         CLIENT_STATS.clear();
-
         if (FMLEnvironment.dist == Dist.CLIENT) {
             try {
                 ensureClientStateLoaded(null);
@@ -397,27 +395,42 @@ public final class QuestTracker {
 
     public static void tickPlayer(Player player) {
         if (player == null || !player.level().isClientSide) return;
-
         ensureClientStateLoaded(player);
         QuestData.loadClient(false);
-
         for (QuestData.Quest q : QuestData.all()) {
             if (q == null) continue;
-
             Status cur = getStatus(q, player);
             if (cur == Status.REDEEMED || cur == Status.REJECTED) continue;
-
             boolean ready = dependenciesMet(q, player) && isReady(q, player);
 
+// Detect if this quest uses item collection targets.
+            boolean hasItemTargets = false;
+            if (q.completion != null && q.completion.targets != null) {
+                for (QuestData.Target t : q.completion.targets) {
+                    if (t.isItem()) {
+                        hasItemTargets = true;
+                        break;
+                    }
+                }
+            }
+
+// First-time completion → mark permanently.
             if (ready && cur == Status.INCOMPLETE) {
                 clientSetStatus(q.id, Status.COMPLETED);
                 BoundlessNetwork.sendToastLocal(q.id);
                 continue;
             }
 
+// Item-collection quests never revert once completed.
+            if (hasItemTargets && cur == Status.COMPLETED) {
+                continue;
+            }
+
+// Non-item quests revert normally.
             if (!ready && cur == Status.COMPLETED) {
                 clientSetStatus(q.id, Status.INCOMPLETE);
             }
+
         }
     }
 }

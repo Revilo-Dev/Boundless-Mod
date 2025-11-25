@@ -54,7 +54,6 @@ public final class BoundlessNetwork {
         r.playToClient(Toast.TYPE, Toast.CODEC, BoundlessNetwork::handleToast);
         r.playToClient(OpenQuestBook.TYPE, OpenQuestBook.CODEC, BoundlessNetwork::handleOpenQuestBook);
         r.playToClient(SyncQuests.TYPE, SyncQuests.CODEC, BoundlessNetwork::handleSyncQuests);
-        r.playToClient(SyncAdvancements.TYPE, SyncAdvancements.CODEC, BoundlessNetwork::handleSyncAdvancements);
     }
 
     public record Redeem(String questId) implements CustomPacketPayload {
@@ -154,28 +153,9 @@ public final class BoundlessNetwork {
         @Override public Type<SyncQuests> type() { return TYPE; }
     }
 
-    public record SyncAdvancements(List<String> advIds) implements CustomPacketPayload {
-        public static final Type<SyncAdvancements> TYPE =
-                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "sync_advancements"));
-        public static final StreamCodec<FriendlyByteBuf, SyncAdvancements> CODEC = StreamCodec.of(
-                (buf, p) -> {
-                    buf.writeVarInt(p.advIds().size());
-                    for (String id : p.advIds()) buf.writeUtf(id);
-                },
-                buf -> {
-                    int n = buf.readVarInt();
-                    List<String> list = new ArrayList<>(n);
-                    for (int i = 0; i < n; i++) list.add(buf.readUtf());
-                    return new SyncAdvancements(list);
-                }
-        );
-        @Override public Type<SyncAdvancements> type() { return TYPE; }
-    }
-
     public static void syncPlayer(ServerPlayer p) {
         PacketDistributor.sendToPlayer(p, new SyncClear());
         sendQuestData(p);
-        sendAdvancementSnapshot(p);
 
         KillCounterState.get(p.serverLevel()).snapshotFor(p.getUUID())
                 .forEach((id, ct) -> PacketDistributor.sendToPlayer(
@@ -264,32 +244,6 @@ public final class BoundlessNetwork {
         PacketDistributor.sendToPlayer(p, new SyncQuests(json));
     }
 
-    private static void sendAdvancementSnapshot(ServerPlayer p) {
-        var quests = QuestData.allServer(p.server);
-        List<String> advIds = new ArrayList<>();
-
-        for (QuestData.Quest q : quests) {
-            if (q.completion == null) continue;
-            for (QuestData.Target t : q.completion.targets) {
-                if (!t.isAdvancement()) continue;
-                if (!advIds.contains(t.id)) advIds.add(t.id);
-            }
-        }
-
-        if (advIds.isEmpty()) return;
-
-        List<String> done = new ArrayList<>();
-        for (String id : advIds) {
-            if (QuestTracker.hasAdvancement(p, id)) {
-                done.add(id);
-            }
-        }
-
-        if (!done.isEmpty()) {
-            sendAdvancements(p, done);
-        }
-    }
-
     public static void sendStatus(ServerPlayer p, String questId, String status) {
         PacketDistributor.sendToPlayer(p, new SyncStatus(questId, status));
     }
@@ -300,11 +254,6 @@ public final class BoundlessNetwork {
 
     public static void sendOpenQuestBook(ServerPlayer p) {
         PacketDistributor.sendToPlayer(p, new OpenQuestBook());
-    }
-
-    public static void sendAdvancements(ServerPlayer p, List<String> advIds) {
-        if (advIds == null || advIds.isEmpty()) return;
-        PacketDistributor.sendToPlayer(p, new SyncAdvancements(advIds));
     }
 
     public static void sendToastLocal(String questId) {
@@ -378,14 +327,6 @@ public final class BoundlessNetwork {
         ctx.enqueueWork(() -> QuestData.applyNetworkJson(p.json()));
     }
 
-    private static void handleSyncAdvancements(SyncAdvancements p, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            for (String id : p.advIds()) {
-                QuestTracker.clientSetAdvancement(id, true);
-            }
-        });
-    }
-
     @OnlyIn(Dist.CLIENT)
     private static final class ClientOnly {
         private static void openQuestBook() {
@@ -393,4 +334,5 @@ public final class BoundlessNetwork {
                     .setScreen(new net.revilodev.boundless.client.screen.StandaloneQuestBookScreen());
         }
     }
+
 }

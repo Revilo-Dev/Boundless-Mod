@@ -40,7 +40,6 @@ public final class BoundlessMod {
 
     public BoundlessMod(ModContainer modContainer, IEventBus modBus) {
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC, MOD_ID + "-common.toml");
-
         ModItems.register(modBus);
         modBus.addListener(this::commonSetup);
         modBus.addListener(this::addCreative);
@@ -62,7 +61,6 @@ public final class BoundlessMod {
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPost);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPre);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseScrolled);
-
         NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLogout);
         NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLevelUnload);
     }

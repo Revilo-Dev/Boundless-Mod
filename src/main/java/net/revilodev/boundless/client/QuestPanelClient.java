@@ -9,6 +9,8 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestTracker;
@@ -17,6 +19,7 @@ import java.lang.reflect.Field;
 import java.util.Map;
 import java.util.WeakHashMap;
 
+@OnlyIn(Dist.CLIENT)
 public final class QuestPanelClient {
     private static final ResourceLocation BTN_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_button.png");
@@ -28,43 +31,36 @@ public final class QuestPanelClient {
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_book_toast_highlighted.png");
     private static final ResourceLocation PANEL_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/quest_panel.png");
-
     private static final int PANEL_W = 147;
     private static final int PANEL_H = 166;
-
     private static final Map<Screen, State> STATES = new WeakHashMap<>();
     private static Field LEFT_FIELD;
     private static boolean lastQuestOpen = false;
 
+    private QuestPanelClient() {
+    }
+
     public static void onScreenInit(ScreenEvent.Init.Post e) {
         Screen s = e.getScreen();
         if (!(s instanceof InventoryScreen inv)) return;
-
         QuestData.loadClient(false);
-
-        // Always new state per screen instance (resizing rebuilds screen)
         State st = new State(inv);
         STATES.put(s, st);
-
         int btnX = inv.getGuiLeft() + 125;
         int btnY = inv.getGuiTop() + 61;
         QuestToggleButton btn = new QuestToggleButton(btnX, btnY, BTN_TEX, BTN_TEX_HOVER, () -> toggle(st));
         st.btn = btn;
-
         st.bg = new PanelBackground(0, 0, PANEL_W, PANEL_H);
         e.addListener(st.bg);
-
         st.list = new QuestListWidget(0, 0, 127, PANEL_H - 20, q -> openDetails(st, q));
         st.list.setQuests(QuestData.all());
         st.list.setCategory(st.selectedCategory);
         e.addListener(st.list);
-
         st.details = new QuestDetailsPanel(0, 0, 127, PANEL_H - 20, () -> closeDetails(st));
         e.addListener(st.details);
         e.addListener(st.details.backButton());
         e.addListener(st.details.completeButton());
         e.addListener(st.details.rejectButton());
-
         st.tabs = new CategoryTabsWidget(0, 0, 26, PANEL_H, id -> {
             st.selectedCategory = id;
             if (st.list != null) st.list.setCategory(id);
@@ -72,11 +68,8 @@ public final class QuestPanelClient {
         st.tabs.setCategories(QuestData.categoriesOrdered());
         st.tabs.setSelected(st.selectedCategory);
         e.addListener(st.tabs);
-
         e.addListener(btn);
         reposition(inv, st);
-
-        // restore state
         if (lastQuestOpen) {
             st.open = true;
             st.originalLeft = getLeft(inv);
@@ -112,7 +105,8 @@ public final class QuestPanelClient {
         handleRecipeButtonRules(inv, st);
     }
 
-    public static void onScreenRenderPost(ScreenEvent.Render.Post e) {}
+    public static void onScreenRenderPost(ScreenEvent.Render.Post e) {
+    }
 
     public static void onMouseScrolled(ScreenEvent.MouseScrolled.Pre e) {
         Screen s = e.getScreen();
@@ -237,7 +231,8 @@ public final class QuestPanelClient {
         try {
             if (LEFT_FIELD == null) LEFT_FIELD = findLeftField(inv.getClass());
             LEFT_FIELD.setInt(inv, v);
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
     }
 
     private static Field findLeftField(Class<?> c) throws NoSuchFieldException {
@@ -270,7 +265,10 @@ public final class QuestPanelClient {
         boolean listVisible = st.open && !st.showingDetails;
         boolean detailsVisible = st.open && st.showingDetails;
         if (st.bg != null) st.bg.visible = st.open;
-        if (st.list != null) { st.list.visible = listVisible; st.list.active = listVisible; }
+        if (st.list != null) {
+            st.list.visible = listVisible;
+            st.list.active = listVisible;
+        }
         if (st.details != null) {
             st.details.visible = detailsVisible;
             st.details.active = detailsVisible;
@@ -281,22 +279,35 @@ public final class QuestPanelClient {
             st.details.rejectButton().visible = detailsVisible;
             st.details.rejectButton().active = detailsVisible;
         }
-        if (st.tabs != null) { st.tabs.visible = st.open; st.tabs.active = st.open; }
+        if (st.tabs != null) {
+            st.tabs.visible = st.open;
+            st.tabs.active = st.open;
+        }
     }
 
     private static final class PanelBackground extends AbstractWidget {
         public PanelBackground(int x, int y, int w, int h) {
             super(x, y, w, h, Component.empty());
         }
+
         public void setBounds(int x, int y, int w, int h) {
-            this.setX(x); this.setY(y); this.width = w; this.height = h;
+            this.setX(x);
+            this.setY(y);
+            this.width = w;
+            this.height = h;
         }
+
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
             RenderSystem.disableBlend();
             gg.blit(PANEL_TEX, getX(), getY(), 0, 0, width, height, width, height);
         }
-        public boolean mouseClicked(double mouseX, double mouseY, int button) { return false; }
-        protected void updateWidgetNarration(net.minecraft.client.gui.narration.NarrationElementOutput n) {}
+
+        public boolean mouseClicked(double mouseX, double mouseY, int button) {
+            return false;
+        }
+
+        protected void updateWidgetNarration(net.minecraft.client.gui.narration.NarrationElementOutput n) {
+        }
     }
 
     private static final class State {
@@ -310,6 +321,9 @@ public final class QuestPanelClient {
         boolean open;
         Integer originalLeft;
         String selectedCategory = "all";
-        State(InventoryScreen inv) { this.inv = inv; }
+
+        State(InventoryScreen inv) {
+            this.inv = inv;
+        }
     }
 }
