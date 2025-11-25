@@ -47,7 +47,14 @@ public final class BoundlessNetwork {
         r.playToClient(SyncClear.TYPE, SyncClear.CODEC, BoundlessNetwork::handleSyncClear);
         r.playToClient(Toast.TYPE, Toast.CODEC, BoundlessNetwork::handleToast);
         r.playToClient(OpenQuestBook.TYPE, OpenQuestBook.CODEC, BoundlessNetwork::handleOpenQuestBook);
+        r.playToClient(SyncAdvancements.TYPE, SyncAdvancements.CODEC, BoundlessNetwork::handleSyncAdvancements);
+        r.playToServer(RedeemClientStatus.TYPE, RedeemClientStatus.CODEC, BoundlessNetwork::handleClientStatus);
+
     }
+
+    // --------------------------
+    //   PAYLOAD TYPES
+    // --------------------------
 
     public record Redeem(String questId) implements CustomPacketPayload {
         public static final Type<Redeem> TYPE =
@@ -91,6 +98,14 @@ public final class BoundlessNetwork {
                 buf -> new KillEntry(buf.readUtf(), buf.readVarInt())
         );
     }
+
+    private static void handleClientStatus(RedeemClientStatus p, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            ServerPlayer sp = (ServerPlayer) ctx.player();
+            QuestTracker.serverSetStatusFromClient(sp, p.questId(), p.status());
+        });
+    }
+
 
     public record SyncKills(List<KillEntry> entries) implements CustomPacketPayload {
         public static final Type<SyncKills> TYPE =
@@ -136,18 +151,45 @@ public final class BoundlessNetwork {
         @Override public Type<OpenQuestBook> type() { return TYPE; }
     }
 
+    public record SyncAdvancements(List<String> ids) implements CustomPacketPayload {
+        public static final Type<SyncAdvancements> TYPE =
+                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "sync_advancements"));
+
+        public static final StreamCodec<FriendlyByteBuf, SyncAdvancements> CODEC =
+                StreamCodec.of(
+                        (buf, p) -> {
+                            buf.writeVarInt(p.ids.size());
+                            for (String s : p.ids) buf.writeUtf(s);
+                        },
+                        buf -> {
+                            int n = buf.readVarInt();
+                            List<String> list = new ArrayList<>(n);
+                            for (int i = 0; i < n; i++) list.add(buf.readUtf());
+                            return new SyncAdvancements(list);
+                        }
+                );
+
+        @Override public Type<SyncAdvancements> type() { return TYPE; }
+    }
+
+    // --------------------------
+    //   SEND METHODS
+    // --------------------------
+
     public static void syncPlayer(ServerPlayer p) {
         PacketDistributor.sendToPlayer(p, new SyncClear());
 
         KillCounterState.get(p.serverLevel()).snapshotFor(p.getUUID())
-                .forEach((id, ct) -> PacketDistributor.sendToPlayer(
-                        p, new SyncKills(List.of(new KillEntry(id, ct)))
-                ));
+                .forEach((id, ct) ->
+                        PacketDistributor.sendToPlayer(p,
+                                new SyncKills(List.of(new KillEntry(id, ct))))
+                );
 
         QuestProgressState.get(p.serverLevel()).snapshotFor(p.getUUID())
-                .forEach((questId, status) -> PacketDistributor.sendToPlayer(
-                        p, new SyncStatus(questId, status)
-                ));
+                .forEach((questId, status) ->
+                        PacketDistributor.sendToPlayer(p,
+                                new SyncStatus(questId, status))
+                );
     }
 
     public static void sendStatus(ServerPlayer p, String questId, String status) {
@@ -162,11 +204,19 @@ public final class BoundlessNetwork {
         PacketDistributor.sendToPlayer(p, new OpenQuestBook());
     }
 
+    public static void sendAdvancements(ServerPlayer p, List<String> ids) {
+        PacketDistributor.sendToPlayer(p, new SyncAdvancements(ids));
+    }
+
     public static void sendToastLocal(String questId) {
         QuestData.byId(questId).ifPresent(q ->
                 QuestUnlockedToast.show(q.name, q.iconItem().orElse(null))
         );
     }
+
+    // --------------------------
+    //   HANDLERS
+    // --------------------------
 
     private static void handleRedeem(Redeem p, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
@@ -229,6 +279,34 @@ public final class BoundlessNetwork {
         });
     }
 
+    public static void sendStatusToServer(String questId, String status) {
+        PacketDistributor.sendToServer(new RedeemClientStatus(questId, status));
+    }
+
+    public record RedeemClientStatus(String questId, String status) implements CustomPacketPayload {
+        public static final Type<RedeemClientStatus> TYPE =
+                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "client_status"));
+        public static final StreamCodec<FriendlyByteBuf, RedeemClientStatus> CODEC = StreamCodec.of(
+                (buf, p) -> {
+                    buf.writeUtf(p.questId);
+                    buf.writeUtf(p.status);
+                },
+                buf -> new RedeemClientStatus(buf.readUtf(), buf.readUtf())
+        );
+        @Override public Type<RedeemClientStatus> type() { return TYPE; }
+    }
+
+
+
+    private static void handleSyncAdvancements(SyncAdvancements p, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            for (String id : p.ids()) {
+                QuestTracker.clientSetAdvancement(id, true);
+            }
+        });
+    }
+
+
     @OnlyIn(Dist.CLIENT)
     private static final class ClientOnly {
         private static void openQuestBook() {
@@ -236,5 +314,4 @@ public final class BoundlessNetwork {
                     .setScreen(new net.revilodev.boundless.client.screen.StandaloneQuestBookScreen());
         }
     }
-
 }

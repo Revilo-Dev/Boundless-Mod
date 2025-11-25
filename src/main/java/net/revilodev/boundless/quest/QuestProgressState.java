@@ -12,7 +12,7 @@ import java.util.UUID;
 public final class QuestProgressState extends SavedData {
     private final Map<String, Map<String, String>> byPlayer = new HashMap<>();
 
-    private QuestProgressState() {}
+    public QuestProgressState() {}
 
     public static QuestProgressState get(ServerLevel level) {
         ServerLevel overworld = level.getServer().overworld();
