@@ -5,15 +5,11 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractButton;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 
-@OnlyIn(Dist.CLIENT)
 public class QuestToggleButton extends AbstractButton {
     private ResourceLocation texNormal;
     private ResourceLocation texHover;
     private final Runnable onPress;
-
 
     public QuestToggleButton(int x, int y, ResourceLocation normal, ResourceLocation hover, Runnable onPress) {
         super(x, y, 20, 18, Component.empty());

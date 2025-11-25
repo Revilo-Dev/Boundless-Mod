@@ -8,10 +8,7 @@ import net.revilodev.boundless.client.CategoryTabsWidget;
 import net.revilodev.boundless.client.QuestDetailsPanel;
 import net.revilodev.boundless.client.QuestListWidget;
 import net.revilodev.boundless.quest.QuestData;
-import net.neoforged.api.distmarker.OnlyIn;
-import net.neoforged.api.distmarker.Dist;
 
-@OnlyIn(Dist.CLIENT)
 public final class StandaloneQuestBookScreen extends Screen {
 
     private static final ResourceLocation PANEL_TEX =
@@ -70,7 +67,7 @@ public final class StandaloneQuestBookScreen extends Screen {
             updateVisibility();
         });
 
-        // REQUIRED: aligns the entire details panel content & scissor
+        // REQUIRED for correct alignment + scissor + text + icons
         details.setBounds(pxRight, py, pw, ph);
 
         addRenderableWidget(tabs);
@@ -84,12 +81,9 @@ public final class StandaloneQuestBookScreen extends Screen {
     }
 
     private void updateVisibility() {
+        list.visible = !showingDetails;
+        list.active = !showingDetails;
 
-        // --- do not hide quest list on this screen ---
-        list.visible = true;
-        list.active = true;
-
-        // details panel toggles normally
         details.visible = showingDetails;
         details.active = showingDetails;
 
@@ -108,20 +102,15 @@ public final class StandaloneQuestBookScreen extends Screen {
 
     @Override
     public void renderBackground(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-        // disable vanilla background entirely
+        // disabled = no blur/no dim/no vanilla background
     }
 
     @Override
     public void render(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-
-        // --- inventory-style darkening ---
-        gg.fill(0, 0, this.width, this.height, 0xA0000000);
-
-        // --- panels ---
+        // render panels
         gg.blit(PANEL_TEX, leftX, topY, 0, 0, panelWidth, panelHeight, panelWidth, panelHeight);
         gg.blit(PANEL_TEX, rightX, topY, 0, 0, panelWidth, panelHeight, panelWidth, panelHeight);
 
-        // --- widgets ---
         super.render(gg, mouseX, mouseY, partialTick);
     }
 

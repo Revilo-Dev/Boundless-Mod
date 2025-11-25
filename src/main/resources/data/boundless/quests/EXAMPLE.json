@@ -17,7 +17,7 @@
   "dependencies": "",
 
   "//OPTIONAL": "Set to 'true' if the quest is optional, and 'false' if it is mandatory. It's not recommended to mark quests with dependencies as optional.",
-  "optional": "false",
+  "optional": "true",
 
   "//COMPLETION": "The completion variable for the quest: items is only compatible with collection or submission | targets is only compatible with kill | effect only works with effect | advancement only works with advancement",
   "complete": {
@@ -38,13 +38,12 @@
     ]
   },
 
-  "//REWARD": "3 Reward types: item, XP and command | This defines the rewards the player receives. This can be a single reward or multiple rewards",
+  "//REWARD": "2 Reward types: item or command | This defines the rewards the player receives. This can be a single reward or multiple rewards",
 
   "reward": {
     "items": [ {"item": "minecraft:", "count": 1} ],
-    "command": "/kill @a",
-    "exp": "points", "count": 45,
-    "//EXP": "Can either be points or levels"
+    "command": "/kill @a"
+
   },
 
   "//TIP": "Quests should be named in the order you want them to appear eg, 01-quest, 02-quest, 03-quest; as quests by default are listed from lowest to highest value, if you would like to set the order without renaming files add an additional: {order: nn} in the file "

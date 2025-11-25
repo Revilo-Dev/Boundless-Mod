@@ -30,7 +30,6 @@ import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.KillCounterState;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestEvents;
-import net.revilodev.boundless.quest.ServerQuestEvents;
 import org.slf4j.Logger;
 
 import java.util.List;
@@ -56,7 +55,6 @@ public final class BoundlessMod {
 
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.addListener(QuestEvents::onPlayerTick);
-        NeoForge.EVENT_BUS.addListener(ServerQuestEvents::onPlayerLogout);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
