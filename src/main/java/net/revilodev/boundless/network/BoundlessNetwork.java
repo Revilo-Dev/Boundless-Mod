@@ -1,9 +1,5 @@
 package net.revilodev.boundless.network;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -31,8 +27,6 @@ public final class BoundlessNetwork {
     private static final String VERSION = "1";
     private static boolean REGISTERED = false;
 
-    private static final Gson GSON = new GsonBuilder().setLenient().create();
-
     private BoundlessNetwork() {}
 
     public static void bootstrap(IEventBus bus) {
@@ -53,8 +47,6 @@ public final class BoundlessNetwork {
         r.playToClient(SyncClear.TYPE, SyncClear.CODEC, BoundlessNetwork::handleSyncClear);
         r.playToClient(Toast.TYPE, Toast.CODEC, BoundlessNetwork::handleToast);
         r.playToClient(OpenQuestBook.TYPE, OpenQuestBook.CODEC, BoundlessNetwork::handleOpenQuestBook);
-        r.playToClient(SyncQuests.TYPE, SyncQuests.CODEC, BoundlessNetwork::handleSyncQuests);
-        r.playToClient(SyncAdvancements.TYPE, SyncAdvancements.CODEC, BoundlessNetwork::handleSyncAdvancements);
     }
 
     public record Redeem(String questId) implements CustomPacketPayload {
@@ -144,38 +136,8 @@ public final class BoundlessNetwork {
         @Override public Type<OpenQuestBook> type() { return TYPE; }
     }
 
-    public record SyncQuests(String json) implements CustomPacketPayload {
-        public static final Type<SyncQuests> TYPE =
-                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "sync_quests"));
-        public static final StreamCodec<FriendlyByteBuf, SyncQuests> CODEC = StreamCodec.of(
-                (buf, p) -> buf.writeUtf(p.json),
-                buf -> new SyncQuests(buf.readUtf())
-        );
-        @Override public Type<SyncQuests> type() { return TYPE; }
-    }
-
-    public record SyncAdvancements(List<String> advIds) implements CustomPacketPayload {
-        public static final Type<SyncAdvancements> TYPE =
-                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "sync_advancements"));
-        public static final StreamCodec<FriendlyByteBuf, SyncAdvancements> CODEC = StreamCodec.of(
-                (buf, p) -> {
-                    buf.writeVarInt(p.advIds().size());
-                    for (String id : p.advIds()) buf.writeUtf(id);
-                },
-                buf -> {
-                    int n = buf.readVarInt();
-                    List<String> list = new ArrayList<>(n);
-                    for (int i = 0; i < n; i++) list.add(buf.readUtf());
-                    return new SyncAdvancements(list);
-                }
-        );
-        @Override public Type<SyncAdvancements> type() { return TYPE; }
-    }
-
     public static void syncPlayer(ServerPlayer p) {
         PacketDistributor.sendToPlayer(p, new SyncClear());
-        sendQuestData(p);
-        sendAdvancementSnapshot(p);
 
         KillCounterState.get(p.serverLevel()).snapshotFor(p.getUUID())
                 .forEach((id, ct) -> PacketDistributor.sendToPlayer(
@@ -188,108 +150,6 @@ public final class BoundlessNetwork {
                 ));
     }
 
-    private static void sendQuestData(ServerPlayer p) {
-        var quests = QuestData.allServer(p.server);
-        var categories = QuestData.categoriesOrderedServer(p.server);
-
-        JsonObject root = new JsonObject();
-
-        JsonArray cats = new JsonArray();
-        for (QuestData.Category c : categories) {
-            JsonObject o = new JsonObject();
-            o.addProperty("id", c.id);
-            o.addProperty("icon", c.icon);
-            o.addProperty("name", c.name);
-            o.addProperty("order", c.order);
-            o.addProperty("excludeFromAll", c.excludeFromAll);
-            o.addProperty("dependency", c.dependency);
-            cats.add(o);
-        }
-        root.add("categories", cats);
-
-        JsonArray qs = new JsonArray();
-        for (QuestData.Quest q : quests) {
-            JsonObject o = new JsonObject();
-            o.addProperty("id", q.id);
-            o.addProperty("name", q.name);
-            o.addProperty("icon", q.icon);
-            o.addProperty("description", q.description);
-
-            JsonArray deps = new JsonArray();
-            for (String d : q.dependencies) deps.add(d);
-            o.add("dependencies", deps);
-
-            o.addProperty("optional", q.optional);
-
-            if (q.rewards != null) {
-                JsonObject ro = new JsonObject();
-                JsonArray items = new JsonArray();
-                for (QuestData.RewardEntry r : q.rewards.items) {
-                    JsonObject io = new JsonObject();
-                    io.addProperty("item", r.item);
-                    io.addProperty("count", r.count);
-                    items.add(io);
-                }
-                ro.add("items", items);
-                ro.addProperty("command", q.rewards.command);
-                ro.addProperty("expType", q.rewards.expType);
-                ro.addProperty("expAmount", q.rewards.expAmount);
-                o.add("rewards", ro);
-            }
-
-            o.addProperty("type", q.type);
-
-            if (q.completion != null) {
-                JsonObject co = new JsonObject();
-                JsonArray targets = new JsonArray();
-                for (QuestData.Target t : q.completion.targets) {
-                    JsonObject to = new JsonObject();
-                    to.addProperty("kind", t.kind);
-                    to.addProperty("id", t.id);
-                    to.addProperty("count", t.count);
-                    targets.add(to);
-                }
-                co.add("targets", targets);
-                o.add("completion", co);
-            }
-
-            o.addProperty("category", q.category);
-
-            qs.add(o);
-        }
-
-        root.add("quests", qs);
-
-        String json = GSON.toJson(root);
-        PacketDistributor.sendToPlayer(p, new SyncQuests(json));
-    }
-
-    private static void sendAdvancementSnapshot(ServerPlayer p) {
-        var quests = QuestData.allServer(p.server);
-        List<String> advIds = new ArrayList<>();
-
-        for (QuestData.Quest q : quests) {
-            if (q.completion == null) continue;
-            for (QuestData.Target t : q.completion.targets) {
-                if (!t.isAdvancement()) continue;
-                if (!advIds.contains(t.id)) advIds.add(t.id);
-            }
-        }
-
-        if (advIds.isEmpty()) return;
-
-        List<String> done = new ArrayList<>();
-        for (String id : advIds) {
-            if (QuestTracker.hasAdvancement(p, id)) {
-                done.add(id);
-            }
-        }
-
-        if (!done.isEmpty()) {
-            sendAdvancements(p, done);
-        }
-    }
-
     public static void sendStatus(ServerPlayer p, String questId, String status) {
         PacketDistributor.sendToPlayer(p, new SyncStatus(questId, status));
     }
@@ -300,11 +160,6 @@ public final class BoundlessNetwork {
 
     public static void sendOpenQuestBook(ServerPlayer p) {
         PacketDistributor.sendToPlayer(p, new OpenQuestBook());
-    }
-
-    public static void sendAdvancements(ServerPlayer p, List<String> advIds) {
-        if (advIds == null || advIds.isEmpty()) return;
-        PacketDistributor.sendToPlayer(p, new SyncAdvancements(advIds));
     }
 
     public static void sendToastLocal(String questId) {
@@ -374,18 +229,6 @@ public final class BoundlessNetwork {
         });
     }
 
-    private static void handleSyncQuests(SyncQuests p, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> QuestData.applyNetworkJson(p.json()));
-    }
-
-    private static void handleSyncAdvancements(SyncAdvancements p, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> {
-            for (String id : p.advIds()) {
-                QuestTracker.clientSetAdvancement(id, true);
-            }
-        });
-    }
-
     @OnlyIn(Dist.CLIENT)
     private static final class ClientOnly {
         private static void openQuestBook() {
@@ -393,4 +236,5 @@ public final class BoundlessNetwork {
                     .setScreen(new net.revilodev.boundless.client.screen.StandaloneQuestBookScreen());
         }
     }
+
 }

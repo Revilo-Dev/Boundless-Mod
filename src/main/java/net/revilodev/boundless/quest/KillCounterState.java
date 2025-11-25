@@ -20,8 +20,7 @@ public final class KillCounterState extends SavedData {
         );
     }
 
-    private KillCounterState() {
-    }
+    private KillCounterState() {}
 
     public static KillCounterState load(CompoundTag tag, HolderLookup.Provider provider) {
         KillCounterState s = new KillCounterState();
