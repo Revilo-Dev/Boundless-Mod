@@ -18,7 +18,6 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
-import net.neoforged.neoforge.event.entity.player.AdvancementEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -43,16 +42,12 @@ public final class BoundlessMod {
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC, MOD_ID + "-common.toml");
 
         ModItems.register(modBus);
-
         modBus.addListener(this::commonSetup);
         modBus.addListener(this::addCreative);
-
         if (net.neoforged.fml.loading.FMLEnvironment.dist == Dist.CLIENT) {
             modBus.addListener(this::clientSetup);
         }
-
         BoundlessNetwork.bootstrap(modBus);
-
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.addListener(QuestEvents::onPlayerTick);
     }
@@ -101,41 +96,12 @@ public final class BoundlessMod {
         if (!(event.getEntity() instanceof LivingEntity victim)) return;
         if (!(event.getSource().getEntity() instanceof ServerPlayer sp)) return;
         if (!(sp.level() instanceof ServerLevel server)) return;
-
         ResourceLocation rl = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(victim.getType());
         if (rl == null) return;
-
         KillCounterState.get(server).inc(sp.getUUID(), rl.toString());
         int count = KillCounterState.get(server).get(sp.getUUID(), rl.toString());
-
         BoundlessNetwork.KillEntry entry = new BoundlessNetwork.KillEntry(rl.toString(), count);
         BoundlessNetwork.SyncKills payload = new BoundlessNetwork.SyncKills(List.of(entry));
         PacketDistributor.sendToPlayer(sp, payload);
-    }
-
-    @SubscribeEvent
-    public void onAdvancementEarn(AdvancementEvent.AdvancementEarnEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer sp)) return;
-        var holder = event.getAdvancement();
-        if (holder == null) return;
-
-        String advId = holder.id().toString();
-        if (advId.isBlank()) return;
-
-        boolean used = false;
-        for (QuestData.Quest q : QuestData.allServer(sp.server)) {
-            if (q.completion == null) continue;
-            for (QuestData.Target t : q.completion.targets) {
-                if (t.isAdvancement() && advId.equals(t.id)) {
-                    used = true;
-                    break;
-                }
-            }
-            if (used) break;
-        }
-
-        if (!used) return;
-
-        BoundlessNetwork.sendAdvancements(sp, List.of(advId));
     }
 }

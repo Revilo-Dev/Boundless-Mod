@@ -10,7 +10,7 @@
   "completion": {
     "items": [
       {
-        "item": "minecraft:potion",
+        "item": "#minecraft:bewable",
         "count": 1
       }
     ]

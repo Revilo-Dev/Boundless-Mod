@@ -36,6 +36,10 @@ public final class QuestData {
     private static boolean loadedClient = false;
     private static boolean loadedServer = false;
 
+    // ------------------------------------------------------------
+    // Model classes
+    // ------------------------------------------------------------
+
     public static final class Quest {
         public final String id;
         public final String name;
@@ -76,17 +80,20 @@ public final class QuestData {
     public static final class Rewards {
         public final List<RewardEntry> items;
         public final String command;
-        public final String expType;
-        public final int expAmount;
+        public final String expType;   // "points" / "levels" or ""
+        public final int expAmount;    // >= 0
+
         public Rewards(List<RewardEntry> items, String command, String expType, int expAmount) {
             this.items = items == null ? List.of() : List.copyOf(items);
             this.command = command == null ? "" : command;
             this.expType = expType == null ? "" : expType;
             this.expAmount = Math.max(0, expAmount);
         }
-        public boolean hasExp() { return !expType.isBlank() && expAmount > 0; }
-    }
 
+        public boolean hasExp() {
+            return !expType.isBlank() && expAmount > 0;
+        }
+    }
 
     public static final class RewardEntry {
         public final String item;
@@ -115,19 +122,12 @@ public final class QuestData {
             this.count = Math.max(1, count);
         }
 
-        public boolean isItem() { return "item".equals(kind); }
-        public boolean isEntity() { return "entity".equals(kind); }
-        public boolean isEffect() { return "effect".equals(kind); }
+        public boolean isItem()        { return "item".equals(kind); }
+        public boolean isEntity()      { return "entity".equals(kind); }
+        public boolean isEffect()      { return "effect".equals(kind); }
         public boolean isAdvancement() { return "advancement".equals(kind); }
-        public boolean isStat() { return "stat".equals(kind); }
+        public boolean isStat()        { return "stat".equals(kind); }
     }
-
-    public static void forceReloadAll(MinecraftServer server) {
-        loadedClient = false;
-        loadedServer = false;
-        loadServer(server, true);
-    }
-
 
     public static final class Category {
         public final String id;
@@ -156,20 +156,48 @@ public final class QuestData {
         }
     }
 
+    // ------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------
+
     private static boolean isQuestDisabled(Quest q) {
         return Config.disabledCategories().contains(q.category);
     }
+
+    public static void forceReloadAll(MinecraftServer server) {
+        loadedClient = false;
+        loadedServer = false;
+        loadServer(server, true);
+    }
+
+    // ------------------------------------------------------------
+    // Core loading logic (old working logic, with disabled-category filtering)
+    // ------------------------------------------------------------
 
     private static synchronized void load(ResourceManager rm, boolean forceReload) {
         if ((loadedClient || loadedServer) && !forceReload && !QUESTS.isEmpty()) return;
         QUESTS.clear();
         CATEGORIES.clear();
 
-        Map<ResourceLocation, List<Resource>> catStacks = rm.listResourceStacks(PATH_CATEGORIES, rl -> rl.getPath().endsWith(".json"));
+        BoundlessMod.LOGGER.info("QuestData: Begin load, forceReload={}", forceReload);
+
+        // ---------- Categories from normal resource manager stacks ----------
+        Map<ResourceLocation, List<Resource>> catStacks =
+                rm.listResourceStacks(PATH_CATEGORIES, rl -> rl.getPath().endsWith(".json"));
+        Map<String, Integer> catByNs = new HashMap<>();
+        for (ResourceLocation rl : catStacks.keySet()) catByNs.merge(rl.getNamespace(), 1, Integer::sum);
+        BoundlessMod.LOGGER.info("QuestData: category stacks total={}, namespaces={}", catStacks.size(), catByNs);
+
         for (Map.Entry<ResourceLocation, List<Resource>> e : catStacks.entrySet()) {
             List<Resource> stack = e.getValue();
             if (stack.isEmpty()) continue;
             Resource top = stack.get(stack.size() - 1);
+            String topPack = safePackId(top);
+            if (stack.size() > 1) {
+                List<String> packs = new ArrayList<>();
+                for (Resource r : stack) packs.add(safePackId(r));
+                BoundlessMod.LOGGER.info("QuestData: category overlay {} packs={}", e.getKey(), packs);
+            }
             try (Reader raw = top.openAsReader(); Reader reader = new BufferedReader(raw)) {
                 JsonElement el = GsonHelper.fromJson(GSON, reader, JsonElement.class);
                 if (el == null || !el.isJsonObject()) continue;
@@ -180,47 +208,89 @@ public final class QuestData {
                 int order = parseIntFlexible(obj, "order", 0);
                 boolean excludeFromAll = parseBoolFlexible(obj, "exclude_from_all", false);
                 String dependency = optString(obj, "dependency");
-                if (id != null && !id.isBlank())
+                if (id != null && !id.isBlank()) {
                     CATEGORIES.put(id, new Category(id, icon, cname, order, excludeFromAll, dependency));
-            } catch (Exception ignored) {}
+                    BoundlessMod.LOGGER.info("QuestData: category loaded id={} from {}", id, e.getKey() + "@" + topPack);
+                }
+            } catch (Exception ex) {
+                BoundlessMod.LOGGER.error("QuestData: bad category {}: {}", e.getKey(), ex.toString());
+            }
         }
 
-        Map<ResourceLocation, List<Resource>> questStacks = rm.listResourceStacks(PATH_QUESTS, rl -> rl.getPath().endsWith(".json"));
+        // ---------- Quests from normal resource manager stacks ----------
+        Map<ResourceLocation, List<Resource>> questStacks =
+                rm.listResourceStacks(PATH_QUESTS, rl -> rl.getPath().endsWith(".json"));
+        Map<String, Integer> questsByNs = new HashMap<>();
+        for (ResourceLocation rl : questStacks.keySet()) questsByNs.merge(rl.getNamespace(), 1, Integer::sum);
+        BoundlessMod.LOGGER.info("QuestData: quest stacks total={}, namespaces={}", questStacks.size(), questsByNs);
+
         for (Map.Entry<ResourceLocation, List<Resource>> e : questStacks.entrySet()) {
             ResourceLocation rl = e.getKey();
             if (rl.getPath().contains("/categories/")) continue;
             List<Resource> stack = e.getValue();
             if (stack.isEmpty()) continue;
             Resource top = stack.get(stack.size() - 1);
+            String topPack = safePackId(top);
+            if (stack.size() > 1) {
+                List<String> packs = new ArrayList<>();
+                for (Resource r : stack) packs.add(safePackId(r));
+                BoundlessMod.LOGGER.info("QuestData: quest overlay {} packs={}", rl, packs);
+            }
             try (Reader raw = top.openAsReader(); Reader reader = new BufferedReader(raw)) {
                 JsonObject obj = safeObject(reader);
                 if (obj == null) continue;
                 Quest q = parseQuestObject(obj, rl);
-                if (q != null && !isQuestDisabled(q))
-                    QUESTS.put(q.id, q);
-            } catch (Exception ignored) {}
+                if (q != null) {
+                    if (!isQuestDisabled(q)) {
+                        QUESTS.put(q.id, q);
+                        BoundlessMod.LOGGER.info("QuestData: quest loaded id={} from {}", q.id, rl + "@" + topPack);
+                    } else {
+                        BoundlessMod.LOGGER.info("QuestData: quest DISABLED id={} (category={})", q.id, q.category);
+                    }
+                }
+            } catch (IOException ex) {
+                BoundlessMod.LOGGER.error("QuestData: read error {}: {}", rl, ex.toString());
+            } catch (Exception ex) {
+                BoundlessMod.LOGGER.error("QuestData: bad quest {}: {}", rl, ex.toString());
+            }
         }
 
-        if (FMLEnvironment.dist == Dist.CLIENT) scanSelectedResourcePacksData();
+        // ---------- Extra: scan selected resource packs for SERVER_DATA (the bit that made it work) ----------
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            scanSelectedResourcePacksData();
+        }
 
-        if (!CATEGORIES.containsKey("all"))
+        if (!CATEGORIES.containsKey("all")) {
             CATEGORIES.put("all", new Category("all", "minecraft:book", "All", Integer.MIN_VALUE, false, ""));
+        }
+        BoundlessMod.LOGGER.info("QuestData: Loaded {} quest(s), {} category(ies).", QUESTS.size(), CATEGORIES.size());
     }
 
     private static void scanSelectedResourcePacksData() {
         try {
             var repo = Minecraft.getInstance().getResourcePackRepository();
             Collection<Pack> selected = repo.getSelectedPacks();
+            List<String> packIds = new ArrayList<>();
+            for (Pack p : selected) packIds.add(p.getId());
+            BoundlessMod.LOGGER.info("QuestData: RP selected packs={}", packIds);
+            int dataCatCount = 0;
+            int dataQuestCount = 0;
             for (Pack p : selected) {
                 try (PackResources res = p.open()) {
                     Set<String> namespaces = res.getNamespaces(net.minecraft.server.packs.PackType.SERVER_DATA);
+                    BoundlessMod.LOGGER.info("QuestData: RP '{}' data namespaces={}", p.getId(), namespaces);
                     for (String ns : namespaces) {
-                        listDataCategoriesFromPack(p.getId(), res, ns);
-                        listDataQuestsFromPack(p.getId(), res, ns);
+                        dataCatCount += listDataCategoriesFromPack(p.getId(), res, ns);
+                        dataQuestCount += listDataQuestsFromPack(p.getId(), res, ns);
                     }
-                } catch (Throwable ignored) {}
+                } catch (Throwable t) {
+                    BoundlessMod.LOGGER.error("QuestData: RP open failed {}: {}", p.getId(), t.toString());
+                }
             }
-        } catch (Throwable ignored) {}
+            BoundlessMod.LOGGER.info("QuestData: RP data totals categories={}, quests={}", dataCatCount, dataQuestCount);
+        } catch (Throwable t) {
+            BoundlessMod.LOGGER.error("QuestData: RP scan failed: {}", t.toString());
+        }
     }
 
     private static int listDataCategoriesFromPack(String packId, PackResources res, String ns) {
@@ -236,10 +306,16 @@ public final class QuestData {
                 int order = parseIntFlexible(obj, "order", 0);
                 boolean excludeFromAll = parseBoolFlexible(obj, "exclude_from_all", false);
                 String dependency = optString(obj, "dependency");
-                if (id != null && !id.isBlank())
+                if (id != null && !id.isBlank()) {
                     CATEGORIES.put(id, new Category(id, icon, cname, order, excludeFromAll, dependency));
-                count[0]++;
-            } catch (Exception ignored) {}
+                    BoundlessMod.LOGGER.info("QuestData: RP-DATA category id={} from {}@{}", id, loc, packId);
+                    count[0]++;
+                }
+            } catch (IOException ex) {
+                BoundlessMod.LOGGER.error("QuestData: RP-DATA category read error {}@{}: {}", loc, packId, ex.toString());
+            } catch (Exception ex) {
+                BoundlessMod.LOGGER.error("QuestData: RP-DATA category bad {}@{}: {}", loc, packId, ex.toString());
+            }
         });
         return count[0];
     }
@@ -253,10 +329,20 @@ public final class QuestData {
                 JsonObject obj = safeObject(r);
                 if (obj == null) return;
                 Quest q = parseQuestObject(obj, loc);
-                if (q != null && !isQuestDisabled(q))
-                    QUESTS.put(q.id, q);
-                count[0]++;
-            } catch (Exception ignored) {}
+                if (q != null) {
+                    if (!isQuestDisabled(q)) {
+                        QUESTS.put(q.id, q);
+                        BoundlessMod.LOGGER.info("QuestData: RP-DATA quest id={} from {}@{}", q.id, loc, packId);
+                        count[0]++;
+                    } else {
+                        BoundlessMod.LOGGER.info("QuestData: RP-DATA quest DISABLED id={} (category={})", q.id, q.category);
+                    }
+                }
+            } catch (IOException ex) {
+                BoundlessMod.LOGGER.error("QuestData: RP-DATA quest read error {}@{}: {}", loc, packId, ex.toString());
+            } catch (Exception ex) {
+                BoundlessMod.LOGGER.error("QuestData: RP-DATA quest bad {}@{}: {}", loc, packId, ex.toString());
+            }
         });
         return count[0];
     }
@@ -265,11 +351,19 @@ public final class QuestData {
         return new BufferedReader(new InputStreamReader(supplier.get(), StandardCharsets.UTF_8));
     }
 
+    private static String safePackId(Resource r) {
+        try { return r.sourcePackId(); } catch (Throwable ignored) { return "unknown"; }
+    }
+
     private static JsonObject safeObject(Reader reader) {
         JsonElement el = GsonHelper.fromJson(GSON, reader, JsonElement.class);
         if (el == null || !el.isJsonObject()) return null;
         return el.getAsJsonObject();
     }
+
+    // ------------------------------------------------------------
+    // Parsing JSON pieces
+    // ------------------------------------------------------------
 
     private static Quest parseQuestObject(JsonObject obj, ResourceLocation src) {
         String id = optString(obj, "id");
@@ -310,8 +404,20 @@ public final class QuestData {
         return deps;
     }
 
+    /**
+     * Extended rewards parser:
+     *  - Original formats still work (arrays of items, object with item/count, string command).
+     *  - New format with exp:
+     *      {
+     *        "items": [...],
+     *        "command": "...",
+     *        "exp": "points" | "levels",
+     *        "count": <number>
+     *      }
+     */
     private static Rewards parseRewards(JsonElement el) {
         if (el == null) return new Rewards(List.of(), "", "", 0);
+
         List<RewardEntry> out = new ArrayList<>();
         String cmd = "";
         String expType = "";
@@ -319,6 +425,8 @@ public final class QuestData {
 
         if (el.isJsonObject()) {
             JsonObject obj = el.getAsJsonObject();
+
+            // Items (either "items": [] or "item"/"count")
             if (obj.has("items") && obj.get("items").isJsonArray()) {
                 for (JsonElement e : obj.getAsJsonArray("items")) {
                     if (!e.isJsonObject()) continue;
@@ -333,20 +441,27 @@ public final class QuestData {
                 if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
             }
 
-            if (obj.has("command") && obj.get("command").isJsonPrimitive())
+            // Optional command
+            if (obj.has("command") && obj.get("command").isJsonPrimitive()) {
                 cmd = obj.get("command").getAsString();
-
-            if (obj.has("exp")) {
-                JsonElement ex = obj.get("exp");
-                if (ex.isJsonPrimitive()) expType = ex.getAsString();
             }
 
-            if (obj.has("count") && obj.get("count").isJsonPrimitive() && obj.getAsJsonPrimitive("count").isNumber())
+            // Optional exp reward: "exp": "points"/"levels", "count": number
+            if (obj.has("exp")) {
+                JsonElement ex = obj.get("exp");
+                if (ex.isJsonPrimitive()) {
+                    expType = ex.getAsString();
+                }
+            }
+            if (obj.has("count") && obj.get("count").isJsonPrimitive()
+                    && obj.getAsJsonPrimitive("count").isNumber()) {
                 expAmount = obj.getAsJsonPrimitive("count").getAsInt();
+            }
 
             return new Rewards(out, cmd, expType, expAmount);
         }
 
+        // Old array form: just items
         if (el.isJsonArray()) {
             for (JsonElement e : el.getAsJsonArray()) {
                 if (!e.isJsonObject()) continue;
@@ -358,6 +473,7 @@ public final class QuestData {
             return new Rewards(out, "", "", 0);
         }
 
+        // Old string form: treated as command
         if (el.isJsonPrimitive()) {
             String maybeCmd = el.getAsString();
             if (!maybeCmd.isBlank()) return new Rewards(List.of(), maybeCmd, "", 0);
@@ -365,7 +481,6 @@ public final class QuestData {
 
         return new Rewards(List.of(), "", "", 0);
     }
-
 
     private static Completion parseCompletion(JsonElement el, String type) {
         if (el == null) return new Completion(List.of());
@@ -382,7 +497,8 @@ public final class QuestData {
 
             if (obj.has("collect")) {
                 JsonElement cEl = obj.get("collect");
-                int count = obj.has("count") && obj.get("count").isJsonPrimitive() && obj.getAsJsonPrimitive("count").isNumber()
+                int count = obj.has("count") && obj.get("count").isJsonPrimitive()
+                        && obj.getAsJsonPrimitive("count").isNumber()
                         ? obj.get("count").getAsInt() : 1;
                 if (cEl.isJsonArray()) {
                     for (JsonElement ce : cEl.getAsJsonArray()) {
@@ -398,7 +514,7 @@ public final class QuestData {
             }
 
             if (obj.has("targets") && obj.get("targets").isJsonArray()) {
-                for (JsonElement e : obj.get("targets").getAsJsonArray()) {
+                for (JsonElement e : obj.getAsJsonArray("targets")) {
                     if (!e.isJsonObject()) continue;
                     parseTargetObject(e.getAsJsonObject(), out);
                 }
@@ -482,30 +598,47 @@ public final class QuestData {
         }
     }
 
+    // ------------------------------------------------------------
+    // Load entrypoints (client/server)
+    // ------------------------------------------------------------
+
     public static synchronized void loadClient(boolean forceReload) {
         if (loadedClient && !forceReload && !QUESTS.isEmpty()) return;
+        BoundlessMod.LOGGER.info("QuestData: loadClient()");
         try {
             var repo = Minecraft.getInstance().getResourcePackRepository();
-            repo.getSelectedPacks();
-        } catch (Throwable ignored) {}
+            Collection<Pack> selected = repo.getSelectedPacks();
+            List<String> packIds = new ArrayList<>();
+            for (Pack p : selected) packIds.add(p.getId());
+            BoundlessMod.LOGGER.info("QuestData: RP selected at loadClient: {}", packIds);
+        } catch (Throwable t) {
+            BoundlessMod.LOGGER.warn("QuestData: RP list failed: {}", t.toString());
+        }
         ResourceManager rm = Minecraft.getInstance().getResourceManager();
         load(rm, forceReload);
         loadedClient = true;
     }
 
-
-
     public static synchronized void loadServer(MinecraftServer server, boolean forceReload) {
         if (loadedServer && !forceReload && !QUESTS.isEmpty()) return;
+        BoundlessMod.LOGGER.info("QuestData: loadServer()");
         var resources = server.getServerResources();
         ResourceManager rm = resources.resourceManager();
         load(rm, forceReload);
         loadedServer = true;
+
+        // When running an integrated server, also resync client-side view
         if (FMLEnvironment.dist == Dist.CLIENT) {
+            BoundlessMod.LOGGER.info("QuestData: client resync after server load");
             ResourceManager crm = Minecraft.getInstance().getResourceManager();
             load(crm, true);
+            loadedClient = true;
         }
     }
+
+    // ------------------------------------------------------------
+    // Public API
+    // ------------------------------------------------------------
 
     public static boolean isEmpty() { return QUESTS.isEmpty(); }
 
@@ -563,6 +696,143 @@ public final class QuestData {
         });
         return list;
     }
+
+    public static synchronized List<Category> categoriesOrderedServer(MinecraftServer server) {
+        loadServer(server, false);
+        if (!CATEGORIES.containsKey("all"))
+            CATEGORIES.put("all", new Category("all", "minecraft:book", "All", Integer.MIN_VALUE, false, ""));
+        List<Category> list = new ArrayList<>(CATEGORIES.values());
+        list.sort((a, b) -> {
+            if ("all".equals(a.id)) return -1;
+            if ("all".equals(b.id)) return 1;
+            if (a.order != b.order) return Integer.compare(a.order, b.order);
+            return a.name.compareToIgnoreCase(b.name);
+        });
+        return list;
+    }
+
+    // ------------------------------------------------------------
+    // Network sync (SyncQuests → client)
+    // ------------------------------------------------------------
+
+    public static synchronized void applyNetworkJson(String json) {
+        QUESTS.clear();
+        CATEGORIES.clear();
+        try {
+            JsonElement rootEl = GSON.fromJson(json, JsonElement.class);
+            if (rootEl == null || !rootEl.isJsonObject()) {
+                loadedClient = false;
+                return;
+            }
+            JsonObject root = rootEl.getAsJsonObject();
+
+            // Categories
+            if (root.has("categories") && root.get("categories").isJsonArray()) {
+                for (JsonElement el : root.getAsJsonArray("categories")) {
+                    if (!el.isJsonObject()) continue;
+                    JsonObject o = el.getAsJsonObject();
+                    String id = optString(o, "id");
+                    if (id == null || id.isBlank()) continue;
+                    String icon = optString(o, "icon");
+                    String name = optString(o, "name");
+                    int order = parseIntFlexible(o, "order", 0);
+                    boolean excludeFromAll = parseBoolFlexible(o, "excludeFromAll", false);
+                    String dependency = optString(o, "dependency");
+                    CATEGORIES.put(id, new Category(id, icon, name, order, excludeFromAll, dependency));
+                }
+            }
+
+            // Quests
+            if (root.has("quests") && root.get("quests").isJsonArray()) {
+                for (JsonElement el : root.getAsJsonArray("quests")) {
+                    if (!el.isJsonObject()) continue;
+                    JsonObject o = el.getAsJsonObject();
+                    String id = optString(o, "id");
+                    if (id == null || id.isBlank()) continue;
+                    String name = optString(o, "name");
+                    String icon = optString(o, "icon");
+                    String description = optString(o, "description");
+
+                    List<String> deps = new ArrayList<>();
+                    if (o.has("dependencies") && o.get("dependencies").isJsonArray()) {
+                        for (JsonElement d : o.getAsJsonArray("dependencies")) {
+                            if (d.isJsonPrimitive()) {
+                                String s = d.getAsString();
+                                if (!s.isBlank()) deps.add(s);
+                            }
+                        }
+                    }
+
+                    boolean optional = parseBoolFlexible(o, "optional", false);
+
+                    Rewards rewards;
+                    if (o.has("rewards") && o.get("rewards").isJsonObject()) {
+                        JsonObject ro = o.getAsJsonObject("rewards");
+                        List<RewardEntry> rItems = new ArrayList<>();
+                        if (ro.has("items") && ro.get("items").isJsonArray()) {
+                            for (JsonElement ie : ro.getAsJsonArray("items")) {
+                                if (!ie.isJsonObject()) continue;
+                                JsonObject io = ie.getAsJsonObject();
+                                String item = optString(io, "item");
+                                int count = io.has("count") ? io.get("count").getAsInt() : 1;
+                                if (item != null && !item.isBlank()) rItems.add(new RewardEntry(item, count));
+                            }
+                        }
+                        String cmd = optString(ro, "command");
+                        String expType = optString(ro, "expType");
+                        int expAmount = ro.has("expAmount")
+                                && ro.get("expAmount").isJsonPrimitive()
+                                && ro.getAsJsonPrimitive("expAmount").isNumber()
+                                ? ro.get("expAmount").getAsInt() : 0;
+                        rewards = new Rewards(rItems, cmd, expType, expAmount);
+                    } else {
+                        rewards = new Rewards(List.of(), "", "", 0);
+                    }
+
+                    String type = optString(o, "type");
+
+                    Completion completion;
+                    if (o.has("completion") && o.get("completion").isJsonObject()) {
+                        JsonObject co = o.getAsJsonObject("completion");
+                        List<Target> targets = new ArrayList<>();
+                        if (co.has("targets") && co.get("targets").isJsonArray()) {
+                            for (JsonElement te : co.getAsJsonArray("targets")) {
+                                if (!te.isJsonObject()) continue;
+                                JsonObject to = te.getAsJsonObject();
+                                String kind = optString(to, "kind");
+                                String tid = optString(to, "id");
+                                int count = to.has("count") ? to.get("count").getAsInt() : 1;
+                                if (kind != null && !kind.isBlank() && tid != null && !tid.isBlank())
+                                    targets.add(new Target(kind, tid, count));
+                            }
+                        }
+                        completion = new Completion(targets);
+                    } else {
+                        completion = new Completion(List.of());
+                    }
+
+                    String category = optString(o, "category");
+                    Quest q = new Quest(id, name, icon, description, deps, optional, rewards, type, completion, category);
+                    if (!isQuestDisabled(q)) {
+                        QUESTS.put(q.id, q);
+                    }
+                }
+            }
+
+            if (!CATEGORIES.containsKey("all"))
+                CATEGORIES.put("all", new Category("all", "minecraft:book", "All", Integer.MIN_VALUE, false, ""));
+
+            loadedClient = true;
+        } catch (Exception e) {
+            QUESTS.clear();
+            CATEGORIES.clear();
+            loadedClient = false;
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Small JSON helpers
+    // ------------------------------------------------------------
 
     private static String optString(JsonObject o, String key) {
         return o.has(key) && o.get(key).isJsonPrimitive() ? o.get(key).getAsString() : null;

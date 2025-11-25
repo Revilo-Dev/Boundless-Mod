@@ -52,7 +52,7 @@ public final class QuestTracker {
         return s.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
-    private static String computeClientKey(Player player) {
+    private static String computeClientKey() {
         try {
             if (FMLEnvironment.dist != Dist.CLIENT) return "server";
             var mc = net.minecraft.client.Minecraft.getInstance();
@@ -70,7 +70,6 @@ public final class QuestTracker {
                 return "mp_" + sanitize(ip);
             }
         } catch (Throwable ignored) {}
-
         return "default";
     }
 
@@ -122,8 +121,7 @@ public final class QuestTracker {
         if (FMLEnvironment.dist != Dist.CLIENT) return;
         try {
             if (ACTIVE_KEY == null) {
-                var p = net.minecraft.client.Minecraft.getInstance().player;
-                if (p != null) ensureClientStateLoaded(p);
+                ensureClientStateLoaded(null);
             }
         } catch (Throwable ignored) {}
         if (ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
@@ -131,7 +129,7 @@ public final class QuestTracker {
 
     private static void ensureClientStateLoaded(Player player) {
         if (FMLEnvironment.dist != Dist.CLIENT) return;
-        String key = computeClientKey(player);
+        String key = computeClientKey();
         if (!key.equals(ACTIVE_KEY)) {
             if (ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
             ACTIVE_KEY = key;
@@ -189,8 +187,7 @@ public final class QuestTracker {
         if (q == null || player == null) return false;
         if (Config.disabledCategories().contains(q.category)) return false;
         Status st = getStatus(q, player);
-        if (st == Status.REDEEMED || st == Status.REJECTED)
-            return false;
+        if (st == Status.REDEEMED || st == Status.REJECTED) return false;
         return true;
     }
 
@@ -205,6 +202,7 @@ public final class QuestTracker {
             if (t.isAdvancement() && !hasAdvancement(player, t.id)) return false;
             if (t.isStat() && getStatCount(player, t.id) < t.count) return false;
         }
+
         return true;
     }
 
@@ -214,14 +212,11 @@ public final class QuestTracker {
             if (player instanceof ServerPlayer sp) {
                 int first = statId.indexOf(':');
                 int second = statId.indexOf(':', first + 1);
-
                 boolean typed = second > first;
                 String type = typed ? statId.substring(0, first) : "custom";
                 String name = typed ? statId.substring(first + 1) : statId;
-
                 ResourceLocation rl = ResourceLocation.tryParse(name);
                 if (rl == null) return 0;
-
                 return switch (type) {
                     case "custom" -> sp.getStats().getValue(Stats.CUSTOM.get(rl));
                     case "mine_block" -> {
@@ -239,10 +234,8 @@ public final class QuestTracker {
                     default -> 0;
                 };
             }
-
             if (player.level().isClientSide)
                 return CLIENT_STATS.getOrDefault(statId, 0);
-
         } catch (Exception ignored) {}
         return 0;
     }
@@ -261,13 +254,10 @@ public final class QuestTracker {
 
     public static int getCountInInventory(String id, Player player) {
         if (player == null || id == null || id.isBlank()) return 0;
-
         boolean isTagSyntax = id.startsWith("#");
         String key = isTagSyntax ? id.substring(1) : id;
-
         ResourceLocation rl = ResourceLocation.parse(key);
         Item direct = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-
         int found = 0;
 
         if (isTagSyntax || direct == null) {
@@ -292,13 +282,11 @@ public final class QuestTracker {
 
     public static int getKillCount(Player player, String entityId) {
         if (player == null || entityId == null || entityId.isBlank()) return 0;
-
         if (player instanceof ServerPlayer sp) {
             return KillCounterState.get(sp.serverLevel())
                     .snapshotFor(player.getUUID())
                     .getOrDefault(entityId, 0);
         }
-
         return CLIENT_KILLS.getOrDefault(entityId, 0);
     }
 
@@ -315,13 +303,12 @@ public final class QuestTracker {
             AdvancementHolder holder = sp.server.getAdvancements().get(rl);
             if (holder == null) return false;
             AdvancementProgress prog = sp.getAdvancements().getOrStartProgress(holder);
-            boolean done = prog.isDone();
-            CLIENT_ADV_DONE.put(rl.toString(), done);
-            return done;
+            return prog.isDone();
         }
 
-        if (player.level().isClientSide)
+        if (player.level().isClientSide) {
             return CLIENT_ADV_DONE.getOrDefault(rl.toString(), false);
+        }
 
         return false;
     }
@@ -374,22 +361,24 @@ public final class QuestTracker {
 
     public static void clientSetStatus(String questId, Status st) {
         if (questId == null || st == null) return;
-
         if (FMLEnvironment.dist == Dist.CLIENT) {
             try {
-                var p = net.minecraft.client.Minecraft.getInstance().player;
-                if (p != null) ensureClientStateLoaded(p);
+                ensureClientStateLoaded(null);
             } catch (Throwable ignored) {}
         }
-
         activeStateMap().put(questId, st);
-
         if (FMLEnvironment.dist == Dist.CLIENT && ACTIVE_KEY != null)
             saveClientState(ACTIVE_KEY);
     }
 
     public static void clientSetKill(String entityId, int count) {
         CLIENT_KILLS.put(entityId, Math.max(0, count));
+    }
+
+    public static void clientSetAdvancement(String advId, boolean done) {
+        if (advId == null || advId.isBlank()) return;
+        if (done) CLIENT_ADV_DONE.put(advId, true);
+        else CLIENT_ADV_DONE.remove(advId);
     }
 
     public static void clientClearAll() {
@@ -399,10 +388,8 @@ public final class QuestTracker {
 
         if (FMLEnvironment.dist == Dist.CLIENT) {
             try {
-                var p = net.minecraft.client.Minecraft.getInstance().player;
-                if (p != null) ensureClientStateLoaded(p);
+                ensureClientStateLoaded(null);
             } catch (Throwable ignored) {}
-
             activeStateMap().clear();
             if (ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
         }
