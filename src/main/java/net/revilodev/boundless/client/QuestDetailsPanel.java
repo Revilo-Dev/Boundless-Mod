@@ -189,7 +189,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
                     int need = t.count;
                     int found = QuestTracker.getCountInInventory(t.id, mc.player);
-                    boolean ready = found >= need;
+
+                    String progressKey = quest.id + ":" + t.id;
+                    int permFound = QuestTracker.getPermanentItemProgress(progressKey, found, need);
+
+                    int shown = Math.min(permFound, need);
+                    boolean ready = shown >= need;
                     int color = ready ? 0x55FF55 : 0xFF5555;
 
                     int px = x + 4;
@@ -197,8 +202,11 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     Item iconItem;
                     if (treatAsTag) {
                         List<Item> tagItems = resolveTagItems(rl);
-                        iconItem = tagItems.isEmpty() ? null : tagItems.get((int)((mc.level != null ? mc.level.getGameTime() : 0) / 20 % tagItems.size()));
-                    } else iconItem = direct;
+                        iconItem = tagItems.isEmpty() ? null :
+                                tagItems.get((int)((mc.level != null ? mc.level.getGameTime() : 0) / 20 % tagItems.size()));
+                    } else {
+                        iconItem = direct;
+                    }
 
                     if (iconItem != null) {
                         ItemStack st = new ItemStack(iconItem);
@@ -208,8 +216,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
                         px += 20;
                     }
 
-                    int shown = Math.min(found, need);
                     gg.drawString(mc.font, shown + "/" + need, px, curY[0] + 4, color, false);
+
 
                     curY[0] += LINE_ITEM_ROW;
 

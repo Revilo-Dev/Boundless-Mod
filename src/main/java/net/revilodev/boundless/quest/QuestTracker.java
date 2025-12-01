@@ -32,7 +32,6 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
 
 public final class QuestTracker {
 
@@ -44,16 +43,20 @@ public final class QuestTracker {
     private static final Map<String, Integer> CLIENT_KILLS = new HashMap<>();
     private static final Map<String, Boolean> CLIENT_ADV_DONE = new HashMap<>();
     private static final Map<String, Integer> CLIENT_STATS = new HashMap<>();
+    private static final Map<String, Integer> CLIENT_ITEM_PROGRESS = new HashMap<>();
+
 
     private static String ACTIVE_KEY = null;
 
-    private static QuestData.Quest[] CLIENT_QUEST_CACHE = new QuestData.Quest[0];
-    private static int CLIENT_QUEST_VERSION = -1;
-    private static int CLIENT_QUEST_INDEX = 0;
-    private static int CLIENT_COMPLETED_COUNT = 0;
-    private static final int CLIENT_QUESTS_PER_TICK = 8;
-
     private QuestTracker() {}
+
+    public static int getPermanentItemProgress(String key, int current, int required) {
+        int prev = CLIENT_ITEM_PROGRESS.getOrDefault(key, 0);
+        int now = Math.max(prev, Math.min(current, required));
+        CLIENT_ITEM_PROGRESS.put(key, now);
+        return now;
+    }
+
 
     private static String sanitize(String s) {
         return s.replaceAll("[^a-zA-Z0-9._-]", "_");
@@ -132,15 +135,6 @@ public final class QuestTracker {
         if (ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
     }
 
-    private static void recomputeClientCompletedCount() {
-        Map<String, Status> map = activeStateMap();
-        int c = 0;
-        for (Status st : map.values()) {
-            if (st == Status.COMPLETED) c++;
-        }
-        CLIENT_COMPLETED_COUNT = c;
-    }
-
     private static void ensureClientStateLoaded(Player player) {
         if (FMLEnvironment.dist != Dist.CLIENT) return;
         String key = computeClientKey();
@@ -148,7 +142,6 @@ public final class QuestTracker {
             if (ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
             ACTIVE_KEY = key;
             loadClientState(key);
-            recomputeClientCompletedCount();
         }
     }
 
@@ -208,6 +201,9 @@ public final class QuestTracker {
 
     public static boolean isReady(QuestData.Quest q, Player player) {
         if (player == null || q == null || q.completion == null) return false;
+
+        // Collection quests: once they hit COMPLETED, they stay "ready" forever,
+        // regardless of whether the items are still in the inventory.
         if (q.completion.targets != null && !q.completion.targets.isEmpty()) {
             boolean hasItemTargets = false;
             for (QuestData.Target t : q.completion.targets) {
@@ -220,16 +216,26 @@ public final class QuestTracker {
                 return true;
             }
         }
+
         if (!dependenciesMet(q, player)) return false;
+
         for (QuestData.Target t : q.completion.targets) {
-            if (t.isItem() && getCountInInventory(t.id, player) < t.count) return false;
+            if (t.isItem()) {
+                String key = q.id + ":" + t.id;
+                int cur = getCountInInventory(t.id, player);
+                int prog = getPermanentItemProgress(key, cur, t.count);
+                if (prog < t.count) return false;
+                continue;
+            }
             if (t.isEntity() && getKillCount(player, t.id) < t.count) return false;
             if (t.isEffect() && !hasEffect(player, t.id)) return false;
             if (t.isAdvancement() && !hasAdvancement(player, t.id)) return false;
             if (t.isStat() && getStatCount(player, t.id) < t.count) return false;
         }
+
         return true;
     }
+
 
     public static int getStatCount(Player player, String statId) {
         if (player == null || statId == null || statId.isBlank()) return 0;
@@ -266,14 +272,9 @@ public final class QuestTracker {
     }
 
     public static boolean hasAnyCompleted(Player player) {
-        if (player == null) return false;
-        if (player.level().isClientSide) {
-            return CLIENT_COMPLETED_COUNT > 0;
-        }
-        if (player instanceof ServerPlayer sp) {
-            for (QuestData.Quest q : QuestData.allServer(sp.server)) {
-                if (getStatus(q, player) == Status.COMPLETED) return true;
-            }
+        if (player != null && player.level().isClientSide) ensureClientStateLoaded(player);
+        for (QuestData.Quest q : QuestData.all()) {
+            if (getStatus(q, player) == Status.COMPLETED) return true;
         }
         return false;
     }
@@ -284,70 +285,28 @@ public final class QuestTracker {
 
     public static int getCountInInventory(String id, Player player) {
         if (player == null || id == null || id.isBlank()) return 0;
-
         boolean isTagSyntax = id.startsWith("#");
         String key = isTagSyntax ? id.substring(1) : id;
         ResourceLocation rl = ResourceLocation.parse(key);
-
         Item direct = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-        int foundInInventory = 0;
-
-        // Count items in inventory
+        int found = 0;
         if (isTagSyntax || direct == null) {
             var itemTag = net.minecraft.tags.TagKey.create(Registries.ITEM, rl);
-
-            for (ItemStack s : player.getInventory().items) {
-                if (!s.isEmpty() && s.is(itemTag))
-                    foundInInventory += s.getCount();
-            }
-
-            if (foundInInventory == 0) {
+            for (ItemStack s : player.getInventory().items)
+                if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
+            if (found == 0) {
                 var blockTag = net.minecraft.tags.TagKey.create(Registries.BLOCK, rl);
-                for (ItemStack s : player.getInventory().items) {
-                    if (!s.isEmpty() && s.getItem() instanceof BlockItem bi &&
-                            bi.getBlock().builtInRegistryHolder().is(blockTag))
-                    {
-                        foundInInventory += s.getCount();
-                    }
-                }
+                for (ItemStack s : player.getInventory().items)
+                    if (!s.isEmpty() && s.getItem() instanceof BlockItem bi
+                            && bi.getBlock().builtInRegistryHolder().is(blockTag))
+                        found += s.getCount();
             }
-
         } else {
-            for (ItemStack s : player.getInventory().items) {
-                if (!s.isEmpty() && s.is(direct))
-                    foundInInventory += s.getCount();
-            }
+            for (ItemStack s : player.getInventory().items)
+                if (!s.isEmpty() && s.is(direct)) found += s.getCount();
         }
-
-        // -----------------------------
-        // NEW LOGIC:
-        // Do not let progress move backwards
-        // -----------------------------
-        int stored = QuestTracker.getStoredCollectionProgress(player, id);
-
-        // trueCollectionProgress never decreases
-        int trueCollectionProgress = Math.max(stored, foundInInventory);
-
-        // store back the permanent progress
-        QuestTracker.setStoredCollectionProgress(player, id, trueCollectionProgress);
-
-        return trueCollectionProgress;
+        return found;
     }
-
-    private static final Map<UUID, Map<String, Integer>> COLLECTION_PROGRESS = new HashMap<>();
-
-    public static int getStoredCollectionProgress(Player p, String id) {
-        return COLLECTION_PROGRESS
-                .computeIfAbsent(p.getUUID(), u -> new HashMap<>())
-                .getOrDefault(id, 0);
-    }
-
-    public static void setStoredCollectionProgress(Player p, String id, int value) {
-        COLLECTION_PROGRESS
-                .computeIfAbsent(p.getUUID(), u -> new HashMap<>())
-                .put(id, value);
-    }
-
 
     public static int getKillCount(Player player, String entityId) {
         if (player == null || entityId == null || entityId.isBlank()) return 0;
@@ -409,7 +368,8 @@ public final class QuestTracker {
         CLIENT_KILLS.clear();
         CLIENT_ADV_DONE.clear();
         CLIENT_STATS.clear();
-        CLIENT_COMPLETED_COUNT = 0;
+        CLIENT_ITEM_PROGRESS.clear();
+
         if (player instanceof ServerPlayer sp) {
             QuestProgressState.get(sp.serverLevel()).clear(sp.getUUID());
             BoundlessNetwork.syncPlayer(sp);
@@ -429,14 +389,7 @@ public final class QuestTracker {
                 ensureClientStateLoaded(null);
             } catch (Throwable ignored) {}
         }
-        Map<String, Status> map = activeStateMap();
-        Status old = map.get(questId);
-        map.put(questId, st);
-        if (old != Status.COMPLETED && st == Status.COMPLETED) {
-            CLIENT_COMPLETED_COUNT++;
-        } else if (old == Status.COMPLETED && st != Status.COMPLETED && CLIENT_COMPLETED_COUNT > 0) {
-            CLIENT_COMPLETED_COUNT--;
-        }
+        activeStateMap().put(questId, st);
         if (FMLEnvironment.dist == Dist.CLIENT && ACTIVE_KEY != null)
             saveClientState(ACTIVE_KEY);
     }
@@ -449,7 +402,7 @@ public final class QuestTracker {
         CLIENT_KILLS.clear();
         CLIENT_ADV_DONE.clear();
         CLIENT_STATS.clear();
-        CLIENT_COMPLETED_COUNT = 0;
+        CLIENT_ITEM_PROGRESS.clear();
         if (FMLEnvironment.dist == Dist.CLIENT) {
             try {
                 ensureClientStateLoaded(null);
@@ -459,69 +412,44 @@ public final class QuestTracker {
         }
     }
 
-    private static void refreshClientQuestCache() {
-        int ver = QuestData.version();
-        if (ver != CLIENT_QUEST_VERSION) {
-            var all = QuestData.all();
-            if (all.isEmpty()) {
-                CLIENT_QUEST_CACHE = new QuestData.Quest[0];
-            } else {
-                CLIENT_QUEST_CACHE = all.toArray(new QuestData.Quest[0]);
-            }
-            CLIENT_QUEST_VERSION = ver;
-            CLIENT_QUEST_INDEX = 0;
-        }
-    }
-
-
-
-
-    private static void processQuestClient(Player player, QuestData.Quest q) {
-        if (q == null) return;
-        Status cur = getStatus(q, player);
-        if (cur == Status.REDEEMED || cur == Status.REJECTED) return;
-        boolean ready = dependenciesMet(q, player) && isReady(q, player);
-        boolean hasItemTargets = false;
-        if (q.completion != null && q.completion.targets != null) {
-            for (QuestData.Target t : q.completion.targets) {
-                if (t.isItem()) {
-                    hasItemTargets = true;
-                    break;
-                }
-            }
-        }
-        if (ready && cur == Status.INCOMPLETE) {
-            clientSetStatus(q.id, Status.COMPLETED);
-            BoundlessNetwork.sendToastLocal(q.id);
-            return;
-        }
-        if (hasItemTargets && cur == Status.COMPLETED) {
-            return;
-        }
-        if (!ready && cur == Status.COMPLETED) {
-            clientSetStatus(q.id, Status.INCOMPLETE);
-        }
-    }
-
     public static void tickPlayer(Player player) {
         if (player == null || !player.level().isClientSide) return;
         ensureClientStateLoaded(player);
         QuestData.loadClient(false);
-        refreshClientQuestCache();
-        if (CLIENT_QUEST_CACHE.length == 0) return;
-        int len = CLIENT_QUEST_CACHE.length;
-        if (len == 0) return;
-        int limit = CLIENT_QUESTS_PER_TICK;
-        int processed = 0;
-        while (processed < limit) {
-            QuestData.Quest q = CLIENT_QUEST_CACHE[CLIENT_QUEST_INDEX];
-            processQuestClient(player, q);
-            processed++;
-            CLIENT_QUEST_INDEX++;
-            if (CLIENT_QUEST_INDEX >= len) {
-                CLIENT_QUEST_INDEX = 0;
-                break;
+        for (QuestData.Quest q : QuestData.all()) {
+            if (q == null) continue;
+            Status cur = getStatus(q, player);
+            if (cur == Status.REDEEMED || cur == Status.REJECTED) continue;
+            boolean ready = dependenciesMet(q, player) && isReady(q, player);
+
+// Detect if this quest uses item collection targets.
+            boolean hasItemTargets = false;
+            if (q.completion != null && q.completion.targets != null) {
+                for (QuestData.Target t : q.completion.targets) {
+                    if (t.isItem()) {
+                        hasItemTargets = true;
+                        break;
+                    }
+                }
             }
+
+            if (ready && cur == Status.INCOMPLETE) {
+                clientSetStatus(q.id, Status.COMPLETED);
+                BoundlessNetwork.sendToastLocal(q.id);
+                continue;
+            }
+
+            if (hasItemTargets && cur == Status.COMPLETED) {
+                continue;
+            }
+
+
+
+// Non-item quests revert normally.
+            if (!ready && cur == Status.COMPLETED) {
+                clientSetStatus(q.id, Status.INCOMPLETE);
+            }
+
         }
     }
 }

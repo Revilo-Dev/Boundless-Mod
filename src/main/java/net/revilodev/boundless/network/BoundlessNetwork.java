@@ -24,7 +24,6 @@ import net.revilodev.boundless.quest.QuestTracker;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 public final class BoundlessNetwork {
 
@@ -158,21 +157,16 @@ public final class BoundlessNetwork {
         PacketDistributor.sendToPlayer(p, new SyncClear());
         sendQuestData(p);
 
-        Map<String, Integer> kills = KillCounterState.get(p.serverLevel()).snapshotFor(p.getUUID());
-        if (!kills.isEmpty()) {
-            List<KillEntry> entries = new ArrayList<>(kills.size());
-            kills.forEach((id, ct) -> entries.add(new KillEntry(id, ct)));
-            PacketDistributor.sendToPlayer(p, new SyncKills(entries));
-        }
+        KillCounterState.get(p.serverLevel()).snapshotFor(p.getUUID())
+                .forEach((id, ct) -> PacketDistributor.sendToPlayer(
+                        p, new SyncKills(List.of(new KillEntry(id, ct)))
+                ));
 
-        Map<String, String> statusMap = QuestProgressState.get(p.serverLevel()).snapshotFor(p.getUUID());
-        if (!statusMap.isEmpty()) {
-            statusMap.forEach((questId, status) ->
-                    PacketDistributor.sendToPlayer(p, new SyncStatus(questId, status))
-            );
-        }
+        QuestProgressState.get(p.serverLevel()).snapshotFor(p.getUUID())
+                .forEach((questId, status) -> PacketDistributor.sendToPlayer(
+                        p, new SyncStatus(questId, status)
+                ));
     }
-
 
     private static void sendQuestData(ServerPlayer p) {
         var quests = QuestData.allServer(p.server);
@@ -249,8 +243,6 @@ public final class BoundlessNetwork {
         String json = GSON.toJson(root);
         PacketDistributor.sendToPlayer(p, new SyncQuests(json));
     }
-
-
 
     public static void sendStatus(ServerPlayer p, String questId, String status) {
         PacketDistributor.sendToPlayer(p, new SyncStatus(questId, status));
