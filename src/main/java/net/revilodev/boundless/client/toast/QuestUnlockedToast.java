@@ -8,6 +8,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.revilodev.boundless.quest.QuestTracker;
 
 public final class QuestUnlockedToast implements Toast {
     private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_toast.png");
@@ -22,6 +23,7 @@ public final class QuestUnlockedToast implements Toast {
     }
 
     public static void show(String questName, Item icon) {
+        if (QuestTracker.serverToastsDisabled()) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) return;
         mc.getToasts().addToast(new QuestUnlockedToast(
@@ -30,6 +32,7 @@ public final class QuestUnlockedToast implements Toast {
                 icon
         ));
     }
+
 
     public Visibility render(GuiGraphics gg, ToastComponent component, long time) {
         gg.blit(TEXTURE, 0, 0, 0, 0, this.width(), this.height(), this.width(), this.height());

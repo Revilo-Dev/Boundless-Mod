@@ -53,16 +53,16 @@ public final class BoundlessCommands {
                                             });
                                             return 1;
                                         })))
-                        .then(Commands.literal("toast")
-                                .then(Commands.argument("id", ResourceLocationArgument.id())
-                                        .executes(ctx -> {
-                                            ServerPlayer player = ctx.getSource().getPlayer();
-                                            if (player == null) return 0;
-                                            String id = ResourceLocationArgument.getId(ctx, "id").toString();
-                                            BoundlessNetwork.sendToast(player, id);
-                                            ctx.getSource().sendSuccess(() -> Component.literal("Toast sent for " + id), false);
-                                            return 1;
-                                        })))
+                        .then(Commands.literal("toasts")
+                                .then(Commands.literal("disable")
+                                        .then(Commands.argument("value", com.mojang.brigadier.arguments.BoolArgumentType.bool())
+                                                .executes(ctx -> {
+                                                    boolean v = com.mojang.brigadier.arguments.BoolArgumentType.getBool(ctx, "value");
+                                                    QuestTracker.setServerToastsDisabled(v);
+                                                    ctx.getSource().sendSuccess(() -> Component.literal("Boundless toasts disabled set to " + v), true);
+                                                    return 1;
+                                                }))))
+
         );
     }
 }

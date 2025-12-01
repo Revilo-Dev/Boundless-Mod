@@ -33,6 +33,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static net.revilodev.boundless.network.BoundlessNetwork.sendToastLocal;
+
 public final class QuestTracker {
 
     public enum Status { INCOMPLETE, COMPLETED, REDEEMED, REJECTED }
@@ -44,6 +46,8 @@ public final class QuestTracker {
     private static final Map<String, Boolean> CLIENT_ADV_DONE = new HashMap<>();
     private static final Map<String, Integer> CLIENT_STATS = new HashMap<>();
     private static final Map<String, Integer> CLIENT_ITEM_PROGRESS = new HashMap<>();
+    private static boolean SERVER_TOASTS_DISABLED = false;
+
 
 
     private static String ACTIVE_KEY = null;
@@ -435,7 +439,8 @@ public final class QuestTracker {
 
             if (ready && cur == Status.INCOMPLETE) {
                 clientSetStatus(q.id, Status.COMPLETED);
-                BoundlessNetwork.sendToastLocal(q.id);
+                if (!QuestTracker.serverToastsDisabled()) sendToastLocal(q.id);
+
                 continue;
             }
 
@@ -452,4 +457,13 @@ public final class QuestTracker {
 
         }
     }
+
+    public static boolean serverToastsDisabled() {
+        return SERVER_TOASTS_DISABLED;
+    }
+
+    public static void setServerToastsDisabled(boolean v) {
+        SERVER_TOASTS_DISABLED = v;
+    }
+
 }
