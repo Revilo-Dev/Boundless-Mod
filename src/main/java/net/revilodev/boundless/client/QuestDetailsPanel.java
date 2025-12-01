@@ -208,7 +208,9 @@ public final class QuestDetailsPanel extends AbstractWidget {
                         px += 20;
                     }
 
-                    gg.drawString(mc.font, found + "/" + need, px, curY[0] + 4, color, false);
+                    int shown = Math.min(found, need);
+                    gg.drawString(mc.font, shown + "/" + need, px, curY[0] + 4, color, false);
+
                     curY[0] += LINE_ITEM_ROW;
 
                 } else if (t.isEntity()) {
@@ -318,6 +320,16 @@ public final class QuestDetailsPanel extends AbstractWidget {
         boolean hasItemRewards = quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty();
         boolean hasCommandReward = quest.rewards != null && quest.rewards.command != null && !quest.rewards.command.isBlank();
         boolean hasExpReward = quest.rewards != null && quest.rewards.hasExp();
+
+        boolean hasAnyReward = hasItemRewards || hasCommandReward || hasExpReward;
+        if (!hasAnyReward) {
+            // skip entire reward section
+            gg.disableScissor();
+            for (Component tip : hoveredTooltips)
+                gg.renderTooltip(mc.font, tip, mouseX, mouseY);
+            return;
+        }
+
 
 
 

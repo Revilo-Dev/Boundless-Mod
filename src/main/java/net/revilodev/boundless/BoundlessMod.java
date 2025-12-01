@@ -96,10 +96,13 @@ public final class BoundlessMod {
         if (!(sp.level() instanceof ServerLevel server)) return;
         ResourceLocation rl = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(victim.getType());
         if (rl == null) return;
-        KillCounterState.get(server).inc(sp.getUUID(), rl.toString());
-        int count = KillCounterState.get(server).get(sp.getUUID(), rl.toString());
-        BoundlessNetwork.KillEntry entry = new BoundlessNetwork.KillEntry(rl.toString(), count);
-        BoundlessNetwork.SyncKills payload = new BoundlessNetwork.SyncKills(List.of(entry));
+        String id = rl.toString();
+        if (!net.revilodev.boundless.quest.QuestData.usesEntityTarget(id)) return;
+        KillCounterState.get(server).inc(sp.getUUID(), id);
+        int count = KillCounterState.get(server).get(sp.getUUID(), id);
+        BoundlessNetwork.KillEntry entry = new BoundlessNetwork.KillEntry(id, count);
+        BoundlessNetwork.SyncKills payload = new BoundlessNetwork.SyncKills(java.util.List.of(entry));
         PacketDistributor.sendToPlayer(sp, payload);
     }
+
 }
