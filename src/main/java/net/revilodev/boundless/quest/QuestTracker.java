@@ -57,9 +57,31 @@ public final class QuestTracker {
     public static int getPermanentItemProgress(String key, int current, int required) {
         int prev = CLIENT_ITEM_PROGRESS.getOrDefault(key, 0);
         int now = Math.max(prev, Math.min(current, required));
+
+        if (FMLEnvironment.dist == Dist.CLIENT && prev > 0) {
+            try {
+                var mc = net.minecraft.client.Minecraft.getInstance();
+                if (mc != null && mc.player != null) {
+                    int idx = key.indexOf(':');
+                    if (idx > 0) {
+                        String questId = key.substring(0, idx);
+                        if (getStatus(questId, mc.player) == Status.INCOMPLETE) {
+                            now = Math.min(current, required);
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        if (now <= 0) {
+            CLIENT_ITEM_PROGRESS.remove(key);
+            return 0;
+        }
+
         CLIENT_ITEM_PROGRESS.put(key, now);
         return now;
     }
+
 
 
     private static String sanitize(String s) {
@@ -357,7 +379,9 @@ public final class QuestTracker {
             CommandSourceStack css = player.createCommandSourceStack().withPermission(4);
             player.server.getCommands().performPrefixedCommand(css, cmd);
         }
+        setServerStatus(player, q.id, Status.COMPLETED);
         setServerStatus(player, q.id, Status.REDEEMED);
+
         return true;
     }
 
@@ -369,22 +393,19 @@ public final class QuestTracker {
     }
 
     public static void reset(Player player) {
-        CLIENT_KILLS.clear();
-        CLIENT_ADV_DONE.clear();
-        CLIENT_STATS.clear();
-        CLIENT_ITEM_PROGRESS.clear();
-
         if (player instanceof ServerPlayer sp) {
             QuestProgressState.get(sp.serverLevel()).clear(sp.getUUID());
             BoundlessNetwork.syncPlayer(sp);
+            if (FMLEnvironment.dist == Dist.CLIENT) {
+                clientClearAll();
+            }
             return;
         }
-        if (player.level().isClientSide) {
-            ensureClientStateLoaded(player);
-            activeStateMap().clear();
-            if (ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
+        if (player != null && player.level().isClientSide) {
+            clientClearAll();
         }
     }
+
 
     public static void clientSetStatus(String questId, Status st) {
         if (questId == null || st == null) return;
@@ -439,10 +460,13 @@ public final class QuestTracker {
 
             if (ready && cur == Status.INCOMPLETE) {
                 clientSetStatus(q.id, Status.COMPLETED);
+                if (player instanceof ServerPlayer sp) {
+                    setServerStatus(sp, q.id, Status.COMPLETED);
+                }
                 if (!QuestTracker.serverToastsDisabled()) sendToastLocal(q.id);
-
                 continue;
             }
+
 
             if (hasItemTargets && cur == Status.COMPLETED) {
                 continue;

@@ -37,6 +37,12 @@ public final class BoundlessCommands {
                                 }))
                         .then(Commands.literal("complete")
                                 .then(Commands.argument("id", ResourceLocationArgument.id())
+                                        .suggests((ctx, builder) -> {
+                                            for (QuestData.Quest q : QuestData.all()) {
+                                                builder.suggest(q.id);
+                                            }
+                                            return builder.buildFuture();
+                                        })
                                         .executes(ctx -> {
                                             ServerPlayer player = ctx.getSource().getPlayer();
                                             if (player == null) return 0;

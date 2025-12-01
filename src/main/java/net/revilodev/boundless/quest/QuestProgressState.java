@@ -78,7 +78,20 @@ public final class QuestProgressState extends SavedData {
     }
 
     public void clear(UUID player) {
-        byPlayer.remove(player.toString());
+        String key = player.toString();
+        Map<String, String> m = byPlayer.get(key);
+        if (m == null) return;
+
+        m.entrySet().removeIf(e ->
+                e.getValue().equals("REDEEMED") ||
+                        e.getValue().equals("REJECTED")
+        );
+
+        if (m.isEmpty()) {
+            byPlayer.remove(key);
+        }
+
         setDirty();
     }
+
 }
