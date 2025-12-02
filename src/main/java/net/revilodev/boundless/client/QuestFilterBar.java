@@ -71,7 +71,7 @@ public final class QuestFilterBar extends AbstractWidget {
         bx += SIZE + GAP;
 
         drawButton(gg, bx, by, showLocked, TEX_LOCKED, TEX_LOCKED_DISABLED,
-                "Show locked quests (dependencies not met)", mouseX, mouseY);
+                "Show locked quests", mouseX, mouseY);
     }
 
     private void drawButton(GuiGraphics gg, int x, int y, boolean state,
