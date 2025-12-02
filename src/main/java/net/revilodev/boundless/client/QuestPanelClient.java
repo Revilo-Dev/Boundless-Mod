@@ -3,8 +3,9 @@ package net.revilodev.boundless.client;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.ImageButton;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.ImageButton;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
@@ -46,21 +47,26 @@ public final class QuestPanelClient {
         QuestData.loadClient(false);
         State st = new State(inv);
         STATES.put(s, st);
+
         int btnX = inv.getGuiLeft() + 125;
         int btnY = inv.getGuiTop() + 61;
         QuestToggleButton btn = new QuestToggleButton(btnX, btnY, BTN_TEX, BTN_TEX_HOVER, () -> toggle(st));
         st.btn = btn;
+
         st.bg = new PanelBackground(0, 0, PANEL_W, PANEL_H);
         e.addListener(st.bg);
+
         st.list = new QuestListWidget(0, 0, 127, PANEL_H - 20, q -> openDetails(st, q));
         st.list.setQuests(QuestData.all());
         st.list.setCategory(st.selectedCategory);
         e.addListener(st.list);
+
         st.details = new QuestDetailsPanel(0, 0, 127, PANEL_H - 20, () -> closeDetails(st));
         e.addListener(st.details);
         e.addListener(st.details.backButton());
         e.addListener(st.details.completeButton());
         e.addListener(st.details.rejectButton());
+
         st.tabs = new CategoryTabsWidget(0, 0, 26, PANEL_H, id -> {
             st.selectedCategory = id;
             if (st.list != null) st.list.setCategory(id);
@@ -68,8 +74,15 @@ public final class QuestPanelClient {
         st.tabs.setCategories(QuestData.categoriesOrdered());
         st.tabs.setSelected(st.selectedCategory);
         e.addListener(st.tabs);
+
+        int filterX = computePanelX(inv) + 10;
+        int filterY = inv.getGuiTop() + PANEL_H + 6;
+        st.filter = new QuestFilterBar(filterX, filterY);
+        e.addListener(st.filter);
+
         e.addListener(btn);
         reposition(inv, st);
+
         if (lastQuestOpen) {
             st.open = true;
             st.originalLeft = getLeft(inv);
@@ -113,6 +126,7 @@ public final class QuestPanelClient {
         State st = STATES.get(s);
         if (st == null || !(s instanceof InventoryScreen inv)) return;
         if (!st.open) return;
+
         int px = computePanelX(inv) + 10;
         int py = inv.getGuiTop() + 10;
         int pw = 127;
@@ -120,6 +134,7 @@ public final class QuestPanelClient {
         double mx = e.getMouseX();
         double my = e.getMouseY();
         boolean used = false;
+
         if (st.list != null && st.list.visible) {
             if (mx >= px && mx <= px + pw && my >= py && my <= py + ph) {
                 double dY = e.getScrollDeltaY();
@@ -170,15 +185,31 @@ public final class QuestPanelClient {
         int py = bgy + 10;
         int pw = 127;
         int ph = PANEL_H - 20;
+
         if (st.bg != null) st.bg.setBounds(bgx, bgy, PANEL_W, PANEL_H);
+
         if (st.list != null) st.list.setBounds(px, py, pw, ph);
         if (st.details != null) {
             st.details.setBounds(px, py, pw, ph);
+
             st.details.backButton().setPosition(px, py + ph - st.details.backButton().getHeight() - 4);
-            st.details.completeButton().setPosition(px + (pw - st.details.completeButton().getWidth()) / 2, py + ph - st.details.completeButton().getHeight() - 4);
-            st.details.rejectButton().setPosition(px + pw - st.details.rejectButton().getWidth() - 2, py + ph - st.details.rejectButton().getHeight() - 4);
+            st.details.completeButton().setPosition(
+                    px + (pw - st.details.completeButton().getWidth()) / 2,
+                    py + ph - st.details.completeButton().getHeight() - 4
+            );
+            st.details.rejectButton().setPosition(
+                    px + pw - st.details.rejectButton().getWidth() - 2,
+                    py + ph - st.details.rejectButton().getHeight() - 4
+            );
         }
+
         if (st.tabs != null) st.tabs.setBounds(computeTabsX(inv), bgy + 4, 26, PANEL_H - 8);
+
+        if (st.filter != null) {
+            int filterX = px;
+            int filterY = bgy + PANEL_H + 6;
+            st.filter.setBounds(filterX, filterY, 88, 20);
+        }
     }
 
     private static void reposition(InventoryScreen inv, State st) {
@@ -264,26 +295,48 @@ public final class QuestPanelClient {
     private static void updateVisibility(State st) {
         boolean listVisible = st.open && !st.showingDetails;
         boolean detailsVisible = st.open && st.showingDetails;
-        if (st.bg != null) st.bg.visible = st.open;
+
+        if (st.bg != null) {
+            st.bg.visible = st.open;
+            st.bg.active = st.open;
+        }
+
         if (st.list != null) {
             st.list.visible = listVisible;
             st.list.active = listVisible;
         }
+
         if (st.details != null) {
             st.details.visible = detailsVisible;
             st.details.active = detailsVisible;
-            st.details.backButton().visible = detailsVisible;
-            st.details.backButton().active = detailsVisible;
-            st.details.completeButton().visible = detailsVisible;
-            st.details.completeButton().active = detailsVisible;
-            st.details.rejectButton().visible = detailsVisible;
-            st.details.rejectButton().active = detailsVisible;
+
+            if (st.details.backButton() != null) {
+                st.details.backButton().visible = detailsVisible;
+                st.details.backButton().active = detailsVisible;
+            }
+
+            if (st.details.completeButton() != null) {
+                st.details.completeButton().visible = detailsVisible;
+                st.details.completeButton().active = detailsVisible;
+            }
+
+            if (st.details.rejectButton() != null) {
+                st.details.rejectButton().visible = detailsVisible;
+                st.details.rejectButton().active = detailsVisible;
+            }
         }
+
         if (st.tabs != null) {
             st.tabs.visible = st.open;
             st.tabs.active = st.open;
         }
+
+        if (st.filter != null) {
+            st.filter.visible = st.open;
+            st.filter.active = st.open;
+        }
     }
+
 
     private static final class PanelBackground extends AbstractWidget {
         public PanelBackground(int x, int y, int w, int h) {
@@ -297,16 +350,19 @@ public final class QuestPanelClient {
             this.height = h;
         }
 
+        @Override
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
             RenderSystem.disableBlend();
             gg.blit(PANEL_TEX, getX(), getY(), 0, 0, width, height, width, height);
         }
 
+        @Override
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
             return false;
         }
 
-        protected void updateWidgetNarration(net.minecraft.client.gui.narration.NarrationElementOutput n) {
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput narration) {
         }
     }
 
@@ -317,6 +373,7 @@ public final class QuestPanelClient {
         QuestListWidget list;
         QuestDetailsPanel details;
         CategoryTabsWidget tabs;
+        QuestFilterBar filter;
         boolean showingDetails;
         boolean open;
         Integer originalLeft;

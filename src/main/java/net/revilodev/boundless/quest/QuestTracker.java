@@ -185,7 +185,7 @@ public final class QuestTracker {
         return decodeStatus(raw);
     }
 
-    private static void setServerStatus(ServerPlayer player, String questId, Status st) {
+    public static void setServerStatus(ServerPlayer player, String questId, Status st) {
         QuestProgressState data = QuestProgressState.get(player.serverLevel());
         if (st == null || st == Status.INCOMPLETE || st == Status.COMPLETED) {
             data.set(player.getUUID(), questId, null);
@@ -384,6 +384,15 @@ public final class QuestTracker {
 
         return true;
     }
+
+    public static void forceCompleteWithoutRewards(QuestData.Quest q, ServerPlayer player) {
+        if (q == null || player == null) return;
+        setServerStatus(player, q.id, Status.COMPLETED);
+        BoundlessNetwork.sendStatus(player, q.id, Status.COMPLETED.name());
+        setServerStatus(player, q.id, Status.REDEEMED);
+        BoundlessNetwork.sendStatus(player, q.id, Status.REDEEMED.name());
+    }
+
 
     public static boolean serverReject(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return false;

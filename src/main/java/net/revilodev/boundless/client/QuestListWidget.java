@@ -5,9 +5,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
@@ -21,36 +21,42 @@ import java.util.function.Consumer;
 
 @OnlyIn(Dist.CLIENT)
 public final class QuestListWidget extends AbstractWidget {
+
     private static final ResourceLocation ROW_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_widget.png");
     private static final ResourceLocation ROW_TEX_DISABLED =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_widget_disabled.png");
+    private static final ResourceLocation ROW_TEX_REDEEMABLE =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_widget_redeemable.png");
+    private static final ResourceLocation ROW_TEX_COMPLETED =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_widget_completed.png");
+    private static final ResourceLocation ROW_TEX_DISCARDED =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_widget_discarded.png");
 
-    private final Minecraft mc;
+    private final Minecraft mc = Minecraft.getInstance();
     private final List<QuestData.Quest> quests = new ArrayList<>();
     private final Consumer<QuestData.Quest> onClick;
 
-    private float scrollY = 0f;
-    private final int rowHeight = 27;
-    private final int rowPad = 2;
+    private float scrollY = 0;
+    private final int rowH = 27;
+    private final int pad = 2;
 
     private String category = "all";
 
-    public QuestListWidget(int x, int y, int width, int height, Consumer<QuestData.Quest> onClick) {
-        super(x, y, width, height, net.minecraft.network.chat.Component.empty());
-        this.mc = Minecraft.getInstance();
+    public QuestListWidget(int x, int y, int w, int h, Consumer<QuestData.Quest> onClick) {
+        super(x, y, w, h, Component.empty());
         this.onClick = onClick;
     }
 
-    public void setQuests(Iterable<QuestData.Quest> all) {
+    public void setQuests(Iterable<QuestData.Quest> qs) {
         quests.clear();
-        for (QuestData.Quest q : all) quests.add(q);
-        scrollY = 0f;
+        for (QuestData.Quest q : qs) quests.add(q);
+        scrollY = 0;
     }
 
-    public void setCategory(String categoryId) {
-        this.category = categoryId == null ? "all" : categoryId;
-        scrollY = 0f;
+    public void setCategory(String cat) {
+        category = cat == null ? "all" : cat;
+        scrollY = 0;
     }
 
     public void setBounds(int x, int y, int w, int h) {
@@ -78,104 +84,161 @@ public final class QuestListWidget extends AbstractWidget {
         return categoryUnlocked(q.category);
     }
 
+    private boolean isActuallyVisible(QuestData.Quest q) {
+        if (mc.player == null) return true;
+        QuestTracker.Status st = QuestTracker.getStatus(q, mc.player);
+        if (st == QuestTracker.Status.INCOMPLETE) {
+            return QuestTracker.isVisible(q, mc.player);
+        }
+        return true;
+    }
+
+    private boolean passesFilters(QuestData.Quest q) {
+        if (mc.player == null) return true;
+
+        QuestTracker.Status st = QuestTracker.getStatus(q, mc.player);
+        boolean deps = QuestTracker.dependenciesMet(q, mc.player);
+
+        if (!QuestFilterBar.allowCompleted() && st == QuestTracker.Status.REDEEMED) {
+            return false;
+        }
+
+        if (!QuestFilterBar.allowRejected() && st == QuestTracker.Status.REJECTED) {
+            return false;
+        }
+
+        if (!QuestFilterBar.allowLocked() && !deps) {
+            return false;
+        }
+
+        return true;
+    }
+
     private int contentHeight() {
         if (mc.player == null) return 0;
         int visible = 0;
+
         for (QuestData.Quest q : quests) {
             if (!matchesCategory(q)) continue;
-            if (QuestTracker.isVisible(q, mc.player)) visible++;
+            if (!isActuallyVisible(q)) continue;
+            if (!passesFilters(q)) continue;
+            visible++;
         }
-        return visible * (rowHeight + rowPad);
+
+        return visible * (rowH + pad);
     }
 
-    // ---- Rendering ----
-    // Do NOT annotate with @Override, since mappings differ between Forge / NeoForge
-    protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-        if (!this.visible) return;
+    @Override
+    protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float pt) {
+        if (!visible || mc.player == null) return;
+
         RenderSystem.enableBlend();
         gg.enableScissor(getX(), getY(), getX() + width, getY() + height);
-        int yOff = this.getY() - Mth.floor(scrollY);
+
+        int yOff = getY() - Mth.floor(scrollY);
         int drawn = 0;
 
         for (QuestData.Quest q : quests) {
-            if (mc.player == null) continue;
             if (!matchesCategory(q)) continue;
-            if (!QuestTracker.isVisible(q, mc.player)) continue;
+            if (!isActuallyVisible(q)) continue;
+            if (!passesFilters(q)) continue;
 
-            int top = yOff + drawn * (rowHeight + rowPad);
+            int top = yOff + drawn * (rowH + pad);
             drawn++;
-            if (top > this.getY() + this.height) break;
-            if (top + rowHeight < this.getY()) continue;
 
+            if (top > getY() + height) break;
+            if (top + rowH < getY()) continue;
+
+            QuestTracker.Status st = QuestTracker.getStatus(q, mc.player);
             boolean deps = QuestTracker.dependenciesMet(q, mc.player);
-            ResourceLocation rowTex = deps ? ROW_TEX : ROW_TEX_DISABLED;
-            gg.blit(rowTex, this.getX(), top, 0, 0, 127, 27, 127, 27);
+            boolean ready = deps && QuestTracker.isReady(q, mc.player);
 
-            Item iconItem = q.iconItem().orElse(null);
-            if (iconItem != null) {
-                gg.renderItem(new ItemStack(iconItem), this.getX() + 6, top + 5);
+            ResourceLocation tex;
+            if (!deps) {
+                tex = ROW_TEX_DISABLED;
+            } else if (st == QuestTracker.Status.REJECTED) {
+                tex = ROW_TEX_DISCARDED;
+            } else if (st == QuestTracker.Status.REDEEMED) {
+                tex = ROW_TEX_COMPLETED;
+            } else if (st == QuestTracker.Status.COMPLETED || ready) {
+                tex = ROW_TEX_REDEEMABLE;
+            } else {
+                tex = ROW_TEX;
             }
+
+            gg.blit(tex, getX(), top, 0, 0, 127, 27, 127, 27);
+
+            q.iconItem().ifPresent(item ->
+                    gg.renderItem(new ItemStack(item), getX() + 6, top + 5)
+            );
 
             String name = q.name;
-            int maxWidth = this.width - 42;
-            int nameWidth = mc.font.width(name);
-            if (nameWidth > maxWidth) {
-                String trimmed = mc.font.plainSubstrByWidth(name, maxWidth - mc.font.width("...")) + "...";
-                gg.drawString(mc.font, trimmed, this.getX() + 30, top + 9, deps ? 0xFFFFFF : 0xA0A0A0, false);
-            } else {
-                gg.drawString(mc.font, name, this.getX() + 30, top + 9, deps ? 0xFFFFFF : 0xA0A0A0, false);
+            int maxW = width - 42;
+            if (mc.font.width(name) > maxW) {
+                name = mc.font.plainSubstrByWidth(name, maxW - mc.font.width("...")) + "...";
             }
+
+            gg.drawString(mc.font, name, getX() + 30, top + 9,
+                    deps ? 0xFFFFFF : 0xA0A0A0, false);
         }
 
         gg.disableScissor();
 
         int content = contentHeight();
-        if (content > this.height) {
-            float ratio = (float) this.height / content;
-            int barHeight = Math.max(10, (int) (this.height * ratio));
-            int barY = getY() + (int) ((this.height - barHeight) * (scrollY / (content - this.height)));
-            gg.fill(getX() + width + 4, barY, getX() + width + 6, barY + barHeight, 0xFF808080);
+        if (content > height) {
+            float maxScroll = content - height;
+            float ratio = (float) height / (float) content;
+            int barH = Math.max(12, (int) (height * ratio));
+            float scrollRatio = maxScroll <= 0 ? 0f : scrollY / maxScroll;
+            int barY = getY() + (int) ((height - barH) * scrollRatio);
+            gg.fill(getX() + width + 4, barY, getX() + width + 6, barY + barH, 0xFF808080);
         }
     }
 
-    // ---- Input handling ----
-    // NeoForge 1.20.1 uses this exact signature
-    public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
-        if (!this.visible || !this.active) return false;
-        int content = contentHeight();
-        int view = this.height;
-        if (content <= view) return false;
-        float max = content - view;
-        scrollY = Mth.clamp(scrollY - (float) (delta * 12), 0f, max);
-        return true;
-    }
+    @Override
+    public boolean mouseClicked(double mxD, double myD, int button) {
+        if (!visible || !active || button != 0) return false;
 
-    // Helper overload for screens calling the 4-arg version (not part of superclass)
-    public boolean mouseScrolled(double mouseX, double mouseY, double deltaX, double deltaY) {
-        return mouseScrolled(mouseX, mouseY, deltaY);
-    }
+        int mx = (int) mxD;
+        int my = (int) myD;
 
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (!this.visible || !this.active || !this.isMouseOver(mouseX, mouseY)) return false;
-        if (button != 0) return false;
+        if (!isMouseOver(mx, my)) return false;
         if (mc.player == null) return false;
-        int localY = (int) (mouseY - this.getY() + scrollY);
-        int idx = localY / (rowHeight + rowPad);
+
+        int localY = (int) (my - getY() + scrollY);
+        int idx = localY / (rowH + pad);
         int visibleIndex = 0;
 
         for (QuestData.Quest q : quests) {
             if (!matchesCategory(q)) continue;
-            if (!QuestTracker.isVisible(q, mc.player)) continue;
+            if (!isActuallyVisible(q)) continue;
+            if (!passesFilters(q)) continue;
+
             if (visibleIndex == idx) {
                 if (onClick != null) onClick.accept(q);
                 return true;
             }
             visibleIndex++;
         }
+
         return false;
     }
 
-    protected void updateWidgetNarration(NarrationElementOutput narration) {
-        // no narration
+    public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
+        if (!visible || !active) return false;
+        int content = contentHeight();
+        if (content <= height) return false;
+
+        float max = content - height;
+        scrollY = Mth.clamp(scrollY - (float) (delta * 12), 0f, max);
+        return true;
+    }
+
+    public boolean mouseScrolled(double mouseX, double mouseY, double deltaX, double deltaY) {
+        return mouseScrolled(mouseX, mouseY, deltaY);
+    }
+
+    @Override
+    protected void updateWidgetNarration(NarrationElementOutput n) {
     }
 }

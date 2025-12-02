@@ -4,12 +4,13 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 import net.revilodev.boundless.client.CategoryTabsWidget;
 import net.revilodev.boundless.client.QuestDetailsPanel;
+import net.revilodev.boundless.client.QuestFilterBar;
 import net.revilodev.boundless.client.QuestListWidget;
 import net.revilodev.boundless.quest.QuestData;
-import net.neoforged.api.distmarker.OnlyIn;
-import net.neoforged.api.distmarker.Dist;
 
 @OnlyIn(Dist.CLIENT)
 public final class StandaloneQuestBookScreen extends Screen {
@@ -27,6 +28,7 @@ public final class StandaloneQuestBookScreen extends Screen {
     private CategoryTabsWidget tabs;
     private QuestListWidget list;
     private QuestDetailsPanel details;
+    private QuestFilterBar filter;
 
     private boolean showingDetails = false;
 
@@ -69,9 +71,11 @@ public final class StandaloneQuestBookScreen extends Screen {
             showingDetails = false;
             updateVisibility();
         });
-
-        // REQUIRED: aligns the entire details panel content & scissor
         details.setBounds(pxRight, py, pw, ph);
+
+        int filterX = pxLeft;
+        int filterY = topY + panelHeight + 6;
+        filter = new QuestFilterBar(filterX, filterY);
 
         addRenderableWidget(tabs);
         addRenderableWidget(list);
@@ -79,17 +83,15 @@ public final class StandaloneQuestBookScreen extends Screen {
         addRenderableWidget(details.backButton());
         addRenderableWidget(details.completeButton());
         addRenderableWidget(details.rejectButton());
+        addRenderableWidget(filter);
 
         updateVisibility();
     }
 
     private void updateVisibility() {
-
-        // --- do not hide quest list on this screen ---
         list.visible = true;
         list.active = true;
 
-        // details panel toggles normally
         details.visible = showingDetails;
         details.active = showingDetails;
 
@@ -104,46 +106,37 @@ public final class StandaloneQuestBookScreen extends Screen {
 
         tabs.visible = true;
         tabs.active = true;
+
+        filter.visible = true;
+        filter.active = true;
     }
 
     @Override
     public void renderBackground(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-        // disable vanilla background entirely
     }
 
     @Override
     public void render(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-
-        // --- inventory-style darkening ---
         gg.fill(0, 0, this.width, this.height, 0xA0000000);
-
-        // --- panels ---
         gg.blit(PANEL_TEX, leftX, topY, 0, 0, panelWidth, panelHeight, panelWidth, panelHeight);
         gg.blit(PANEL_TEX, rightX, topY, 0, 0, panelWidth, panelHeight, panelWidth, panelHeight);
-
-        // --- widgets ---
         super.render(gg, mouseX, mouseY, partialTick);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-
         if (list.visible && list.active) {
             if (mouseX >= list.getX() && mouseX <= list.getX() + list.getWidth()
                     && mouseY >= list.getY() && mouseY <= list.getY() + list.getHeight()) {
-
                 if (list.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) return true;
             }
         }
-
         if (details.visible && details.active) {
             if (mouseX >= details.getX() && mouseX <= details.getX() + details.getWidth()
                     && mouseY >= details.getY() && mouseY <= details.getY() + details.getHeight()) {
-
                 if (details.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) return true;
             }
         }
-
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 

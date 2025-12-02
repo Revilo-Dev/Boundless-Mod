@@ -70,7 +70,6 @@ public final class BoundlessMod {
             event.accept(ModItems.QUEST_BOOK.get());
         }
     }
-
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
         BoundlessCommands.register(event.getDispatcher());

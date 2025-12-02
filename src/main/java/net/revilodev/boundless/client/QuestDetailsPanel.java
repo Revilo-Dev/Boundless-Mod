@@ -229,7 +229,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     EntityType<?> et = BuiltInRegistries.ENTITY_TYPE.getOptional(rl).orElse(null);
                     String eName = et == null ? rl.toString() : et.getDescription().getString();
 
-                    int have = QuestTracker.getKillCount(mc.player, t.id);
+                    int rawKills = QuestTracker.getKillCount(mc.player, t.id);
+                    int have = Math.min(rawKills, t.count);  // clamp
                     int color = have >= t.count ? 0x55FF55 : 0xFF5555;
 
                     Item iconItem = null;
