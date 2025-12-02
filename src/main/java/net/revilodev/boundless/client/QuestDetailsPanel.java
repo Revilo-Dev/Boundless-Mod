@@ -30,6 +30,7 @@ import java.util.List;
 
 @OnlyIn(Dist.CLIENT)
 public final class QuestDetailsPanel extends AbstractWidget {
+
     private static final int LINE_ITEM_ROW = 22;
     private static final int BOTTOM_PADDING = 28;
     private static final int HEADER_HEIGHT = 28;
@@ -46,10 +47,10 @@ public final class QuestDetailsPanel extends AbstractWidget {
     private float scrollY = 0f;
     private int measuredContentHeight = 0;
 
-    private final List<DepClickRegion> depRegions = new ArrayList<>();
-
     private boolean descExpanded = false;
     private boolean hideBackButton = false;
+
+    private final List<DepClickRegion> depRegions = new ArrayList<>();
 
     private static final class DepClickRegion {
         final int x, y, w, h;
@@ -111,6 +112,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
         return reject;
     }
 
+    /** Standalone screen calls this to hide the back button. */
     public void setHideBackButton(boolean v) {
         this.hideBackButton = v;
     }
@@ -121,7 +123,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
         this.width = w;
         this.height = h;
 
-        int cy = y + h - complete.getHeight() - 2; // moved toolbar down by 2px
+        // Bottom toolbar moved 2px down
+        int cy = y + h - complete.getHeight() - 2;
         int cxCenter = x + (w - complete.getWidth()) / 2;
 
         back.setPosition(x + 2, cy);
@@ -161,43 +164,48 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         String title = quest.name;
         int nameWidth = w - 32;
-        gg.drawWordWrap(mc.font, Component.literal(title), x + 26, y + 10, nameWidth, 0xFFFFFF);
+        // text moved down slightly (was y + 10)
+        gg.drawWordWrap(mc.font, Component.literal(title), x + 26, y + 8, nameWidth, 0xFFFFFF);
 
         // --- scrolled content below header ---
         gg.enableScissor(x, contentTop, x + w, contentBottom);
 
         int[] curY = {contentTop + 4 - Mth.floor(scrollY)};
 
-        // description with "read more"
+        // description with "Read more / Read less"
         if (!quest.description.isBlank()) {
             String full = quest.description;
-            String shown = full;
             boolean needsMore = full.length() > DESC_CHAR_LIMIT;
 
-            if (!descExpanded && needsMore) {
-                shown = full.substring(0, DESC_CHAR_LIMIT) + "...";
+            String shown = full;
+            if (needsMore && !descExpanded) {
+                int cut = full.lastIndexOf(" ", DESC_CHAR_LIMIT);
+                if (cut < 0) cut = DESC_CHAR_LIMIT;
+                shown = full.substring(0, cut) + "...";
             }
 
             gg.drawWordWrap(mc.font, Component.literal(shown), x + 4, curY[0], w - 8, 0xCFCFCF);
+            int wrapHeight = mc.font.wordWrapHeight(shown, w - 8);
 
-            if (!descExpanded && needsMore) {
-                int wrapHeight = mc.font.wordWrapHeight(shown, w - 8);
-                int readY = curY[0] + wrapHeight;
-                int txtW = mc.font.width("Read more");
+            if (needsMore) {
+                int toggleY = curY[0] + wrapHeight + 2;
+                String toggleText = descExpanded ? "Read less ▲" : "Read more ▼";
+                int toggleW = mc.font.width(toggleText);
+                int toggleX = x + (w - toggleW) / 2;
 
-                gg.drawString(mc.font, "Read more", x + 6, readY, 0x55AAFF, false);
+                gg.drawString(mc.font, toggleText, toggleX, toggleY, 0x55AAFF, false);
 
                 depRegions.add(new DepClickRegion(
-                        x + 6,
-                        readY,
-                        txtW,
+                        toggleX,
+                        toggleY,
+                        toggleW,
                         mc.font.lineHeight,
-                        "__readmore__"
+                        "__desc_toggle__"
                 ));
 
                 curY[0] += wrapHeight + mc.font.lineHeight + 6;
             } else {
-                curY[0] += mc.font.wordWrapHeight(shown, w - 8) + 8;
+                curY[0] += wrapHeight + 8;
             }
         }
 
@@ -238,13 +246,27 @@ public final class QuestDetailsPanel extends AbstractWidget {
             curY[0] += 2;
         }
 
-        // completion targets
+// ------------------------------------------------------
+// COMPLETION TARGETS (with grouped "Collect:" header)
+// ------------------------------------------------------
         if (quest.completion != null && !quest.completion.targets.isEmpty() && mc.player != null) {
+
+            boolean printedItemHeader = false;
+
             for (QuestData.Target t : quest.completion.targets) {
+
+                // --------------------------
+                // ITEM TARGETS — grouped
+                // --------------------------
                 if (t.isItem()) {
-                    String prefix = "submission".equals(quest.type) ? "Submit:" : "Collect:";
-                    gg.drawString(mc.font, prefix, x + 4, curY[0], 0x1d9633, false);
-                    curY[0] += mc.font.lineHeight + 2;
+
+                    // print header exactly once
+                    if (!printedItemHeader) {
+                        String prefix = "submission".equals(quest.type) ? "Submit:" : "Collect:";
+                        gg.drawString(mc.font, prefix, x + 4, curY[0], 0x1d9633, false);
+                        curY[0] += mc.font.lineHeight + 2;
+                        printedItemHeader = true;
+                    }
 
                     String raw = t.id;
                     boolean isTagSyntax = raw.startsWith("#");
@@ -284,10 +306,14 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     }
 
                     gg.drawString(mc.font, shownCount + "/" + need, px, curY[0] + 4, color, false);
-
                     curY[0] += LINE_ITEM_ROW;
+                    continue;
+                }
 
-                } else if (t.isEntity()) {
+                // --------------------------
+                // ENTITY TARGETS (unchanged)
+                // --------------------------
+                else if (t.isEntity()) {
                     gg.drawString(mc.font, "Kill:", x + 4, curY[0], 0x1d9633, false);
                     curY[0] += mc.font.lineHeight + 2;
 
@@ -316,8 +342,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
                     gg.drawString(mc.font, have + "/" + t.count, x + 24, curY[0] + 4, color, false);
                     curY[0] += LINE_ITEM_ROW;
+                }
 
-                } else if (t.isEffect()) {
+                // --------------------------
+                // EFFECT TARGETS (unchanged)
+                // --------------------------
+                else if (t.isEffect()) {
                     gg.drawString(mc.font, "Have effect:", x + 4, curY[0], 0x55FFFF, false);
                     curY[0] += mc.font.lineHeight + 2;
 
@@ -336,8 +366,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     }
 
                     curY[0] += LINE_ITEM_ROW;
+                }
 
-                } else if (t.isAdvancement()) {
+                // --------------------------
+                // ADVANCEMENT TARGETS (unchanged)
+                // --------------------------
+                else if (t.isAdvancement()) {
                     gg.drawString(mc.font, "Achieve:", x + 4, curY[0], 0x55FFFF, false);
                     curY[0] += mc.font.lineHeight + 2;
 
@@ -353,9 +387,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
                     if (holder == null && mc.hasSingleplayerServer()) {
                         var server = mc.getSingleplayerServer();
-                        if (server != null) {
-                            holder = server.getAdvancements().get(rl);
-                        }
+                        if (server != null) holder = server.getAdvancements().get(rl);
                     }
 
                     if (holder != null) {
@@ -378,8 +410,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     }
 
                     curY[0] += LINE_ITEM_ROW;
+                }
 
-                } else if (t.isStat()) {
+                // --------------------------
+                // STAT TARGETS (unchanged)
+                // --------------------------
+                else if (t.isStat()) {
                     gg.drawString(mc.font, "Stat:", x + 4, curY[0], 0x1d9633, false);
                     curY[0] += mc.font.lineHeight + 2;
 
@@ -395,9 +431,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     curY[0] += LINE_ITEM_ROW;
                 }
             }
+
             curY[0] += 2;
         }
 
+
+        // rewards
         boolean hasItemRewards = quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty();
         boolean hasCommandReward = quest.rewards != null && quest.rewards.command != null && !quest.rewards.command.isBlank();
         boolean hasExpReward = quest.rewards != null && quest.rewards.hasExp();
@@ -408,62 +447,59 @@ public final class QuestDetailsPanel extends AbstractWidget {
             for (Component tip : hoveredTooltips) {
                 gg.renderTooltip(mc.font, tip, mouseX, mouseY);
             }
-
             updateBottomButtons();
             return;
         }
 
-        if (hasAnyReward) {
-            gg.drawWordWrap(mc.font, Component.literal("Reward:"), x + 4, curY[0], w - 8, 0xA8FFA8);
-            curY[0] += mc.font.wordWrapHeight("Reward:", w - 8) + 4;
+        gg.drawWordWrap(mc.font, Component.literal("Reward:"), x + 4, curY[0], w - 8, 0xA8FFA8);
+        curY[0] += mc.font.wordWrapHeight("Reward:", w - 8) + 4;
 
-            if (hasItemRewards) {
-                for (QuestData.RewardEntry re : quest.rewards.items) {
-                    ResourceLocation rl = ResourceLocation.parse(re.item);
-                    Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-                    int lineY = curY[0];
-                    if (item != null) {
-                        ItemStack st = new ItemStack(item, Math.max(1, re.count));
-                        gg.renderItem(st, x + 4, lineY);
-                        gg.drawString(mc.font, "x" + st.getCount(), x + 24, lineY + 6, 0xA8FFA8, false);
-                        if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
-                            hoveredTooltips.add(st.getHoverName());
-                        }
-                    } else {
-                        gg.drawWordWrap(mc.font,
-                                Component.literal("- " + re.item + " x" + Math.max(1, re.count)),
-                                x + 4, lineY, w - 8, 0xA8FFA8);
+        if (hasItemRewards) {
+            for (QuestData.RewardEntry re : quest.rewards.items) {
+                ResourceLocation rl = ResourceLocation.parse(re.item);
+                Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+                int lineY = curY[0];
+                if (item != null) {
+                    ItemStack st = new ItemStack(item, Math.max(1, re.count));
+                    gg.renderItem(st, x + 4, lineY);
+                    gg.drawString(mc.font, "x" + st.getCount(), x + 24, lineY + 6, 0xA8FFA8, false);
+                    if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
+                        hoveredTooltips.add(st.getHoverName());
                     }
-                    curY[0] += LINE_ITEM_ROW;
-                }
-            }
-
-            if (hasCommandReward) {
-                int lineY = curY[0];
-                gg.renderItem(new ItemStack(Items.COMMAND_BLOCK), x + 4, lineY);
-                gg.drawWordWrap(mc.font, Component.literal(quest.rewards.command),
-                        x + 24, lineY + 4, w - 30, 0xA8FFA8);
-                if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
-                    hoveredTooltips.add(Component.literal("Command Reward"));
+                } else {
+                    gg.drawWordWrap(mc.font,
+                            Component.literal("- " + re.item + " x" + Math.max(1, re.count)),
+                            x + 4, lineY, w - 8, 0xA8FFA8);
                 }
                 curY[0] += LINE_ITEM_ROW;
             }
-
-            if (hasExpReward) {
-                int lineY = curY[0];
-                gg.renderItem(new ItemStack(Items.EXPERIENCE_BOTTLE), x + 4, lineY);
-                String txt = quest.rewards.expType.equals("levels")
-                        ? ("Levels: " + quest.rewards.expAmount)
-                        : ("XP: " + quest.rewards.expAmount);
-                gg.drawString(mc.font, txt, x + 24, lineY + 6, 0xA8FFA8, false);
-                if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
-                    hoveredTooltips.add(Component.literal(txt));
-                }
-                curY[0] += LINE_ITEM_ROW;
-            }
-
-            curY[0] += 2;
         }
+
+        if (hasCommandReward) {
+            int lineY = curY[0];
+            gg.renderItem(new ItemStack(Items.COMMAND_BLOCK), x + 4, lineY);
+            gg.drawWordWrap(mc.font, Component.literal(quest.rewards.command),
+                    x + 24, lineY + 4, w - 30, 0xA8FFA8);
+            if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
+                hoveredTooltips.add(Component.literal("Command Reward"));
+            }
+            curY[0] += LINE_ITEM_ROW;
+        }
+
+        if (hasExpReward) {
+            int lineY = curY[0];
+            gg.renderItem(new ItemStack(Items.EXPERIENCE_BOTTLE), x + 4, lineY);
+            String txt = quest.rewards.expType.equals("levels")
+                    ? ("Levels: " + quest.rewards.expAmount)
+                    : ("XP: " + quest.rewards.expAmount);
+            gg.drawString(mc.font, txt, x + 24, lineY + 6, 0xA8FFA8, false);
+            if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
+                hoveredTooltips.add(Component.literal(txt));
+            }
+            curY[0] += LINE_ITEM_ROW;
+        }
+
+        curY[0] += 2;
 
         gg.disableScissor();
 
@@ -494,12 +530,10 @@ public final class QuestDetailsPanel extends AbstractWidget {
         reject.active = !done && quest.optional;
         reject.visible = !done;
 
-        // Back button FIX:
-        // Always visible unless STANDALONE screen hides it
+        // Back button: always visible in inventory UI, unless standalone explicitly hides it
         back.visible = !hideBackButton;
         back.active = !hideBackButton;
     }
-
 
     private int measureContentHeight(int panelWidth) {
         if (quest == null) return 0;
@@ -510,14 +544,20 @@ public final class QuestDetailsPanel extends AbstractWidget {
         // description height (matches render logic)
         if (!quest.description.isBlank()) {
             String full = quest.description;
-            String shown = full;
             boolean needsMore = full.length() > DESC_CHAR_LIMIT;
 
-            if (!descExpanded && needsMore) {
-                shown = full.substring(0, DESC_CHAR_LIMIT) + "...";
-                y += mc.font.wordWrapHeight(shown, w - 8) + mc.font.lineHeight + 6;
+            String shown = full;
+            if (needsMore && !descExpanded) {
+                int cut = full.lastIndexOf(" ", DESC_CHAR_LIMIT);
+                if (cut < 0) cut = DESC_CHAR_LIMIT;
+                shown = full.substring(0, cut) + "...";
+            }
+
+            int wrapH = mc.font.wordWrapHeight(shown, w - 8);
+            if (needsMore) {
+                y += wrapH + mc.font.lineHeight + 6;
             } else {
-                y += mc.font.wordWrapHeight(shown, w - 8) + 8;
+                y += wrapH + 8;
             }
         }
 
@@ -588,8 +628,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         for (DepClickRegion r : depRegions) {
             if (r.contains(mouseX, mouseY)) {
-                if ("__readmore__".equals(r.questId)) {
-                    descExpanded = true;
+                if ("__desc_toggle__".equals(r.questId)) {
+                    descExpanded = !descExpanded;
                     return true;
                 }
 
@@ -606,6 +646,10 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
     @Override
     protected void updateWidgetNarration(NarrationElementOutput narration) {}
+
+    // ------------------------------
+    // Buttons
+    // ------------------------------
 
     private static final class BackButton extends AbstractButton {
         private static final ResourceLocation TEX_NORMAL =

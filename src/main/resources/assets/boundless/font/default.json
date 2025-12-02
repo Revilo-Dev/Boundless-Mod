@@ -1,0 +1,121 @@
+{
+	"providers": [
+		{
+			"type": "bitmap",
+			"file": "boundless:icon/advancement",
+			"ascent": 8,
+			"height": 16,
+			"chars": [
+				"\uefe1"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "boundless:icon/chest",
+			"ascent": 8,
+			"height": 16,
+			"chars": [
+				"\uefe2"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "boundless:icon/command",
+			"ascent": 8,
+			"height": 16,
+			"chars": [
+				"\uefe3"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "boundless:icon/effect",
+			"ascent": 8,
+			"height": 16,
+			"chars": [
+				"\uefe4"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "boundless:icon/exp",
+			"ascent": 8,
+			"height": 16,
+			"chars": [
+				"\uefe5"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "boundless:icon/pick",
+			"ascent": 8,
+			"height": 16,
+			"chars": [
+				"\uefe6"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "boundless:icon/reward",
+			"ascent": 8,
+			"height": 16,
+			"chars": [
+				"\uefe7"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "boundless:icon/sword",
+			"ascent": 8,
+			"height": 16,
+			"chars": [
+				"\uefe8"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "boundless:icon/sword",
+			"ascent": 8,
+			"height": 16,
+			"chars": [
+				"\uefe9"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "boundless:icon/sword",
+			"ascent": 8,
+			"height": 16,
+			"chars": [
+				"\ueef1"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "boundless:icon/sword",
+			"ascent": 8,
+			"height": 16,
+			"chars": [
+				"\ueef2"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "boundless:icon/sword",
+			"ascent": 8,
+			"height": 16,
+			"chars": [
+				"\ueef3"
+			]
+		},
+		{
+			"type": "bitmap",
+			"file": "boundless:icon/sword",
+			"ascent": 8,
+			"height": 16,
+			"chars": [
+				"\ueef4"
+			]
+		}
+	]
+}

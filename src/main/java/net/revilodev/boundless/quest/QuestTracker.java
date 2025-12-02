@@ -46,6 +46,8 @@ public final class QuestTracker {
     private static final Map<String, Boolean> CLIENT_ADV_DONE = new HashMap<>();
     private static final Map<String, Integer> CLIENT_STATS = new HashMap<>();
     private static final Map<String, Integer> CLIENT_ITEM_PROGRESS = new HashMap<>();
+    private static final Map<String, Boolean> CLIENT_EFFECT_PROGRESS = new HashMap<>();
+
     private static boolean SERVER_TOASTS_DISABLED = false;
 
 
@@ -254,7 +256,15 @@ public final class QuestTracker {
                 continue;
             }
             if (t.isEntity() && getKillCount(player, t.id) < t.count) return false;
-            if (t.isEffect() && !hasEffect(player, t.id)) return false;
+            if (t.isEffect()) {
+                String key = q.id + ":effect:" + t.id;
+
+                boolean hasNow = hasEffect(player, t.id);
+                boolean done = getPermanentEffectProgress(key, hasNow);
+
+                if (!done) return false;
+                continue;
+            }
             if (t.isAdvancement() && !hasAdvancement(player, t.id)) return false;
             if (t.isStat() && getStatCount(player, t.id) < t.count) return false;
         }
@@ -351,19 +361,54 @@ public final class QuestTracker {
     }
 
     public static boolean hasAdvancement(Player player, String advId) {
-        ResourceLocation rl = ResourceLocation.parse(advId);
-        if (player instanceof ServerPlayer sp) {
-            AdvancementHolder holder = sp.server.getAdvancements().get(rl);
-            if (holder == null) return false;
-            AdvancementProgress prog = sp.getAdvancements().getOrStartProgress(holder);
-            boolean done = prog.isDone();
-            CLIENT_ADV_DONE.put(rl.toString(), done);
-            return done;
+        if (player == null || advId == null || advId.isBlank()) return false;
+
+        final ResourceLocation rl;
+        try {
+            rl = ResourceLocation.parse(advId);
+        } catch (Exception e) {
+            return false;
         }
-        if (player.level().isClientSide)
+
+        // Logical server: we already have a ServerPlayer, just query directly.
+        if (player instanceof ServerPlayer sp) {
+            return hasAdvancementServer(sp, rl);
+        }
+
+        // Client side: try to ask the *integrated* server (singleplayer / LAN host).
+        if (FMLEnvironment.dist == Dist.CLIENT && player.level().isClientSide) {
+            try {
+                Class<?> mcClass = Class.forName("net.minecraft.client.Minecraft");
+                Object mc = mcClass.getMethod("getInstance").invoke(null);
+                Object srvObj = mcClass.getMethod("getSingleplayerServer").invoke(mc);
+
+                if (srvObj instanceof net.minecraft.server.MinecraftServer srv) {
+                    ServerPlayer sp = srv.getPlayerList().getPlayer(player.getUUID());
+                    if (sp != null) {
+                        return hasAdvancementServer(sp, rl);
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+
+            // Fallback to whatever the client might have cached via networking (if you ever hook that up)
             return CLIENT_ADV_DONE.getOrDefault(rl.toString(), false);
+        }
+
         return false;
     }
+    private static boolean hasAdvancementServer(ServerPlayer sp, ResourceLocation rl) {
+        AdvancementHolder holder = sp.server.getAdvancements().get(rl);
+        if (holder == null) return false;
+
+        AdvancementProgress prog = sp.getAdvancements().getOrStartProgress(holder);
+        boolean done = prog.isDone();
+
+        // Cache for the client in singleplayer; harmless on server too.
+        CLIENT_ADV_DONE.put(rl.toString(), done);
+        return done;
+    }
+
 
     public static boolean serverRedeem(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return false;
@@ -405,6 +450,7 @@ public final class QuestTracker {
         if (player instanceof ServerPlayer sp) {
             QuestProgressState.get(sp.serverLevel()).clear(sp.getUUID());
             BoundlessNetwork.syncPlayer(sp);
+            CLIENT_EFFECT_PROGRESS.clear();
             if (FMLEnvironment.dist == Dist.CLIENT) {
                 clientClearAll();
             }
@@ -432,11 +478,26 @@ public final class QuestTracker {
         CLIENT_KILLS.put(entityId, Math.max(0, count));
     }
 
+    private static boolean getPermanentEffectProgress(String key, boolean hasEffect) {
+        boolean prev = CLIENT_EFFECT_PROGRESS.getOrDefault(key, false);
+
+        // Once true, stays true
+        boolean now = prev || hasEffect;
+
+        if (now) {
+            CLIENT_EFFECT_PROGRESS.put(key, true);
+        }
+
+        return now;
+    }
+
+
     public static void clientClearAll() {
         CLIENT_KILLS.clear();
         CLIENT_ADV_DONE.clear();
         CLIENT_STATS.clear();
         CLIENT_ITEM_PROGRESS.clear();
+        CLIENT_EFFECT_PROGRESS.clear();
         if (FMLEnvironment.dist == Dist.CLIENT) {
             try {
                 ensureClientStateLoaded(null);

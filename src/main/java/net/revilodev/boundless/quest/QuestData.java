@@ -4,6 +4,9 @@ import com.google.gson.*;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.PackResources;
+import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.server.packs.resources.IoSupplier;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -195,6 +198,10 @@ public final class QuestData {
                 if (q != null && !isQuestDisabled(q))
                     QUESTS.put(q.id, q);
             } catch (Exception ignored) {}
+        }
+
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            scanSelectedResourcePacksData();
         }
 
         if (!CATEGORIES.containsKey("all"))
@@ -441,6 +448,7 @@ public final class QuestData {
         var resources = server.getServerResources();
         ResourceManager rm = resources.resourceManager();
         load(rm, forceReload);
+        loadDataPackQuests(rm);
         loadedServer = true;
     }
 
@@ -623,6 +631,134 @@ public final class QuestData {
             loadedClient = false;
         }
     }
+
+    private static void scanSelectedResourcePacksData() {
+        try {
+            Class<?> mcClass = Class.forName("net.minecraft.client.Minecraft");
+            Object mc = mcClass.getMethod("getInstance").invoke(null);
+            Object repoObj = mcClass.getMethod("getResourcePackRepository").invoke(mc);
+            if (!(repoObj instanceof PackRepository repo)) return;
+
+            List<PackResources> packs = repo.openAllSelected();
+            for (PackResources res : packs) {
+                try {
+                    Set<String> namespaces = res.getNamespaces(PackType.SERVER_DATA);
+                    for (String ns : namespaces) {
+                        listDataCategoriesFromPack(res, ns);
+                        listDataQuestsFromPack(res, ns);
+                    }
+                } finally {
+                    try {
+                        res.close();
+                    } catch (Exception ignored) {}
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static int listDataCategoriesFromPack(PackResources res, String ns) {
+        final int[] count = {0};
+        res.listResources(PackType.SERVER_DATA, ns, PATH_CATEGORIES, (loc, supplier) -> {
+            if (!loc.getPath().endsWith(".json")) return;
+            try (Reader r = supplierToReader(supplier)) {
+                JsonObject obj = safeObject(r);
+                if (obj == null) return;
+                String id = optString(obj, "id");
+                String icon = optString(obj, "icon");
+                String cname = optString(obj, "name");
+                int order = parseIntFlexible(obj, "order", 0);
+                boolean excludeFromAll = parseBoolFlexible(obj, "exclude_from_all", false);
+                String dependency = optString(obj, "dependency");
+                if (id != null && !id.isBlank()) {
+                    CATEGORIES.put(id, new Category(id, icon, cname, order, excludeFromAll, dependency));
+                    count[0]++;
+                }
+            } catch (IOException ignored) {
+            } catch (Exception ignored) {
+            }
+        });
+        return count[0];
+    }
+
+    private static int listDataQuestsFromPack(PackResources res, String ns) {
+        final int[] count = {0};
+        res.listResources(PackType.SERVER_DATA, ns, PATH_QUESTS, (loc, supplier) -> {
+            if (!loc.getPath().endsWith(".json")) return;
+            if (loc.getPath().contains("/categories/")) return;
+            try (Reader r = supplierToReader(supplier)) {
+                JsonObject obj = safeObject(r);
+                if (obj == null) return;
+                Quest q = parseQuestObject(obj, loc);
+                if (q != null && !isQuestDisabled(q)) {
+                    QUESTS.put(q.id, q);
+                    count[0]++;
+                }
+            } catch (IOException ignored) {
+            } catch (Exception ignored) {
+            }
+        });
+        return count[0];
+    }
+
+    private static void loadDataPackQuests(ResourceManager rm) {
+
+        // ------------ Categories ---------------
+        Map<ResourceLocation, List<Resource>> catStacks =
+                rm.listResourceStacks(PATH_CATEGORIES, rl -> rl.getPath().endsWith(".json"));
+
+        for (var entry : catStacks.entrySet()) {
+            List<Resource> stack = entry.getValue();
+            if (stack.isEmpty()) continue;
+
+            Resource top = stack.get(stack.size() - 1);
+
+            try (Reader reader = new BufferedReader(top.openAsReader())) {
+                JsonObject obj = safeObject(reader);
+                if (obj == null) continue;
+
+                String id = optString(obj, "id");
+                if (id == null || id.isBlank()) continue;
+
+                String icon = optString(obj, "icon");
+                String name = optString(obj, "name");
+                int order = parseIntFlexible(obj, "order", 0);
+                boolean exclude = parseBoolFlexible(obj, "exclude_from_all", false);
+                String dependency = optString(obj, "dependency");
+
+                CATEGORIES.put(id, new Category(id, icon, name, order, exclude, dependency));
+
+            } catch (Exception ignored) {}
+        }
+
+
+        // ------------ Quests -------------------
+        Map<ResourceLocation, List<Resource>> questStacks =
+                rm.listResourceStacks(PATH_QUESTS, rl -> rl.getPath().endsWith(".json"));
+
+        for (var entry : questStacks.entrySet()) {
+            ResourceLocation loc = entry.getKey();
+
+            if (loc.getPath().contains("/categories/")) continue;
+
+            List<Resource> stack = entry.getValue();
+            if (stack.isEmpty()) continue;
+
+            Resource top = stack.get(stack.size() - 1);
+
+            try (Reader reader = new BufferedReader(top.openAsReader())) {
+                JsonObject obj = safeObject(reader);
+                if (obj == null) continue;
+
+                Quest q = parseQuestObject(obj, loc);
+                if (q != null && !isQuestDisabled(q))
+                    QUESTS.put(q.id, q);
+
+            } catch (Exception ignored) {}
+        }
+    }
+
+
+
 
     private static String optString(JsonObject o, String key) {
         return o.has(key) && o.get(key).isJsonPrimitive() ? o.get(key).getAsString() : null;
