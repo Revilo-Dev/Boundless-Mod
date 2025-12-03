@@ -3,16 +3,13 @@
   "id": "treasure_hunter",
   "name": "Treasure Hunter",
   "icon": "minecraft:heart_of_the_sea",
-  "description": "Follow a treasure map and obtain a heart of the sea.",
+  "description": "Follow a buried treasure map and claim the Heart of the Sea.",
   "dependencies": "iron_age",
   "optional": "true",
   "type": "collection",
   "completion": {
-    "items": [
-      {
-        "item": "minecraft:heart_of_the_sea",
-        "count": 1
-      }
+    "complete": [
+      { "collect": "minecraft:heart_of_the_sea", "count": 1 }
     ]
   },
   "reward": {
@@ -22,6 +19,8 @@
         "count": 1,
         "nbt": "{map:0,display:{Name:'{\"text\":\"Buried Treasure Map\"}'},Decorations:[{id:\"X\",type:1,x:0.0,z:0.0,rot:180.0}]}"
       }
-    ]
+    ],
+    "exp": "points",
+    "count": 130
   }
 }

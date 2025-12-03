@@ -1,0 +1,24 @@
+{
+  "category": "minecraft",
+  "id": "fortress",
+  "name": "Fortress",
+  "icon": "minecraft:blaze_rod",
+  "description": "Locate a Nether Fortress and gather blaze rods for brewing and Eyes of Ender.",
+  "dependencies": "the_nether",
+  "optional": "false",
+  "type": "collection",
+  "completion": {
+    "complete": [
+      { "achieve": "minecraft:nether/find_fortress" },
+      { "collect": "minecraft:blaze_rod", "count": 12 }
+    ]
+  },
+  "reward": {
+    "items": [
+      { "item": "minecraft:brewing_stand", "count": 1 },
+      { "item": "minecraft:nether_wart", "count": 6 }
+    ],
+    "exp": "points",
+    "count": 180
+  }
+}

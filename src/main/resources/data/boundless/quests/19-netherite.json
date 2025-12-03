@@ -1,0 +1,25 @@
+{
+  "category": "minecraft",
+  "id": "netherite",
+  "name": "Netherite",
+  "icon": "minecraft:netherite_chestplate",
+  "description": "Forge a full set of Netherite armor.",
+  "dependencies": "skys_the_limit",
+  "optional": "false",
+  "type": "collection",
+  "completion": {
+    "complete": [
+      { "collect": "minecraft:netherite_helmet", "count": 1 },
+      { "collect": "minecraft:netherite_chestplate", "count": 1 },
+      { "collect": "minecraft:netherite_leggings", "count": 1 },
+      { "collect": "minecraft:netherite_boots", "count": 1 }
+    ]
+  },
+  "reward": {
+    "items": [
+      { "item": "minecraft:netherite_pickaxe", "count": 1 }
+    ],
+    "exp": "points",
+    "count": 300
+  }
+}

@@ -3,14 +3,17 @@
   "id": "artisan",
   "name": "Artisan",
   "icon": "minecraft:anvil",
-  "description": "Obtain An Anvil In Order To Repair, Combine And Enchant Gear",
+  "description": "Craft an anvil to repair, combine, and improve your gear.",
   "dependencies": "iron_age",
   "optional": "false",
   "type": "collection",
   "completion": {
-    "item": "minecraft:anvil", "count": 1
+    "complete": [
+      { "collect": "minecraft:anvil", "count": 1 }
+    ]
   },
   "reward": {
-    "exp": "points", "count": 45
+    "exp": "points",
+    "count": 60
   }
 }

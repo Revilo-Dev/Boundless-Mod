@@ -1,0 +1,22 @@
+{
+  "category": "minecraft",
+  "id": "trims",
+  "name": "Trims",
+  "icon": "minecraft:smithing_table",
+  "description": "Find an armor trim and apply it to customise your gear.",
+  "dependencies": "trading",
+  "optional": "true",
+  "type": "collection",
+  "completion": {
+    "complete": [
+      { "collect": "#minecraft:trim_templates", "count": 1 }
+    ]
+  },
+  "reward": {
+    "items": [
+      { "item": "minecraft:smithing_table", "count": 1 }
+    ],
+    "exp": "points",
+    "count": 80
+  }
+}

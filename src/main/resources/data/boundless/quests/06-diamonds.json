@@ -3,36 +3,23 @@
   "id": "diamonds",
   "name": "Diamonds",
   "icon": "minecraft:diamond",
-  "description": "Create Your First Set Of Diamond Tools, Receive Ingredients For An Enchanting Table As A Reward ",
+  "description": "Craft your first set of diamond tools and prepare for enchanting.",
   "dependencies": "iron_age",
   "optional": "false",
   "type": "collection",
   "completion": {
-    "items": [
-      {
-        "item": "minecraft:diamond_pickaxe",
-        "count": 1
-      },
-      {
-        "item": "minecraft:diamond_sword",
-        "count": 1
-      },
-      {
-        "item": "minecraft:diamond_axe",
-        "count": 1
-      }
+    "complete": [
+      { "collect": "minecraft:diamond_pickaxe", "count": 1 },
+      { "collect": "minecraft:diamond_sword", "count": 1 },
+      { "collect": "minecraft:diamond_axe", "count": 1 }
     ]
-},
+  },
   "reward": {
     "items": [
-      {
-        "item": "minecraft:obsidian",
-        "count": 4
-      },
-      {
-        "item": "minecraft:book",
-        "count": 1
-      }
-    ]
+      { "item": "minecraft:obsidian", "count": 4 },
+      { "item": "minecraft:book", "count": 1 }
+    ],
+    "exp": "points",
+    "count": 150
   }
 }

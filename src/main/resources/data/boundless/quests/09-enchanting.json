@@ -3,28 +3,21 @@
   "id": "enchanting",
   "name": "Enchanting",
   "icon": "minecraft:enchanting_table",
-  "description": "Obtain An Enchanting Table To Enchant Your Gear",
+  "description": "Craft an enchanting table and begin empowering your gear.",
   "dependencies": "diamonds",
   "optional": "false",
   "type": "collection",
   "completion": {
-    "items": [
-      {
-        "item": "minecraft:enchanting_table",
-        "count": 1
-      }
+    "complete": [
+      { "collect": "minecraft:enchanting_table", "count": 1 }
     ]
-},
+  },
   "reward": {
     "items": [
-      {
-        "item": "minecraft:bookshelf",
-        "count": 5
-      },
-      {
-        "item": "minecraft:book",
-        "count": 3
-      }
-    ]
+      { "item": "minecraft:bookshelf", "count": 5 },
+      { "item": "minecraft:book", "count": 3 }
+    ],
+    "exp": "points",
+    "count": 120
   }
 }

@@ -1,0 +1,22 @@
+{
+  "category": "minecraft",
+  "id": "wither_bones",
+  "name": "Wither Skeletons",
+  "icon": "minecraft:wither_skeleton_skull",
+  "description": "Hunt wither skeletons and acquire their rare skulls.",
+  "dependencies": "the_nether",
+  "optional": "true",
+  "type": "collection",
+  "completion": {
+    "complete": [
+      { "collect": "minecraft:wither_skeleton_skull", "count": 1 }
+    ]
+  },
+  "reward": {
+    "items": [
+      { "item": "minecraft:soul_sand", "count": 8 }
+    ],
+    "exp": "points",
+    "count": 120
+  }
+}

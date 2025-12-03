@@ -316,6 +316,23 @@ public final class QuestData {
     private static Completion parseCompletion(JsonElement el, String type) {
         if (el == null) return new Completion(List.of());
         List<Target> out = new ArrayList<>();
+
+        // ---------------------------------------------
+        // NEW FEATURE: supports "complete": [ {...}, {...} ]
+        // ---------------------------------------------
+        if (el.isJsonObject()) {
+            JsonObject obj = el.getAsJsonObject();
+
+            if (obj.has("complete") && obj.get("complete").isJsonArray()) {
+                for (JsonElement e : obj.getAsJsonArray("complete")) {
+                    if (!e.isJsonObject()) continue;
+                    parseNewFormatTarget(e.getAsJsonObject(), out);
+                }
+                return new Completion(out);
+            }
+        }
+
+        // Existing array behaviour
         if (el.isJsonArray()) {
             for (JsonElement e : el.getAsJsonArray()) {
                 if (!e.isJsonObject()) continue;
@@ -323,88 +340,58 @@ public final class QuestData {
             }
             return new Completion(out);
         }
+
+        // Existing object behaviour
         if (el.isJsonObject()) {
             JsonObject obj = el.getAsJsonObject();
 
             if (obj.has("collect")) {
                 JsonElement cEl = obj.get("collect");
                 int count = obj.has("count") && obj.get("count").isJsonPrimitive() && obj.getAsJsonPrimitive("count").isNumber()
-                        ? obj.get("count").getAsInt() : 1;
+                        ? obj.get("count").getAsInt()
+                        : 1;
+
                 if (cEl.isJsonArray()) {
                     for (JsonElement ce : cEl.getAsJsonArray()) {
                         if (!ce.isJsonPrimitive()) continue;
-                        String id = ce.getAsString();
-                        if (!id.isBlank()) out.add(new Target("item", id, count));
+                        out.add(new Target("item", ce.getAsString(), count));
                     }
                 } else if (cEl.isJsonPrimitive()) {
-                    String id = cEl.getAsString();
-                    if (!id.isBlank()) out.add(new Target("item", id, count));
+                    out.add(new Target("item", cEl.getAsString(), count));
                 }
                 return new Completion(out);
             }
 
             if (obj.has("targets") && obj.get("targets").isJsonArray()) {
-                for (JsonElement e : obj.get("targets").getAsJsonArray()) {
+                for (JsonElement e : obj.getAsJsonArray("targets")) {
                     if (!e.isJsonObject()) continue;
                     parseTargetObject(e.getAsJsonObject(), out);
                 }
                 return new Completion(out);
             }
-            if (obj.has("items") && obj.get("items").isJsonArray()) {
-                for (JsonElement e : obj.getAsJsonArray("items")) {
-                    if (!e.isJsonObject()) continue;
-                    JsonObject o = e.getAsJsonObject();
-                    String item = optString(o, "item");
-                    int count = o.has("count") ? o.get("count").getAsInt() : 1;
-                    if (item != null && !item.isBlank()) out.add(new Target("item", item, count));
-                }
-                return new Completion(out);
-            }
-            if (obj.has("entities") && obj.get("entities").isJsonArray()) {
-                for (JsonElement e : obj.getAsJsonArray("entities")) {
-                    if (!e.isJsonObject()) continue;
-                    JsonObject o = e.getAsJsonObject();
-                    String entity = optString(o, "entity");
-                    int count = o.has("count") ? o.get("count").getAsInt() : 1;
-                    if (entity != null && !entity.isBlank()) out.add(new Target("entity", entity, count));
-                }
-                return new Completion(out);
-            }
-            if (obj.has("stats") && obj.get("stats").isJsonArray()) {
-                for (JsonElement e : obj.getAsJsonArray("stats")) {
-                    if (!e.isJsonObject()) continue;
-                    JsonObject o = e.getAsJsonObject();
-                    String stat = optString(o, "stat");
-                    int count = o.has("count") ? o.get("count").getAsInt() : 1;
-                    if (stat != null && !stat.isBlank()) out.add(new Target("stat", stat, count));
-                }
-                return new Completion(out);
-            }
+
+            // remaining legacy formats:
             if (obj.has("item")) {
-                String item = optString(obj, "item");
-                int count = obj.has("count") ? obj.get("count").getAsInt() : 1;
-                if (item != null && !item.isBlank()) out.add(new Target("item", item, count));
+                out.add(new Target("item", optString(obj, "item"), obj.has("count") ? obj.get("count").getAsInt() : 1));
                 return new Completion(out);
             }
             if (obj.has("entity")) {
-                String entity = optString(obj, "entity");
-                int count = obj.has("count") ? obj.get("count").getAsInt() : 1;
-                if (entity != null && !entity.isBlank()) out.add(new Target("entity", entity, count));
+                out.add(new Target("entity", optString(obj, "entity"), obj.has("count") ? obj.get("count").getAsInt() : 1));
                 return new Completion(out);
             }
             if (obj.has("effect")) {
-                String effect = optString(obj, "effect");
-                if (effect != null && !effect.isBlank()) out.add(new Target("effect", effect, 1));
+                out.add(new Target("effect", optString(obj, "effect"), 1));
                 return new Completion(out);
             }
             if (obj.has("advancement")) {
-                String adv = optString(obj, "advancement");
-                if (adv != null && !adv.isBlank()) out.add(new Target("advancement", adv, 1));
+                out.add(new Target("advancement", optString(obj, "advancement"), 1));
                 return new Completion(out);
             }
         }
+
         return new Completion(List.of());
     }
+
 
     private static void parseTargetObject(JsonObject o, List<Target> out) {
         if (o.has("item")) {
@@ -427,6 +414,48 @@ public final class QuestData {
             if (stat != null && !stat.isBlank()) out.add(new Target("stat", stat, count));
         }
     }
+
+    private static void parseNewFormatTarget(JsonObject o, List<Target> out) {
+
+        // collect → item
+        if (o.has("collect")) {
+            String id = o.get("collect").getAsString();
+            int count = o.has("count") ? o.get("count").getAsInt() : 1;
+            out.add(new Target("item", id, count));
+            return;
+        }
+
+        // submit → item (submission handled by quest.type)
+        if (o.has("submit")) {
+            String id = o.get("submit").getAsString();
+            int count = o.has("count") ? o.get("count").getAsInt() : 1;
+            out.add(new Target("item", id, count));
+            return;
+        }
+
+        // kill → entity
+        if (o.has("kill")) {
+            String entity = o.get("kill").getAsString();
+            int count = o.has("count") ? o.get("count").getAsInt() : 1;
+            out.add(new Target("entity", entity, count));
+            return;
+        }
+
+        // achieve → advancement
+        if (o.has("achieve")) {
+            String adv = o.get("achieve").getAsString();
+            out.add(new Target("advancement", adv, 1));
+            return;
+        }
+
+        // effect → effect
+        if (o.has("effect")) {
+            String effect = o.get("effect").getAsString();
+            out.add(new Target("effect", effect, 1));
+            return;
+        }
+    }
+
 
     public static synchronized void loadClient(boolean forceReload) {
         if (loadedClient && !forceReload && !QUESTS.isEmpty()) return;

@@ -3,24 +3,20 @@
   "id": "skys_the_limit",
   "name": "Sky’s the Limit",
   "icon": "minecraft:elytra",
-  "description": "Obtain An Elytra, Elytras Can Be Used For Gliding Or Flying With Rockets",
+  "description": "Obtain an elytra and take to the skies.",
   "dependencies": "shulker_storage",
   "optional": "false",
   "type": "collection",
   "completion": {
-    "items": [
-      {
-        "item": "minecraft:elytra",
-        "count": 1
-      }
+    "complete": [
+      { "collect": "minecraft:elytra", "count": 1 }
     ]
   },
   "reward": {
     "items": [
-      {
-        "item": "minecraft:firework_rocket",
-        "count": 64
-      }
-    ]
+      { "item": "minecraft:firework_rocket", "count": 64 }
+    ],
+    "exp": "points",
+    "count": 150
   }
 }

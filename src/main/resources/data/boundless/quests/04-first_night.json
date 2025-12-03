@@ -3,14 +3,20 @@
   "id": "first_night",
   "name": "First Night",
   "icon": "minecraft:white_bed",
-  "description": "Create A Bed To Skip Through The Night, Additionally A Bed Can Be Used To Set A New Spawn Point",
+  "description": "Craft a bed to skip the night and set your respawn point.",
   "dependencies": "smelting",
   "optional": "false",
   "type": "collection",
   "completion": {
-    "item": "#minecraft:beds", "count": 1
+    "complete": [
+      { "collect": "#minecraft:beds", "count": 1 }
+    ]
   },
   "reward": {
-    "item": "", "count": 0
+    "items": [
+      { "item": "minecraft:campfire", "count": 1 }
+    ],
+    "exp": "points",
+    "count": 60
   }
 }

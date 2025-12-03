@@ -1,0 +1,20 @@
+{
+  "category": "minecraft",
+  "id": "the_wither",
+  "name": "The Wither",
+  "icon": "minecraft:nether_star",
+  "description": "Defeat the Wither - Summon a Wither with 3 wither skulls and 4 soul sand.",
+  "dependencies": "the_nether",
+  "optional": "true",
+  "type": "collection",
+  "completion": {
+    "complete": [
+      { "kill": "minecraft:wither", "count": 1 },
+      { "collect": "minecraft:nether_star", "count": 1 }
+    ]
+  },
+  "reward": {
+    "exp": "points",
+    "count": 300
+  }
+}

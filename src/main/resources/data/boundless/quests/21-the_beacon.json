@@ -1,0 +1,22 @@
+{
+  "category": "minecraft",
+  "id": "the_beacon",
+  "name": "The Beacon",
+  "icon": "minecraft:beacon",
+  "description": "Craft a beacon to gain powerful area effects.",
+  "dependencies": "skys_the_limit",
+  "optional": "true",
+  "type": "collection",
+  "completion": {
+    "complete": [
+      { "collect": "minecraft:beacon", "count": 1 }
+    ]
+  },
+  "reward": {
+    "items": [
+      { "item": "minecraft:diamond_block", "count": 5 }
+    ],
+    "exp": "points",
+    "count": 250
+  }
+}

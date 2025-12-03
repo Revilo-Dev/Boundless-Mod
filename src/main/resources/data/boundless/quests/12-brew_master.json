@@ -1,0 +1,22 @@
+{
+  "category": "minecraft",
+  "id": "brew_master",
+  "name": "Brew Master",
+  "icon": "minecraft:brewing_stand",
+  "description": "Brew your first potion using your new brewing stand.",
+  "dependencies": "fortress",
+  "optional": "true",
+  "type": "collection",
+  "completion": {
+    "complete": [
+      { "collect": "minecraft:brewing_stand", "count": 1 }
+    ]
+  },
+  "reward": {
+    "items": [
+      { "item": "minecraft:ghast_tear", "count": 3 }
+    ],
+    "exp": "points",
+    "count": 90
+  }
+}

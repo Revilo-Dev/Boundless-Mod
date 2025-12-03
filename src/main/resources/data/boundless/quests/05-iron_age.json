@@ -3,40 +3,24 @@
   "id": "iron_age",
   "name": "Iron Age",
   "icon": "minecraft:iron_ingot",
-  "description": "Create A Set Of Iron Tools, Earn Extra Iron Ingots As A Bonus",
+  "description": "Craft iron tools and armor to greatly improve your offense and defense.",
   "dependencies": "first_night",
   "optional": "false",
   "type": "collection",
   "completion": {
-    "items": [
-      {
-        "item": "minecraft:iron_pickaxe",
-        "count": 1
-      },
-      {
-        "item": "minecraft:iron_sword",
-        "count": 1
-      },
-      {
-        "item": "minecraft:iron_axe",
-        "count": 1
-      },
-      {
-        "item": "minecraft:iron_chestplate",
-        "count": 1
-      }
+    "complete": [
+      { "collect": "minecraft:iron_pickaxe", "count": 1 },
+      { "collect": "minecraft:iron_sword", "count": 1 },
+      { "collect": "minecraft:iron_axe", "count": 1 },
+      { "collect": "minecraft:iron_chestplate", "count": 1 }
     ]
   },
   "reward": {
     "items": [
-      {
-        "item": "minecraft:iron_ingot",
-        "count": 15
-      },
-      {
-        "item": "minecraft:torch",
-        "count": 32
-      }
-    ]
+      { "item": "minecraft:iron_ingot", "count": 15 },
+      { "item": "minecraft:torch", "count": 32 }
+    ],
+    "exp": "points",
+    "count": 90
   }
 }

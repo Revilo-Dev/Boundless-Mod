@@ -1,0 +1,22 @@
+{
+  "category": "minecraft",
+  "id": "the_nether",
+  "name": "The Nether",
+  "icon": "minecraft:netherrack",
+  "description": "Enter the Nether, a dangerous realm full of rare resources.",
+  "dependencies": "diamonds",
+  "optional": "false",
+  "type": "advancement",
+  "completion": {
+    "complete": [
+      { "achieve": "minecraft:nether/root" }
+    ]
+  },
+  "reward": {
+    "items": [
+      { "item": "minecraft:golden_boots", "count": 1 }
+    ],
+    "exp": "points",
+    "count": 100
+  }
+}

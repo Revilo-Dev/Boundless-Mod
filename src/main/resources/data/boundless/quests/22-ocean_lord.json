@@ -1,26 +1,23 @@
 {
   "category": "minecraft",
-  "id": "ocean_lord",
+  "id": "Ocean Monuments",
   "name": "King of the Ocean",
   "icon": "minecraft:conduit",
-  "description": "Conquer an ocean monument and obtain sponges.",
+  "description": "Defeat an ocean monument and gather precious wet sponges.",
   "dependencies": "treasure_hunter",
   "optional": "true",
   "type": "collection",
   "completion": {
-    "items": [
-      {
-        "item": "minecraft:sponge",
-        "count": 10
-      }
+    "complete": [
+      { "collect": "minecraft:sponge", "count": 10 },
+      { "kill": "minecraft:shulker", "count": 20 }
     ]
   },
   "reward": {
     "items": [
-      {
-        "item": "minecraft:trident",
-        "count": 1
-      }
-    ]
+      { "item": "minecraft:trident", "count": 1 }
+    ],
+    "exp": "points",
+    "count": 200
   }
 }

@@ -1,0 +1,22 @@
+{
+  "category": "minecraft",
+  "id": "eye_spy",
+  "name": "Eye Spy",
+  "icon": "minecraft:ender_eye",
+  "description": "Locate the stronghold and prepare the End Portal.",
+  "dependencies": "fortress",
+  "optional": "false",
+  "type": "collection",
+  "completion": {
+    "complete": [
+      { "achieve": "minecraft:story/follow_ender_eye" }
+    ]
+  },
+  "reward": {
+    "items": [
+      { "item": "minecraft:ender_chest", "count": 2 }
+    ],
+    "exp": "points",
+    "count": 200
+  }
+}

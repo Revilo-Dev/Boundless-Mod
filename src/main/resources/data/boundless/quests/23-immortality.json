@@ -1,0 +1,22 @@
+{
+  "category": "minecraft",
+  "id": "totem_of_undying",
+  "name": "Totem of Undying",
+  "icon": "minecraft:totem_of_undying",
+  "description": "Defeat an evoker and obtain a Totem of Undying.",
+  "dependencies": "skys_the_limit",
+  "optional": "false",
+  "type": "collection",
+  "completion": {
+    "complete": [
+      { "collect": "minecraft:totem_of_undying", "count": 1 }
+    ]
+  },
+  "reward": {
+    "items": [
+      { "item": "minecraft:emerald_block", "count": 10 }
+    ],
+    "exp": "points",
+    "count": 180
+  }
+}

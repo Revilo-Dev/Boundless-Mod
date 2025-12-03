@@ -1,51 +1,44 @@
 {
-  "//CATEGORY": "The category of the quest, either custom or just minecraft, make sure to define your own custom category if set to anything other than minecraft",
+  "//CATEGORY": "The category this quest belongs to. Use 'minecraft' or your own custom category.",
   "category": "minecraft",
-  "//ID": "A unique identifier for this quest. This should be a string that clearly identifies the quest",
-  "id": "",
 
-  "//NAME": "The display name of the quest that players will see",
-  "name": "",
+  "//ID": "A unique id for this quest. Do NOT use spaces or caps.",
+  "id": "example_quest",
 
-  "//ICON": "The icon shown for the quest in the UI. Use the format 'namespace:asset_name'",
-  "icon": "minecraft:",
+  "//NAME": "The display name of the quest shown to the player.",
+  "name": "Example Quest",
 
-  "//DESCRIPTION": "This tells the player what they need to do or provides context",
-  "description": "",
+  "//ICON": "The icon displayed in the UI. Format: namespace:item",
+  "icon": "minecraft:stone",
 
-  "//DEPENDENCIES": "A list of quest IDs that must be completed before this quest can be started or completed. If there are no dependencies, leave blank",
+  "//DESCRIPTION": "Explain what the player should do, or teach the player something.",
+  "description": "This is an example quest showing the correct format.",
+
+  "//DEPENDENCIES": "A list OR string of quest IDs required before this quest unlocks, blank = no dependencies required.",
   "dependencies": "",
 
-  "//OPTIONAL": "Set to 'true' if the quest is optional, and 'false' if it is mandatory. It's not recommended to mark quests with dependencies as optional.",
+  "//OPTIONAL": "Whether the quest is optional. Not recommended to set a quest with dependencies as optional.",
   "optional": "true",
 
-  "//COMPLETION": "The completion variable for the quest: items is only compatible with collection or submission | targets is only compatible with kill | effect only works with effect | advancement only works with advancement",
-  "complete": {
-    "collect": [
-      { "item": "minecraft:crafting_table", "count": 1 }
-    ],
-    "submit": [
-      { "item": "minecraft:diamond", "count": 1 }
-    ],
-    "kill": [
-      { "entity": "minecraft:zombie", "count": 5 }
-    ],
-    "achieve": [
-      { "advancement": "minecraft:story/mine_stone", "count": 1 }
-    ],
-    "effect": [
-      { "effect": "minecraft:haste", "count": 1 }
+
+  "//COMPLETION": "The quest objective can be multiple or a single goal.",
+  "completion": {
+    "complete": [
+      { "collect": "minecraft:crafting_table", "count": 1 },
+      { "submit": "minecraft:dirt", "count": 1 },
+      { "kill": "minecraft:zombie", "count": 3 },
+      { "achieve": "minecraft:story/mine_stone" },
+      { "effect": "minecraft:haste" }
     ]
   },
 
-  "//REWARD": "2 Reward types: item or command | This defines the rewards the player receives. This can be a single reward or multiple rewards",
-
+  "//REWARD": "Rewards granted when completing the quest. Supports items, commands, and XP.",
   "reward": {
-    "items": [ {"item": "minecraft:", "count": 1} ],
-    "command": "/kill @a",
-    "exp": "points", "count": 45
+    "items": [{ "item": "minecraft:diamond", "count": 1 }],
+    "command": "",
+    "exp": "points", "//EXP": "Either points or levels",
+    "count": 50
   },
 
-  "//TIP": "Quests should be named in the order you want them to appear eg, 01-quest, 02-quest, 03-quest; as quests by default are listed from lowest to highest value, if you would like to set the order without renaming files add an additional: {order: nn} in the file "
-
+  "//TIP": "When naming quests, prefix with numbers (01-, 02-, 03-) to control the order."
 }

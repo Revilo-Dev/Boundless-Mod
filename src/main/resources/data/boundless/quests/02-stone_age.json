@@ -3,14 +3,20 @@
   "id": "stone_age",
   "name": "Stone Age",
   "icon": "minecraft:stone",
-  "description": "Collect 16 Pieces Of Cobblestone, Create Your First Set Of Stone Tools",
+  "description": "Submit cobblestone to upgrade from wooden tools to stone tools.",
   "dependencies": "getting_started",
   "optional": "false",
   "type": "submit",
   "completion": {
-    "collect": "minecraft:cobblestone", "count": 16
+    "complete": [
+      { "submit": "minecraft:cobblestone", "count": 16 }
+    ]
   },
   "reward": {
-    "item": "minecraft:stone_pickaxe", "count": 1
+    "items": [
+      { "item": "minecraft:stone_pickaxe", "count": 1 }
+    ],
+    "exp": "points",
+    "count": 40
   }
 }

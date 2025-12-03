@@ -3,24 +3,21 @@
   "id": "trading",
   "name": "Trading",
   "icon": "minecraft:emerald",
-  "description": "Trade With a ",
+  "description": "Trade with a villager for the first time.",
   "dependencies": "first_night",
   "optional": "false",
-  "type": "collection",
+  "type": "advancement",
   "completion": {
-    "advancement": "minecraft:adventure/trade",
-    "count": 1
+    "complete": [
+      { "achieve": "minecraft:adventure/trade" }
+    ]
   },
   "reward": {
     "items": [
-      {
-        "item": "minecraft:lectern",
-        "count": 1
-      },
-      {
-        "item": "minecraft:emerald",
-        "count": 32
-      }
-    ]
+      { "item": "minecraft:lectern", "count": 1 },
+      { "item": "minecraft:emerald", "count": 32 }
+    ],
+    "exp": "points",
+    "count": 80
   }
 }
