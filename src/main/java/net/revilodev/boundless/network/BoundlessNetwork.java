@@ -273,6 +273,7 @@ public final class BoundlessNetwork {
                             if ("points".equals(q.rewards.expType)) sp.giveExperiencePoints(q.rewards.expAmount);
                             else if ("levels".equals(q.rewards.expType)) sp.giveExperienceLevels(q.rewards.expAmount);
                         }
+                        QuestTracker.setServerStatus(sp, q.id, QuestTracker.Status.REDEEMED);
                         sendStatus(sp, q.id, QuestTracker.Status.REDEEMED.name());
                     }
                 }
@@ -284,8 +285,10 @@ public final class BoundlessNetwork {
         ctx.enqueueWork(() -> {
             ServerPlayer sp = (ServerPlayer) ctx.player();
             QuestData.byIdServer(sp.server, p.questId()).ifPresent(q -> {
-                if (QuestTracker.serverReject(q, sp))
+                if (QuestTracker.serverReject(q, sp)) {
+                    QuestTracker.setServerStatus(sp, q.id, QuestTracker.Status.REJECTED);
                     sendStatus(sp, q.id, QuestTracker.Status.REJECTED.name());
+                }
             });
         });
     }

@@ -18,6 +18,7 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.revilodev.boundless.Config;
 import net.revilodev.boundless.network.BoundlessNetwork;
@@ -50,8 +51,6 @@ public final class QuestTracker {
 
     private static boolean SERVER_TOASTS_DISABLED = false;
 
-
-
     private static String ACTIVE_KEY = null;
 
     private QuestTracker() {}
@@ -61,18 +60,7 @@ public final class QuestTracker {
         int now = Math.max(prev, Math.min(current, required));
 
         if (FMLEnvironment.dist == Dist.CLIENT && prev > 0) {
-            try {
-                var mc = net.minecraft.client.Minecraft.getInstance();
-                if (mc != null && mc.player != null) {
-                    int idx = key.indexOf(':');
-                    if (idx > 0) {
-                        String questId = key.substring(0, idx);
-                        if (getStatus(questId, mc.player) == Status.INCOMPLETE) {
-                            now = Math.min(current, required);
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {}
+            now = ClientOnly.adjustItemProgress(key, current, required, prev, now);
         }
 
         if (now <= 0) {
@@ -84,29 +72,12 @@ public final class QuestTracker {
         return now;
     }
 
-
-
     private static String sanitize(String s) {
         return s.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
     private static String computeClientKey() {
-        try {
-            if (FMLEnvironment.dist != Dist.CLIENT) return "server";
-            var mc = net.minecraft.client.Minecraft.getInstance();
-            if (mc == null) return "default";
-            if (mc.getSingleplayerServer() != null) {
-                String name = mc.getSingleplayerServer().getWorldData().getLevelName();
-                if (name == null || name.isBlank()) name = "world";
-                return "sp_" + sanitize(name);
-            }
-            if (mc.getCurrentServer() != null) {
-                String ip = mc.getCurrentServer().ip;
-                if (ip == null || ip.isBlank()) ip = "multiplayer";
-                return "mp_" + sanitize(ip);
-            }
-        } catch (Throwable ignored) {}
-        return "default";
+        return ClientOnly.computeClientKey();
     }
 
     private static Map<String, Status> activeStateMap() {
@@ -116,41 +87,15 @@ public final class QuestTracker {
     }
 
     private static Path clientSavePath(String key) {
-        var mc = net.minecraft.client.Minecraft.getInstance();
-        File dir = new File(mc.gameDirectory, "config/boundless/quest_state");
-        return new File(dir, key + ".json").toPath();
+        return ClientOnly.clientSavePath(key);
     }
 
     private static void loadClientState(String key) {
-        Map<String, Status> map = WORLD_STATES.computeIfAbsent(key, k -> new LinkedHashMap<>());
-        map.clear();
-        try {
-            Path p = clientSavePath(key);
-            if (!Files.exists(p)) return;
-            try (BufferedReader r = new BufferedReader(new FileReader(p.toFile()))) {
-                JsonObject obj = GSON.fromJson(r, JsonObject.class);
-                if (obj == null) return;
-                for (String qid : obj.keySet()) {
-                    try {
-                        Status st = Status.valueOf(obj.get(qid).getAsString());
-                        map.put(qid, st);
-                    } catch (Exception ignored) {}
-                }
-            }
-        } catch (Throwable ignored) {}
+        ClientOnly.loadClientState(key);
     }
 
     private static void saveClientState(String key) {
-        try {
-            Path p = clientSavePath(key);
-            Files.createDirectories(p.getParent());
-            JsonObject obj = new JsonObject();
-            Map<String, Status> map = WORLD_STATES.get(key);
-            if (map != null) map.forEach((qid, st) -> obj.addProperty(qid, st.name()));
-            try (BufferedWriter w = new BufferedWriter(new FileWriter(p.toFile()))) {
-                GSON.toJson(obj, w);
-            }
-        } catch (Throwable ignored) {}
+        ClientOnly.saveClientState(key);
     }
 
     public static void forceSave() {
@@ -230,8 +175,6 @@ public final class QuestTracker {
     public static boolean isReady(QuestData.Quest q, Player player) {
         if (player == null || q == null || q.completion == null) return false;
 
-        // Collection quests: once they hit COMPLETED, they stay "ready" forever,
-        // regardless of whether the items are still in the inventory.
         if (q.completion.targets != null && !q.completion.targets.isEmpty()) {
             boolean hasItemTargets = false;
             for (QuestData.Target t : q.completion.targets) {
@@ -258,10 +201,8 @@ public final class QuestTracker {
             if (t.isEntity() && getKillCount(player, t.id) < t.count) return false;
             if (t.isEffect()) {
                 String key = q.id + ":effect:" + t.id;
-
                 boolean hasNow = hasEffect(player, t.id);
                 boolean done = getPermanentEffectProgress(key, hasNow);
-
                 if (!done) return false;
                 continue;
             }
@@ -271,7 +212,6 @@ public final class QuestTracker {
 
         return true;
     }
-
 
     public static int getStatCount(Player player, String statId) {
         if (player == null || statId == null || statId.isBlank()) return 0;
@@ -370,12 +310,10 @@ public final class QuestTracker {
             return false;
         }
 
-        // Logical server: we already have a ServerPlayer, just query directly.
         if (player instanceof ServerPlayer sp) {
             return hasAdvancementServer(sp, rl);
         }
 
-        // Client side: try to ask the *integrated* server (singleplayer / LAN host).
         if (FMLEnvironment.dist == Dist.CLIENT && player.level().isClientSide) {
             try {
                 Class<?> mcClass = Class.forName("net.minecraft.client.Minecraft");
@@ -391,12 +329,12 @@ public final class QuestTracker {
             } catch (Throwable ignored) {
             }
 
-            // Fallback to whatever the client might have cached via networking (if you ever hook that up)
             return CLIENT_ADV_DONE.getOrDefault(rl.toString(), false);
         }
 
         return false;
     }
+
     private static boolean hasAdvancementServer(ServerPlayer sp, ResourceLocation rl) {
         AdvancementHolder holder = sp.server.getAdvancements().get(rl);
         if (holder == null) return false;
@@ -404,11 +342,9 @@ public final class QuestTracker {
         AdvancementProgress prog = sp.getAdvancements().getOrStartProgress(holder);
         boolean done = prog.isDone();
 
-        // Cache for the client in singleplayer; harmless on server too.
         CLIENT_ADV_DONE.put(rl.toString(), done);
         return done;
     }
-
 
     public static boolean serverRedeem(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return false;
@@ -426,7 +362,6 @@ public final class QuestTracker {
         }
         setServerStatus(player, q.id, Status.COMPLETED);
         setServerStatus(player, q.id, Status.REDEEMED);
-
         return true;
     }
 
@@ -437,7 +372,6 @@ public final class QuestTracker {
         setServerStatus(player, q.id, Status.REDEEMED);
         BoundlessNetwork.sendStatus(player, q.id, Status.REDEEMED.name());
     }
-
 
     public static boolean serverReject(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return false;
@@ -461,7 +395,6 @@ public final class QuestTracker {
         }
     }
 
-
     public static void clientSetStatus(String questId, Status st) {
         if (questId == null || st == null) return;
         if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -480,17 +413,12 @@ public final class QuestTracker {
 
     private static boolean getPermanentEffectProgress(String key, boolean hasEffect) {
         boolean prev = CLIENT_EFFECT_PROGRESS.getOrDefault(key, false);
-
-        // Once true, stays true
         boolean now = prev || hasEffect;
-
         if (now) {
             CLIENT_EFFECT_PROGRESS.put(key, true);
         }
-
         return now;
     }
-
 
     public static void clientClearAll() {
         CLIENT_KILLS.clear();
@@ -517,7 +445,6 @@ public final class QuestTracker {
             if (cur == Status.REDEEMED || cur == Status.REJECTED) continue;
             boolean ready = dependenciesMet(q, player) && isReady(q, player);
 
-// Detect if this quest uses item collection targets.
             boolean hasItemTargets = false;
             if (q.completion != null && q.completion.targets != null) {
                 for (QuestData.Target t : q.completion.targets) {
@@ -537,18 +464,13 @@ public final class QuestTracker {
                 continue;
             }
 
-
             if (hasItemTargets && cur == Status.COMPLETED) {
                 continue;
             }
 
-
-
-// Non-item quests revert normally.
             if (!ready && cur == Status.COMPLETED) {
                 clientSetStatus(q.id, Status.INCOMPLETE);
             }
-
         }
     }
 
@@ -560,4 +482,78 @@ public final class QuestTracker {
         SERVER_TOASTS_DISABLED = v;
     }
 
+    @OnlyIn(Dist.CLIENT)
+    private static final class ClientOnly {
+        private static int adjustItemProgress(String key, int current, int required, int prev, int now) {
+            try {
+                var mc = net.minecraft.client.Minecraft.getInstance();
+                if (mc != null && mc.player != null) {
+                    int idx = key.indexOf(':');
+                    if (idx > 0) {
+                        String questId = key.substring(0, idx);
+                        if (getStatus(questId, mc.player) == Status.INCOMPLETE) {
+                            return Math.min(current, required);
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+            return now;
+        }
+
+        private static String computeClientKey() {
+            try {
+                var mc = net.minecraft.client.Minecraft.getInstance();
+                if (mc == null) return "default";
+                if (mc.getSingleplayerServer() != null) {
+                    String name = mc.getSingleplayerServer().getWorldData().getLevelName();
+                    if (name == null || name.isBlank()) name = "world";
+                    return "sp_" + sanitize(name);
+                }
+                if (mc.getCurrentServer() != null) {
+                    String ip = mc.getCurrentServer().ip;
+                    if (ip == null || ip.isBlank()) ip = "multiplayer";
+                    return "mp_" + sanitize(ip);
+                }
+            } catch (Throwable ignored) {}
+            return "default";
+        }
+
+        private static Path clientSavePath(String key) {
+            var mc = net.minecraft.client.Minecraft.getInstance();
+            File dir = new File(mc.gameDirectory, "config/boundless/quest_state");
+            return new File(dir, key + ".json").toPath();
+        }
+
+        private static void loadClientState(String key) {
+            Map<String, Status> map = WORLD_STATES.computeIfAbsent(key, k -> new LinkedHashMap<>());
+            map.clear();
+            try {
+                Path p = clientSavePath(key);
+                if (!Files.exists(p)) return;
+                try (BufferedReader r = new BufferedReader(new FileReader(p.toFile()))) {
+                    JsonObject obj = GSON.fromJson(r, JsonObject.class);
+                    if (obj == null) return;
+                    for (String qid : obj.keySet()) {
+                        try {
+                            Status st = Status.valueOf(obj.get(qid).getAsString());
+                            map.put(qid, st);
+                        } catch (Exception ignored) {}
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        private static void saveClientState(String key) {
+            try {
+                Path p = clientSavePath(key);
+                Files.createDirectories(p.getParent());
+                JsonObject obj = new JsonObject();
+                Map<String, Status> map = WORLD_STATES.get(key);
+                if (map != null) map.forEach((qid, st) -> obj.addProperty(qid, st.name()));
+                try (BufferedWriter w = new BufferedWriter(new FileWriter(p.toFile()))) {
+                    GSON.toJson(obj, w);
+                }
+            } catch (Throwable ignored) {}
+        }
+    }
 }
