@@ -166,6 +166,20 @@ public final class BoundlessNetwork {
                 .forEach((questId, status) -> PacketDistributor.sendToPlayer(
                         p, new SyncStatus(questId, status)
                 ));
+
+        syncComputedCompletion(p);
+    }
+
+    private static void syncComputedCompletion(ServerPlayer p) {
+        for (QuestData.Quest q : QuestData.allServer(p.server)) {
+            if (q == null) continue;
+            QuestTracker.Status st = QuestTracker.getStatus(q, p);
+            if (st == QuestTracker.Status.REDEEMED || st == QuestTracker.Status.REJECTED) continue;
+            if (st == QuestTracker.Status.INCOMPLETE && QuestTracker.isReady(q, p)) {
+                QuestTracker.setServerStatus(p, q.id, QuestTracker.Status.COMPLETED);
+                sendStatus(p, q.id, QuestTracker.Status.COMPLETED.name());
+            }
+        }
     }
 
     private static void sendQuestData(ServerPlayer p) {
@@ -269,11 +283,10 @@ public final class BoundlessNetwork {
                 if (QuestTracker.isReady(q, sp)) {
                     boolean ok = QuestTracker.serverRedeem(q, sp);
                     if (ok) {
-                        if (q.rewards.hasExp()) {
+                        if (q.rewards != null && q.rewards.hasExp()) {
                             if ("points".equals(q.rewards.expType)) sp.giveExperiencePoints(q.rewards.expAmount);
                             else if ("levels".equals(q.rewards.expType)) sp.giveExperienceLevels(q.rewards.expAmount);
                         }
-                        QuestTracker.setServerStatus(sp, q.id, QuestTracker.Status.REDEEMED);
                         sendStatus(sp, q.id, QuestTracker.Status.REDEEMED.name());
                     }
                 }
@@ -337,5 +350,4 @@ public final class BoundlessNetwork {
                     .setScreen(new net.revilodev.boundless.client.screen.StandaloneQuestBookScreen());
         }
     }
-
 }

@@ -55,23 +55,6 @@ public final class QuestTracker {
 
     private QuestTracker() {}
 
-    public static int getPermanentItemProgress(String key, int current, int required) {
-        int prev = CLIENT_ITEM_PROGRESS.getOrDefault(key, 0);
-        int now = Math.max(prev, Math.min(current, required));
-
-        if (FMLEnvironment.dist == Dist.CLIENT && prev > 0) {
-            now = ClientOnly.adjustItemProgress(key, current, required, prev, now);
-        }
-
-        if (now <= 0) {
-            CLIENT_ITEM_PROGRESS.remove(key);
-            return 0;
-        }
-
-        CLIENT_ITEM_PROGRESS.put(key, now);
-        return now;
-    }
-
     private static String sanitize(String s) {
         return s.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
@@ -134,7 +117,7 @@ public final class QuestTracker {
 
     public static void setServerStatus(ServerPlayer player, String questId, Status st) {
         QuestProgressState data = QuestProgressState.get(player.serverLevel());
-        if (st == null || st == Status.INCOMPLETE || st == Status.COMPLETED) {
+        if (st == null || st == Status.INCOMPLETE) {
             data.set(player.getUUID(), questId, null);
         } else {
             data.set(player.getUUID(), questId, st.name());
@@ -172,29 +155,64 @@ public final class QuestTracker {
         return true;
     }
 
-    public static boolean isReady(QuestData.Quest q, Player player) {
-        if (player == null || q == null || q.completion == null) return false;
+    private static int getPermanentItemProgressServer(ServerPlayer sp, String key, int current, int required) {
+        QuestObjectiveState state = QuestObjectiveState.get(sp.serverLevel());
+        return state.updateItemProgress(sp.getUUID(), key, current, required);
+    }
 
-        if (q.completion.targets != null && !q.completion.targets.isEmpty()) {
-            boolean hasItemTargets = false;
-            for (QuestData.Target t : q.completion.targets) {
-                if (t.isItem()) {
-                    hasItemTargets = true;
-                    break;
-                }
-            }
-            if (hasItemTargets && getStatus(q, player) == Status.COMPLETED) {
-                return true;
-            }
+    private static int getPermanentItemProgressClient(String key, int current, int required) {
+        int prev = CLIENT_ITEM_PROGRESS.getOrDefault(key, 0);
+        int now = Math.max(prev, Math.min(current, required));
+
+        if (FMLEnvironment.dist == Dist.CLIENT && prev > 0) {
+            now = ClientOnly.adjustItemProgress(key, current, required, prev, now);
         }
 
+        if (now <= 0) {
+            CLIENT_ITEM_PROGRESS.remove(key);
+            return 0;
+        }
+
+        CLIENT_ITEM_PROGRESS.put(key, now);
+        return now;
+    }
+
+    public static int getPermanentItemProgress(String key, int currentFound, int need) {
+        int cur = Math.max(0, currentFound);
+        int req = Math.max(0, need);
+
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            try {
+                ensureClientStateLoaded(null);
+            } catch (Throwable ignored) {}
+        }
+
+        return getPermanentItemProgressClient(key, cur, req);
+    }
+
+    private static boolean getPermanentEffectProgressServer(ServerPlayer sp, String key, boolean hasNow) {
+        QuestObjectiveState state = QuestObjectiveState.get(sp.serverLevel());
+        return state.updateEffectDone(sp.getUUID(), key, hasNow);
+    }
+
+    private static boolean getPermanentEffectProgressClient(String key, boolean hasNow) {
+        boolean prev = CLIENT_EFFECT_PROGRESS.getOrDefault(key, false);
+        boolean now = prev || hasNow;
+        if (now) CLIENT_EFFECT_PROGRESS.put(key, true);
+        return now;
+    }
+
+    public static boolean isReady(QuestData.Quest q, Player player) {
+        if (player == null || q == null || q.completion == null) return false;
         if (!dependenciesMet(q, player)) return false;
 
         for (QuestData.Target t : q.completion.targets) {
             if (t.isItem()) {
                 String key = q.id + ":" + t.id;
                 int cur = getCountInInventory(t.id, player);
-                int prog = getPermanentItemProgress(key, cur, t.count);
+                int prog = (player instanceof ServerPlayer sp)
+                        ? getPermanentItemProgressServer(sp, key, cur, t.count)
+                        : getPermanentItemProgressClient(key, cur, t.count);
                 if (prog < t.count) return false;
                 continue;
             }
@@ -202,7 +220,9 @@ public final class QuestTracker {
             if (t.isEffect()) {
                 String key = q.id + ":effect:" + t.id;
                 boolean hasNow = hasEffect(player, t.id);
-                boolean done = getPermanentEffectProgress(key, hasNow);
+                boolean done = (player instanceof ServerPlayer sp)
+                        ? getPermanentEffectProgressServer(sp, key, hasNow)
+                        : getPermanentEffectProgressClient(key, hasNow);
                 if (!done) return false;
                 continue;
             }
@@ -348,6 +368,7 @@ public final class QuestTracker {
 
     public static boolean serverRedeem(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return false;
+
         if (q.rewards != null && q.rewards.items != null)
             for (QuestData.RewardEntry r : q.rewards.items) {
                 ResourceLocation rl = ResourceLocation.parse(r.item);
@@ -355,20 +376,19 @@ public final class QuestTracker {
                 if (item != null)
                     player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
             }
+
         if (q.rewards != null && q.rewards.command != null && !q.rewards.command.isBlank()) {
             String cmd = q.rewards.command.startsWith("/") ? q.rewards.command.substring(1) : q.rewards.command;
             CommandSourceStack css = player.createCommandSourceStack().withPermission(4);
             player.server.getCommands().performPrefixedCommand(css, cmd);
         }
-        setServerStatus(player, q.id, Status.COMPLETED);
+
         setServerStatus(player, q.id, Status.REDEEMED);
         return true;
     }
 
     public static void forceCompleteWithoutRewards(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return;
-        setServerStatus(player, q.id, Status.COMPLETED);
-        BoundlessNetwork.sendStatus(player, q.id, Status.COMPLETED.name());
         setServerStatus(player, q.id, Status.REDEEMED);
         BoundlessNetwork.sendStatus(player, q.id, Status.REDEEMED.name());
     }
@@ -383,6 +403,7 @@ public final class QuestTracker {
     public static void reset(Player player) {
         if (player instanceof ServerPlayer sp) {
             QuestProgressState.get(sp.serverLevel()).clear(sp.getUUID());
+            QuestObjectiveState.get(sp.serverLevel()).clearPlayer(sp.getUUID());
             BoundlessNetwork.syncPlayer(sp);
             CLIENT_EFFECT_PROGRESS.clear();
             if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -409,15 +430,6 @@ public final class QuestTracker {
 
     public static void clientSetKill(String entityId, int count) {
         CLIENT_KILLS.put(entityId, Math.max(0, count));
-    }
-
-    private static boolean getPermanentEffectProgress(String key, boolean hasEffect) {
-        boolean prev = CLIENT_EFFECT_PROGRESS.getOrDefault(key, false);
-        boolean now = prev || hasEffect;
-        if (now) {
-            CLIENT_EFFECT_PROGRESS.put(key, true);
-        }
-        return now;
     }
 
     public static void clientClearAll() {
