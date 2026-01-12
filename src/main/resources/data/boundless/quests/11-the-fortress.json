@@ -6,7 +6,6 @@
   "description": "Locate a Nether Fortress and gather blaze rods for brewing and Eyes of Ender.",
   "dependencies": "the_nether",
   "optional": "false",
-  "type": "collection",
   "completion": {
     "complete": [
       { "achieve": "minecraft:nether/find_fortress" },

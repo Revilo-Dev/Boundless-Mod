@@ -6,7 +6,6 @@
   "description": "Craft an anvil to repair, combine, and improve your gear.",
   "dependencies": "iron_age",
   "optional": "false",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "minecraft:anvil", "count": 1 }

@@ -6,7 +6,6 @@
   "description": "Trade with a villager for the first time.",
   "dependencies": "first_night",
   "optional": "false",
-  "type": "advancement",
   "completion": {
     "complete": [
       { "achieve": "minecraft:adventure/trade" }

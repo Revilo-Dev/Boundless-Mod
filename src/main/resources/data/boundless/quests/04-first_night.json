@@ -6,7 +6,6 @@
   "description": "Craft a bed to skip the night and set your respawn point.",
   "dependencies": "smelting",
   "optional": "false",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "#minecraft:beds", "count": 1 }

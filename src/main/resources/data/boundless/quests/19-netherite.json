@@ -6,7 +6,6 @@
   "description": "Forge a full set of Netherite armor.",
   "dependencies": "skys_the_limit",
   "optional": "false",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "minecraft:netherite_helmet", "count": 1 },

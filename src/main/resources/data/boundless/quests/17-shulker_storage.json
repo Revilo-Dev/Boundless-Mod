@@ -3,10 +3,9 @@
   "id": "shulker_storage",
   "name": "Shulker Storage",
   "icon": "minecraft:shulker_shell",
-  "description": "Raid End Cities, defeat shulkers, and collect their shells to craft powerful portable storage.",
+  "description": "Raid End Cities, defeat shulkers, and collect their shells to create portable storage.",
   "dependencies": "dragon_slayer",
   "optional": "false",
-  "type": "collection",
   "completion": {
     "complete": [
       { "kill": "minecraft:shulker", "count": 20 },

@@ -114,6 +114,7 @@ public final class QuestData {
         }
 
         public boolean isItem() { return "item".equals(kind); }
+        public boolean isSubmit() { return "submit".equals(kind); }
         public boolean isEntity() { return "entity".equals(kind); }
         public boolean isEffect() { return "effect".equals(kind); }
         public boolean isAdvancement() { return "advancement".equals(kind); }
@@ -317,9 +318,6 @@ public final class QuestData {
         if (el == null) return new Completion(List.of());
         List<Target> out = new ArrayList<>();
 
-        // ---------------------------------------------
-        // NEW FEATURE: supports "complete": [ {...}, {...} ]
-        // ---------------------------------------------
         if (el.isJsonObject()) {
             JsonObject obj = el.getAsJsonObject();
 
@@ -332,7 +330,6 @@ public final class QuestData {
             }
         }
 
-        // Existing array behaviour
         if (el.isJsonArray()) {
             for (JsonElement e : el.getAsJsonArray()) {
                 if (!e.isJsonObject()) continue;
@@ -341,7 +338,6 @@ public final class QuestData {
             return new Completion(out);
         }
 
-        // Existing object behaviour
         if (el.isJsonObject()) {
             JsonObject obj = el.getAsJsonObject();
 
@@ -370,7 +366,6 @@ public final class QuestData {
                 return new Completion(out);
             }
 
-            // remaining legacy formats:
             if (obj.has("item")) {
                 out.add(new Target("item", optString(obj, "item"), obj.has("count") ? obj.get("count").getAsInt() : 1));
                 return new Completion(out);
@@ -392,9 +387,12 @@ public final class QuestData {
         return new Completion(List.of());
     }
 
-
     private static void parseTargetObject(JsonObject o, List<Target> out) {
-        if (o.has("item")) {
+        if (o.has("submit")) {
+            String item = optString(o, "submit");
+            int count = o.has("count") ? o.get("count").getAsInt() : 1;
+            if (item != null && !item.isBlank()) out.add(new Target("submit", item, count));
+        } else if (o.has("item")) {
             String item = optString(o, "item");
             int count = o.has("count") ? o.get("count").getAsInt() : 1;
             if (item != null && !item.isBlank()) out.add(new Target("item", item, count));
@@ -416,8 +414,6 @@ public final class QuestData {
     }
 
     private static void parseNewFormatTarget(JsonObject o, List<Target> out) {
-
-        // collect → item
         if (o.has("collect")) {
             String id = o.get("collect").getAsString();
             int count = o.has("count") ? o.get("count").getAsInt() : 1;
@@ -425,15 +421,13 @@ public final class QuestData {
             return;
         }
 
-        // submit → item (submission handled by quest.type)
         if (o.has("submit")) {
             String id = o.get("submit").getAsString();
             int count = o.has("count") ? o.get("count").getAsInt() : 1;
-            out.add(new Target("item", id, count));
+            out.add(new Target("submit", id, count));
             return;
         }
 
-        // kill → entity
         if (o.has("kill")) {
             String entity = o.get("kill").getAsString();
             int count = o.has("count") ? o.get("count").getAsInt() : 1;
@@ -441,21 +435,17 @@ public final class QuestData {
             return;
         }
 
-        // achieve → advancement
         if (o.has("achieve")) {
             String adv = o.get("achieve").getAsString();
             out.add(new Target("advancement", adv, 1));
             return;
         }
 
-        // effect → effect
         if (o.has("effect")) {
             String effect = o.get("effect").getAsString();
             out.add(new Target("effect", effect, 1));
-            return;
         }
     }
-
 
     public static synchronized void loadClient(boolean forceReload) {
         if (loadedClient && !forceReload && !QUESTS.isEmpty()) return;
@@ -731,7 +721,6 @@ public final class QuestData {
 
     private static void loadDataPackQuests(ResourceManager rm) {
 
-        // ------------ Categories ---------------
         Map<ResourceLocation, List<Resource>> catStacks =
                 rm.listResourceStacks(PATH_CATEGORIES, rl -> rl.getPath().endsWith(".json"));
 
@@ -759,8 +748,6 @@ public final class QuestData {
             } catch (Exception ignored) {}
         }
 
-
-        // ------------ Quests -------------------
         Map<ResourceLocation, List<Resource>> questStacks =
                 rm.listResourceStacks(PATH_QUESTS, rl -> rl.getPath().endsWith(".json"));
 
@@ -785,9 +772,6 @@ public final class QuestData {
             } catch (Exception ignored) {}
         }
     }
-
-
-
 
     private static String optString(JsonObject o, String key) {
         return o.has(key) && o.get(key).isJsonPrimitive() ? o.get(key).getAsString() : null;

@@ -6,7 +6,6 @@
   "description": "Craft iron tools and armor to greatly improve your offense and defense.",
   "dependencies": "first_night",
   "optional": "false",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "minecraft:iron_pickaxe", "count": 1 },

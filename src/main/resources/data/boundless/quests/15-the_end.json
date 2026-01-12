@@ -6,7 +6,6 @@
   "description": "Defeat the Ender Dragon and reach the outer islands.",
   "dependencies": "eye_spy",
   "optional": "false",
-  "type": "kill",
   "completion": {
     "complete": [
       { "kill": "minecraft:ender_dragon", "count": 1 },

@@ -3,10 +3,9 @@
   "id": "skys_the_limit",
   "name": "Sky’s the Limit",
   "icon": "minecraft:elytra",
-  "description": "Obtain an elytra and take to the skies.",
+  "description": "Obtain an elytra and take to the skies, use firework rockets to boost yourself, just make sure they don't explode!",
   "dependencies": "shulker_storage",
   "optional": "false",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "minecraft:elytra", "count": 1 }

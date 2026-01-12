@@ -6,11 +6,10 @@
   "description": "Defeat an ocean monument and gather precious wet sponges.",
   "dependencies": "treasure_hunter",
   "optional": "true",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "minecraft:sponge", "count": 10 },
-      { "kill": "minecraft:shulker", "count": 20 }
+      { "kill": "minecraft:elder_guardian", "count": 3 }
     ]
   },
   "reward": {

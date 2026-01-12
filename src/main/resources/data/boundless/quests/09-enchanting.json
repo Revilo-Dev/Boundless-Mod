@@ -6,7 +6,6 @@
   "description": "Craft an enchanting table and begin empowering your gear.",
   "dependencies": "diamonds",
   "optional": "false",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "minecraft:enchanting_table", "count": 1 }

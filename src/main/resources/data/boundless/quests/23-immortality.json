@@ -6,10 +6,10 @@
   "description": "Defeat an evoker and obtain a Totem of Undying.",
   "dependencies": "skys_the_limit",
   "optional": "false",
-  "type": "collection",
   "completion": {
     "complete": [
-      { "collect": "minecraft:totem_of_undying", "count": 1 }
+      { "collect": "minecraft:totem_of_undying", "count": 1 },
+      { "kill": "minecraft:evoker", "count": 3 }
     ]
   },
   "reward": {

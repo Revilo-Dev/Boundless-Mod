@@ -4,11 +4,17 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.bus.api.IEventBus;
@@ -280,15 +286,20 @@ public final class BoundlessNetwork {
         ctx.enqueueWork(() -> {
             ServerPlayer sp = (ServerPlayer) ctx.player();
             QuestData.byIdServer(sp.server, p.questId()).ifPresent(q -> {
-                if (QuestTracker.isReady(q, sp)) {
-                    boolean ok = QuestTracker.serverRedeem(q, sp);
-                    if (ok) {
-                        if (q.rewards != null && q.rewards.hasExp()) {
-                            if ("points".equals(q.rewards.expType)) sp.giveExperiencePoints(q.rewards.expAmount);
-                            else if ("levels".equals(q.rewards.expType)) sp.giveExperienceLevels(q.rewards.expAmount);
-                        }
-                        sendStatus(sp, q.id, QuestTracker.Status.REDEEMED.name());
+                if (!QuestTracker.isReady(q, sp)) return;
+
+                // If this quest has submit requirements, consume items SERVER-SIDE before redeeming.
+                if (questHasSubmit(q)) {
+                    if (!consumeSubmitItems(sp, q)) return;
+                }
+
+                boolean ok = QuestTracker.serverRedeem(q, sp);
+                if (ok) {
+                    if (q.rewards != null && q.rewards.hasExp()) {
+                        if ("points".equals(q.rewards.expType)) sp.giveExperiencePoints(q.rewards.expAmount);
+                        else if ("levels".equals(q.rewards.expType)) sp.giveExperienceLevels(q.rewards.expAmount);
                     }
+                    sendStatus(sp, q.id, QuestTracker.Status.REDEEMED.name());
                 }
             });
         });
@@ -341,6 +352,205 @@ public final class BoundlessNetwork {
 
     private static void handleSyncQuests(SyncQuests p, IPayloadContext ctx) {
         ctx.enqueueWork(() -> QuestData.applyNetworkJson(p.json()));
+    }
+
+    private static boolean questHasSubmit(QuestData.Quest q) {
+        if (q == null || q.completion == null) return false;
+
+        // Back-compat: some packs may use quest.type = "submission"
+        if ("submission".equalsIgnoreCase(q.type) || "submit".equalsIgnoreCase(q.type)) return true;
+
+        for (QuestData.Target t : q.completion.targets) {
+            if (t == null) continue;
+            if ("submit".equalsIgnoreCase(t.kind)) return true;
+        }
+        return false;
+    }
+
+    private static boolean consumeSubmitItems(ServerPlayer sp, QuestData.Quest q) {
+        if (sp == null || q == null || q.completion == null) return false;
+
+        Inventory inv = sp.getInventory();
+        int size = inv.getContainerSize();
+
+        // Simulate on copies first (transactional)
+        ItemStack[] sim = new ItemStack[size];
+        for (int i = 0; i < size; i++) sim[i] = inv.getItem(i).copy();
+
+        for (QuestData.Target t : q.completion.targets) {
+            if (t == null) continue;
+
+            boolean submitTarget = "submit".equalsIgnoreCase(t.kind)
+                    || (("submission".equalsIgnoreCase(q.type) || "submit".equalsIgnoreCase(q.type)) && t.isItem());
+
+            if (!submitTarget) continue;
+
+            String raw = t.id;
+            int need = Math.max(1, t.count);
+
+            if (raw == null || raw.isBlank()) return false;
+
+            if (raw.startsWith("#")) {
+                ResourceLocation tagRl;
+                try {
+                    tagRl = ResourceLocation.parse(raw.substring(1));
+                } catch (Exception ignored) {
+                    return false;
+                }
+                TagKey<Item> tag = TagKey.create(Registries.ITEM, tagRl);
+
+                if (!canTakeTag(sim, tag, need)) return false;
+                if (!takeTag(sim, tag, need)) return false;
+
+            } else {
+                Item item;
+                try {
+                    item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(raw));
+                } catch (Exception ignored) {
+                    item = null;
+                }
+                if (item == null) return false;
+
+                if (!canTakeItem(sim, item, need)) return false;
+                if (!takeItem(sim, item, need)) return false;
+            }
+        }
+
+        // Apply to real inventory
+        for (QuestData.Target t : q.completion.targets) {
+            if (t == null) continue;
+
+            boolean submitTarget = "submit".equalsIgnoreCase(t.kind)
+                    || (("submission".equalsIgnoreCase(q.type) || "submit".equalsIgnoreCase(q.type)) && t.isItem());
+
+            if (!submitTarget) continue;
+
+            String raw = t.id;
+            int need = Math.max(1, t.count);
+
+            if (raw == null || raw.isBlank()) return false;
+
+            boolean ok;
+            if (raw.startsWith("#")) {
+                ResourceLocation tagRl;
+                try {
+                    tagRl = ResourceLocation.parse(raw.substring(1));
+                } catch (Exception ignored) {
+                    return false;
+                }
+                TagKey<Item> tag = TagKey.create(Registries.ITEM, tagRl);
+                ok = takeTag(inv, tag, need);
+            } else {
+                Item item;
+                try {
+                    item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(raw));
+                } catch (Exception ignored) {
+                    item = null;
+                }
+                if (item == null) return false;
+                ok = takeItem(inv, item, need);
+            }
+
+            if (!ok) return false;
+        }
+
+        inv.setChanged();
+        sp.containerMenu.broadcastChanges();
+        return true;
+    }
+
+    // --- Simulation helpers (no lambdas; fixes "effectively final" errors) ---
+
+    private static boolean canTakeItem(ItemStack[] stacks, Item item, int needed) {
+        int have = 0;
+        for (ItemStack s : stacks) {
+            if (s == null || s.isEmpty()) continue;
+            if (!s.is(item)) continue;
+            have += s.getCount();
+            if (have >= needed) return true;
+        }
+        return have >= needed;
+    }
+
+    private static boolean canTakeTag(ItemStack[] stacks, TagKey<Item> tag, int needed) {
+        int have = 0;
+        for (ItemStack s : stacks) {
+            if (s == null || s.isEmpty()) continue;
+            if (!s.is(tag)) continue;
+            have += s.getCount();
+            if (have >= needed) return true;
+        }
+        return have >= needed;
+    }
+
+    private static boolean takeItem(ItemStack[] stacks, Item item, int toTake) {
+        int remaining = toTake;
+        for (int i = 0; i < stacks.length && remaining > 0; i++) {
+            ItemStack s = stacks[i];
+            if (s == null || s.isEmpty()) continue;
+            if (!s.is(item)) continue;
+
+            int take = Math.min(remaining, s.getCount());
+            s.shrink(take);
+            remaining -= take;
+
+            if (s.isEmpty()) stacks[i] = ItemStack.EMPTY;
+        }
+        return remaining <= 0;
+    }
+
+    private static boolean takeTag(ItemStack[] stacks, TagKey<Item> tag, int toTake) {
+        int remaining = toTake;
+        for (int i = 0; i < stacks.length && remaining > 0; i++) {
+            ItemStack s = stacks[i];
+            if (s == null || s.isEmpty()) continue;
+            if (!s.is(tag)) continue;
+
+            int take = Math.min(remaining, s.getCount());
+            s.shrink(take);
+            remaining -= take;
+
+            if (s.isEmpty()) stacks[i] = ItemStack.EMPTY;
+        }
+        return remaining <= 0;
+    }
+
+    // --- Apply-to-inventory helpers (real consumption) ---
+
+    private static boolean takeItem(Inventory inv, Item item, int toTake) {
+        int remaining = toTake;
+        int size = inv.getContainerSize();
+
+        for (int i = 0; i < size && remaining > 0; i++) {
+            ItemStack s = inv.getItem(i);
+            if (s.isEmpty()) continue;
+            if (!s.is(item)) continue;
+
+            int take = Math.min(remaining, s.getCount());
+            s.shrink(take);
+            remaining -= take;
+
+            if (s.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+        }
+        return remaining <= 0;
+    }
+
+    private static boolean takeTag(Inventory inv, TagKey<Item> tag, int toTake) {
+        int remaining = toTake;
+        int size = inv.getContainerSize();
+
+        for (int i = 0; i < size && remaining > 0; i++) {
+            ItemStack s = inv.getItem(i);
+            if (s.isEmpty()) continue;
+            if (!s.is(tag)) continue;
+
+            int take = Math.min(remaining, s.getCount());
+            s.shrink(take);
+            remaining -= take;
+
+            if (s.isEmpty()) inv.setItem(i, ItemStack.EMPTY);
+        }
+        return remaining <= 0;
     }
 
     @OnlyIn(Dist.CLIENT)

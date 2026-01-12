@@ -36,12 +36,18 @@ public final class QuestDetailsPanel extends AbstractWidget {
     private static final int HEADER_HEIGHT = 28;
     private static final int DESC_CHAR_LIMIT = 180;
 
+    private static final ResourceLocation TEX_PIN =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/pin.png");
+    private static final ResourceLocation TEX_UNPIN =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/unpin.png");
+
     private final Minecraft mc = Minecraft.getInstance();
     private QuestData.Quest quest;
 
     private final BackButton back;
     private final CompleteButton complete;
     private final RejectButton reject;
+    private final PinButton pin;
     private final Runnable onBack;
 
     private float scrollY = 0f;
@@ -82,7 +88,6 @@ public final class QuestDetailsPanel extends AbstractWidget {
         this.complete = new CompleteButton(getX(), getY(), () -> {
             if (quest != null && mc.player != null) {
                 PacketDistributor.sendToServer(new BoundlessNetwork.Redeem(quest.id));
-                QuestTracker.clientSetStatus(quest.id, QuestTracker.Status.REDEEMED);
                 if (this.onBack != null) this.onBack.run();
             }
         });
@@ -92,30 +97,25 @@ public final class QuestDetailsPanel extends AbstractWidget {
         this.reject = new RejectButton(getX(), getY(), () -> {
             if (quest != null && mc.player != null && quest.optional) {
                 PacketDistributor.sendToServer(new BoundlessNetwork.Reject(quest.id));
-                QuestTracker.clientSetStatus(quest.id, QuestTracker.Status.REJECTED);
                 if (this.onBack != null) this.onBack.run();
             }
         });
         this.reject.visible = false;
         this.reject.active = false;
+
+        this.pin = new PinButton(getX(), getY());
+        this.pin.visible = false;
+        this.pin.active = false;
+
+        setBounds(x, y, w, h);
     }
 
-    public AbstractButton backButton() {
-        return back;
-    }
+    public AbstractButton backButton() { return back; }
+    public AbstractButton completeButton() { return complete; }
+    public AbstractButton rejectButton() { return reject; }
+    public AbstractButton pinButton() { return pin; }
 
-    public AbstractButton completeButton() {
-        return complete;
-    }
-
-    public AbstractButton rejectButton() {
-        return reject;
-    }
-
-    /** Standalone screen calls this to hide the back button. */
-    public void setHideBackButton(boolean v) {
-        this.hideBackButton = v;
-    }
+    public void setHideBackButton(boolean v) { this.hideBackButton = v; }
 
     public void setBounds(int x, int y, int w, int h) {
         this.setX(x);
@@ -123,19 +123,21 @@ public final class QuestDetailsPanel extends AbstractWidget {
         this.width = w;
         this.height = h;
 
-        // Bottom toolbar moved 2px down
         int cy = y + h - complete.getHeight() - 2;
         int cxCenter = x + (w - complete.getWidth()) / 2;
 
         back.setPosition(x + 2, cy);
         complete.setPosition(cxCenter, cy);
         reject.setPosition(x + w - reject.getWidth() - 2, cy);
+
+        pin.setPosition(x + w - pin.getWidth() - 6, y + 9);
     }
 
     public void setQuest(QuestData.Quest q) {
         this.quest = q;
         this.scrollY = 0f;
         this.descExpanded = false;
+        if (q != null) PinnedQuestHud.setCurrentQuestId(q.id);
     }
 
     @Override
@@ -157,22 +159,22 @@ public final class QuestDetailsPanel extends AbstractWidget {
         int maxScroll = Math.max(0, measuredContentHeight + BOTTOM_PADDING - viewportH);
         scrollY = Mth.clamp(scrollY, 0f, maxScroll);
 
-        // --- sticky header (icon + title) ---
         quest.iconItem().ifPresent(item ->
                 gg.renderItem(new ItemStack(item), x + 4, y + 4)
         );
 
         String title = quest.name;
-        int nameWidth = w - 32;
-        // text moved down slightly (was y + 10)
+        int nameWidth = w - 32 - 18;
         gg.drawWordWrap(mc.font, Component.literal(title), x + 26, y + 8, nameWidth, 0xFFFFFF);
 
-        // --- scrolled content below header ---
+        pin.visible = true;
+        pin.active = true;
+        pin.render(gg, mouseX, mouseY, partialTick);
+
         gg.enableScissor(x, contentTop, x + w, contentBottom);
 
         int[] curY = {contentTop + 4 - Mth.floor(scrollY)};
 
-        // description with "Read more / Read less"
         if (!quest.description.isBlank()) {
             String full = quest.description;
             boolean needsMore = full.length() > DESC_CHAR_LIMIT;
@@ -209,7 +211,6 @@ public final class QuestDetailsPanel extends AbstractWidget {
             }
         }
 
-        // dependencies
         if (!quest.dependencies.isEmpty()) {
             gg.drawWordWrap(mc.font, Component.literal("Requires:"), x + 4, curY[0], w - 8, 0xff9f0f);
             curY[0] += mc.font.wordWrapHeight("Requires:", w - 8) + 2;
@@ -246,26 +247,32 @@ public final class QuestDetailsPanel extends AbstractWidget {
             curY[0] += 2;
         }
 
-// ------------------------------------------------------
-// COMPLETION TARGETS (with grouped "Collect:" header)
-// ------------------------------------------------------
         if (quest.completion != null && !quest.completion.targets.isEmpty() && mc.player != null) {
 
-            boolean printedItemHeader = false;
+            boolean printedCollectHeader = false;
+            boolean printedSubmitHeader = false;
+
+            boolean legacySubmission = "submission".equalsIgnoreCase(quest.type) || "submit".equalsIgnoreCase(quest.type);
 
             for (QuestData.Target t : quest.completion.targets) {
 
-                // --------------------------
-                // ITEM TARGETS — grouped
-                // --------------------------
-                if (t.isItem()) {
+                boolean isSubmitTarget = t.isSubmit() || (legacySubmission && t.isItem());
+                boolean isItemLike = t.isItem() || t.isSubmit();
 
-                    // print header exactly once
-                    if (!printedItemHeader) {
-                        String prefix = "submission".equals(quest.type) ? "Submit:" : "Collect:";
-                        gg.drawString(mc.font, prefix, x + 4, curY[0], 0x1d9633, false);
-                        curY[0] += mc.font.lineHeight + 2;
-                        printedItemHeader = true;
+                if (isItemLike) {
+
+                    if (isSubmitTarget) {
+                        if (!printedSubmitHeader) {
+                            gg.drawString(mc.font, "Submit:", x + 4, curY[0], 0x1d9633, false);
+                            curY[0] += mc.font.lineHeight + 2;
+                            printedSubmitHeader = true;
+                        }
+                    } else {
+                        if (!printedCollectHeader) {
+                            gg.drawString(mc.font, "Collect:", x + 4, curY[0], 0x1d9633, false);
+                            curY[0] += mc.font.lineHeight + 2;
+                            printedCollectHeader = true;
+                        }
                     }
 
                     String raw = t.id;
@@ -308,12 +315,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     gg.drawString(mc.font, shownCount + "/" + need, px, curY[0] + 4, color, false);
                     curY[0] += LINE_ITEM_ROW;
                     continue;
-                }
-
-                // --------------------------
-                // ENTITY TARGETS (unchanged)
-                // --------------------------
-                else if (t.isEntity()) {
+                } else if (t.isEntity()) {
                     gg.drawString(mc.font, "Kill:", x + 4, curY[0], 0x1d9633, false);
                     curY[0] += mc.font.lineHeight + 2;
 
@@ -342,12 +344,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
                     gg.drawString(mc.font, have + "/" + t.count, x + 24, curY[0] + 4, color, false);
                     curY[0] += LINE_ITEM_ROW;
-                }
-
-                // --------------------------
-                // EFFECT TARGETS (unchanged)
-                // --------------------------
-                else if (t.isEffect()) {
+                } else if (t.isEffect()) {
                     gg.drawString(mc.font, "Have effect:", x + 4, curY[0], 0x55FFFF, false);
                     curY[0] += mc.font.lineHeight + 2;
 
@@ -366,12 +363,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     }
 
                     curY[0] += LINE_ITEM_ROW;
-                }
-
-                // --------------------------
-                // ADVANCEMENT TARGETS (unchanged)
-                // --------------------------
-                else if (t.isAdvancement()) {
+                } else if (t.isAdvancement()) {
                     gg.drawString(mc.font, "Achieve:", x + 4, curY[0], 0x55FFFF, false);
                     curY[0] += mc.font.lineHeight + 2;
 
@@ -410,12 +402,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     }
 
                     curY[0] += LINE_ITEM_ROW;
-                }
-
-                // --------------------------
-                // STAT TARGETS (unchanged)
-                // --------------------------
-                else if (t.isStat()) {
+                } else if (t.isStat()) {
                     gg.drawString(mc.font, "Stat:", x + 4, curY[0], 0x1d9633, false);
                     curY[0] += mc.font.lineHeight + 2;
 
@@ -435,8 +422,6 @@ public final class QuestDetailsPanel extends AbstractWidget {
             curY[0] += 2;
         }
 
-
-        // rewards
         boolean hasItemRewards = quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty();
         boolean hasCommandReward = quest.rewards != null && quest.rewards.command != null && !quest.rewards.command.isBlank();
         boolean hasExpReward = quest.rewards != null && quest.rewards.hasExp();
@@ -521,16 +506,13 @@ public final class QuestDetailsPanel extends AbstractWidget {
         boolean done = red || rej;
         boolean ready = depsMet && !done && QuestTracker.isReady(quest, mc.player);
 
-        // Complete button
         complete.active = ready;
         complete.visible = !done;
 
-        // Reject button
         reject.setOptionalAllowed(quest.optional);
         reject.active = !done && quest.optional;
         reject.visible = !done;
 
-        // Back button: always visible in inventory UI, unless standalone explicitly hides it
         back.visible = !hideBackButton;
         back.active = !hideBackButton;
     }
@@ -541,7 +523,6 @@ public final class QuestDetailsPanel extends AbstractWidget {
         int w = panelWidth;
         int y = 0;
 
-        // description height (matches render logic)
         if (!quest.description.isBlank()) {
             String full = quest.description;
             boolean needsMore = full.length() > DESC_CHAR_LIMIT;
@@ -626,6 +607,11 @@ public final class QuestDetailsPanel extends AbstractWidget {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (!this.visible || !this.active) return false;
 
+        if (pin.visible && pin.active && pin.isMouseOver(mouseX, mouseY)) {
+            pin.onPress();
+            return true;
+        }
+
         for (DepClickRegion r : depRegions) {
             if (r.contains(mouseX, mouseY)) {
                 if ("__desc_toggle__".equals(r.questId)) {
@@ -647,9 +633,31 @@ public final class QuestDetailsPanel extends AbstractWidget {
     @Override
     protected void updateWidgetNarration(NarrationElementOutput narration) {}
 
-    // ------------------------------
-    // Buttons
-    // ------------------------------
+    private static final class PinButton extends AbstractButton {
+
+        public PinButton(int x, int y) {
+            super(x, y, 10, 10, Component.empty());
+        }
+
+        @Override
+        public void onPress() {
+            PinnedQuestHud.toggleCurrentQuest();
+        }
+
+        @Override
+        protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
+            ResourceLocation tex = PinnedQuestHud.isPinnedCurrentQuest() ? TEX_UNPIN : TEX_PIN;
+
+            gg.pose().pushPose();
+            gg.pose().translate(getX(), getY(), 0);
+            gg.pose().scale(0.5f, 0.5f, 1.0f);
+            gg.blit(tex, 0, 0, 0, 0, 20, 20, 20, 20);
+            gg.pose().popPose();
+        }
+
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput narration) {}
+    }
 
     private static final class BackButton extends AbstractButton {
         private static final ResourceLocation TEX_NORMAL =

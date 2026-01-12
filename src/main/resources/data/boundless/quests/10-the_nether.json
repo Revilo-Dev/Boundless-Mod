@@ -6,7 +6,6 @@
   "description": "Enter the Nether, a dangerous realm full of rare resources.",
   "dependencies": "diamonds",
   "optional": "false",
-  "type": "advancement",
   "completion": {
     "complete": [
       { "achieve": "minecraft:nether/root" }

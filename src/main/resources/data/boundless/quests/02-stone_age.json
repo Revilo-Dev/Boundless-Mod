@@ -6,10 +6,9 @@
   "description": "Submit cobblestone to upgrade from wooden tools to stone tools.",
   "dependencies": "getting_started",
   "optional": "false",
-  "type": "submit",
   "completion": {
     "complete": [
-      { "submit": "minecraft:cobblestone", "count": 16 }
+      { "collect": "minecraft:cobblestone", "count": 16 }
     ]
   },
   "reward": {

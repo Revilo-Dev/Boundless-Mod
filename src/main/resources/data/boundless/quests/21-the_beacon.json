@@ -6,7 +6,6 @@
   "description": "Craft a beacon to gain powerful area effects.",
   "dependencies": "skys_the_limit",
   "optional": "true",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "minecraft:beacon", "count": 1 }

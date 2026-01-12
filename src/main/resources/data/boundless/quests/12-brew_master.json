@@ -6,7 +6,6 @@
   "description": "Brew your first potion using your new brewing stand.",
   "dependencies": "fortress",
   "optional": "true",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "minecraft:brewing_stand", "count": 1 }

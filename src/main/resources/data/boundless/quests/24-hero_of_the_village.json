@@ -6,7 +6,6 @@
   "description": "Defend a village from a pillager raid and earn their gratitude.",
   "dependencies": "iron_age",
   "optional": "true",
-  "type": "effect",
   "completion": {
     "complete": [
       { "effect": "minecraft:hero_of_the_village" }

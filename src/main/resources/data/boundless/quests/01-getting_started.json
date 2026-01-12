@@ -6,7 +6,6 @@
   "description": "Craft a crafting table to unlock most basic recipes.",
   "dependencies": "",
   "optional": "false",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "minecraft:crafting_table", "count": 1 }

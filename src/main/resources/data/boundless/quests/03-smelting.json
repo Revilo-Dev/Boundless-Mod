@@ -6,7 +6,6 @@
   "description": "Craft a furnace to smelt ores and cook food.",
   "dependencies": "stone_age",
   "optional": "false",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "minecraft:furnace", "count": 1 }
@@ -14,7 +13,7 @@
   },
   "reward": {
     "items": [
-      { "item": "minecraft:coal", "count": 10 }
+      { "item": "minecraft:coal", "count": 16 }
     ],
     "exp": "points",
     "count": 50

@@ -6,7 +6,6 @@
   "description": "Find an armor trim and apply it to customise your gear.",
   "dependencies": "trading",
   "optional": "true",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "#minecraft:trim_templates", "count": 1 }

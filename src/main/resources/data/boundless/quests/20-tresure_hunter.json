@@ -6,7 +6,6 @@
   "description": "Follow a buried treasure map and claim the Heart of the Sea.",
   "dependencies": "iron_age",
   "optional": "true",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "minecraft:heart_of_the_sea", "count": 1 }

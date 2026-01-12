@@ -6,7 +6,6 @@
   "description": "Craft your first set of diamond tools and prepare for enchanting.",
   "dependencies": "iron_age",
   "optional": "false",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "minecraft:diamond_pickaxe", "count": 1 },

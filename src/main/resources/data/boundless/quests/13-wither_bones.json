@@ -6,7 +6,6 @@
   "description": "Hunt wither skeletons and acquire their rare skulls.",
   "dependencies": "the_nether",
   "optional": "true",
-  "type": "collection",
   "completion": {
     "complete": [
       { "collect": "minecraft:wither_skeleton_skull", "count": 1 }
