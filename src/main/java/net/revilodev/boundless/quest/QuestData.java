@@ -1,3 +1,4 @@
+// src/main/java/net/revilodev/boundless/quest/QuestData.java
 package net.revilodev.boundless.quest;
 
 import com.google.gson.*;
@@ -74,16 +75,28 @@ public final class QuestData {
 
     public static final class Rewards {
         public final List<RewardEntry> items;
-        public final String command;
+        public final List<CommandReward> commands;
+        public final List<FunctionReward> functions;
         public final String expType;
         public final int expAmount;
-        public Rewards(List<RewardEntry> items, String command, String expType, int expAmount) {
+
+        public Rewards(List<RewardEntry> items,
+                       List<CommandReward> commands,
+                       List<FunctionReward> functions,
+                       String expType, int expAmount) {
             this.items = items == null ? List.of() : List.copyOf(items);
-            this.command = command == null ? "" : command;
+            this.commands = commands == null ? List.of() : List.copyOf(commands);
+            this.functions = functions == null ? List.of() : List.copyOf(functions);
             this.expType = expType == null ? "" : expType;
             this.expAmount = Math.max(0, expAmount);
         }
+
         public boolean hasExp() { return !expType.isBlank() && expAmount > 0; }
+        public boolean hasCommands() { return commands != null && !commands.isEmpty(); }
+        public boolean hasFunctions() { return functions != null && !functions.isEmpty(); }
+        public boolean hasAny() {
+            return (items != null && !items.isEmpty()) || hasCommands() || hasFunctions() || hasExp();
+        }
     }
 
     public static final class RewardEntry {
@@ -92,6 +105,30 @@ public final class QuestData {
         public RewardEntry(String item, int count) {
             this.item = item;
             this.count = Math.max(1, count);
+        }
+    }
+
+    public static final class CommandReward {
+        public final String command;
+        public final String icon;
+        public final String title;
+
+        public CommandReward(String command, String icon, String title) {
+            this.command = command == null ? "" : command;
+            this.icon = icon == null ? "" : icon;
+            this.title = title == null ? "" : title;
+        }
+    }
+
+    public static final class FunctionReward {
+        public final String function;
+        public final String icon;
+        public final String title;
+
+        public FunctionReward(String function, String icon, String title) {
+            this.function = function == null ? "" : function;
+            this.icon = icon == null ? "" : icon;
+            this.title = title == null ? "" : title;
         }
     }
 
@@ -258,60 +295,112 @@ public final class QuestData {
         return deps;
     }
 
+    // Supports:
+    // - legacy: "reward": "/say hi"
+    // - legacy: "reward": { "command": "/say hi" }
+    // - new:    "reward": { "commands": [{...}], "functions": [{...}], "items": [...], "exp": "levels", "count": 3 }
     private static Rewards parseRewards(JsonElement el) {
-        if (el == null) return new Rewards(List.of(), "", "", 0);
-        List<RewardEntry> out = new ArrayList<>();
-        String cmd = "";
+        if (el == null) return new Rewards(List.of(), List.of(), List.of(), "", 0);
+
+        List<RewardEntry> items = new ArrayList<>();
+        List<CommandReward> commands = new ArrayList<>();
+        List<FunctionReward> functions = new ArrayList<>();
+
         String expType = "";
         int expAmount = 0;
 
         if (el.isJsonObject()) {
             JsonObject obj = el.getAsJsonObject();
+
+            // items (same as before)
             if (obj.has("items") && obj.get("items").isJsonArray()) {
                 for (JsonElement e : obj.getAsJsonArray("items")) {
                     if (!e.isJsonObject()) continue;
                     JsonObject r = e.getAsJsonObject();
                     String item = optString(r, "item");
                     int count = r.has("count") ? r.get("count").getAsInt() : 1;
-                    if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
+                    if (item != null && !item.isBlank()) items.add(new RewardEntry(item, count));
                 }
             } else if (obj.has("item")) {
                 String item = optString(obj, "item");
                 int count = obj.has("count") ? obj.get("count").getAsInt() : 1;
-                if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
+                if (item != null && !item.isBlank()) items.add(new RewardEntry(item, count));
             }
 
-            if (obj.has("command") && obj.get("command").isJsonPrimitive())
-                cmd = obj.get("command").getAsString();
+            // legacy single command
+            if (obj.has("command") && obj.get("command").isJsonPrimitive()) {
+                String cmd = obj.get("command").getAsString();
+                if (cmd != null && !cmd.isBlank()) commands.add(new CommandReward(cmd, "", ""));
+            }
+
+            // new commands[]
+            if (obj.has("commands") && obj.get("commands").isJsonArray()) {
+                for (JsonElement ce : obj.getAsJsonArray("commands")) {
+                    if (ce == null) continue;
+                    if (ce.isJsonPrimitive()) {
+                        String cmd = ce.getAsString();
+                        if (cmd != null && !cmd.isBlank()) commands.add(new CommandReward(cmd, "", ""));
+                        continue;
+                    }
+                    if (!ce.isJsonObject()) continue;
+                    JsonObject co = ce.getAsJsonObject();
+                    String cmd = optString(co, "command");
+                    String icon = optString(co, "icon");
+                    String title = optString(co, "title");
+                    if (cmd != null && !cmd.isBlank()) commands.add(new CommandReward(cmd, icon, title));
+                }
+            }
+
+            // new functions[]
+            if (obj.has("functions") && obj.get("functions").isJsonArray()) {
+                for (JsonElement fe : obj.getAsJsonArray("functions")) {
+                    if (fe == null) continue;
+                    if (fe.isJsonPrimitive()) {
+                        String fn = fe.getAsString();
+                        if (fn != null && !fn.isBlank()) functions.add(new FunctionReward(fn, "", ""));
+                        continue;
+                    }
+                    if (!fe.isJsonObject()) continue;
+                    JsonObject fo = fe.getAsJsonObject();
+                    String fn = optString(fo, "function");
+                    String icon = optString(fo, "icon");
+                    String title = optString(fo, "title");
+                    if (fn != null && !fn.isBlank()) functions.add(new FunctionReward(fn, icon, title));
+                }
+            }
 
             if (obj.has("exp")) {
                 JsonElement ex = obj.get("exp");
                 if (ex.isJsonPrimitive()) expType = ex.getAsString();
             }
-
             if (obj.has("count") && obj.get("count").isJsonPrimitive() && obj.getAsJsonPrimitive("count").isNumber())
                 expAmount = obj.getAsJsonPrimitive("count").getAsInt();
 
-            return new Rewards(out, cmd, expType, expAmount);
+            return new Rewards(items, commands, functions, expType, expAmount);
         }
 
+        // array => items list (legacy)
         if (el.isJsonArray()) {
             for (JsonElement e : el.getAsJsonArray()) {
                 if (!e.isJsonObject()) continue;
                 JsonObject r = e.getAsJsonObject();
                 String item = optString(r, "item");
                 int count = r.has("count") ? r.get("count").getAsInt() : 1;
-                if (item != null && !item.isBlank()) out.add(new RewardEntry(item, count));
+                if (item != null && !item.isBlank()) items.add(new RewardEntry(item, count));
             }
-            return new Rewards(out, "", "", 0);
+            return new Rewards(items, List.of(), List.of(), "", 0);
         }
 
+        // primitive => legacy command string
         if (el.isJsonPrimitive()) {
             String maybeCmd = el.getAsString();
-            if (!maybeCmd.isBlank()) return new Rewards(List.of(), maybeCmd, "", 0);
+            if (maybeCmd != null && !maybeCmd.isBlank()) {
+                commands.add(new CommandReward(maybeCmd, "", ""));
+                return new Rewards(List.of(), commands, List.of(), "", 0);
+            }
         }
 
-        return new Rewards(List.of(), "", "", 0);
+        return new Rewards(List.of(), List.of(), List.of(), "", 0);
     }
 
     private static Completion parseCompletion(JsonElement el, String type) {
@@ -593,6 +682,7 @@ public final class QuestData {
                     Rewards rewards;
                     if (o.has("rewards") && o.get("rewards").isJsonObject()) {
                         JsonObject ro = o.getAsJsonObject("rewards");
+
                         List<RewardEntry> rItems = new ArrayList<>();
                         if (ro.has("items") && ro.get("items").isJsonArray()) {
                             for (JsonElement ie : ro.getAsJsonArray("items")) {
@@ -603,13 +693,54 @@ public final class QuestData {
                                 if (item != null && !item.isBlank()) rItems.add(new RewardEntry(item, count));
                             }
                         }
-                        String cmd = optString(ro, "command");
+
+                        List<CommandReward> cmds = new ArrayList<>();
+                        if (ro.has("command") && ro.get("command").isJsonPrimitive()) {
+                            String c = ro.get("command").getAsString();
+                            if (c != null && !c.isBlank()) cmds.add(new CommandReward(c, "", ""));
+                        }
+                        if (ro.has("commands") && ro.get("commands").isJsonArray()) {
+                            for (JsonElement ce : ro.getAsJsonArray("commands")) {
+                                if (ce == null) continue;
+                                if (ce.isJsonPrimitive()) {
+                                    String c = ce.getAsString();
+                                    if (c != null && !c.isBlank()) cmds.add(new CommandReward(c, "", ""));
+                                    continue;
+                                }
+                                if (!ce.isJsonObject()) continue;
+                                JsonObject co = ce.getAsJsonObject();
+                                String c = optString(co, "command");
+                                String ic = optString(co, "icon");
+                                String ti = optString(co, "title");
+                                if (c != null && !c.isBlank()) cmds.add(new CommandReward(c, ic, ti));
+                            }
+                        }
+
+                        List<FunctionReward> fns = new ArrayList<>();
+                        if (ro.has("functions") && ro.get("functions").isJsonArray()) {
+                            for (JsonElement fe : ro.getAsJsonArray("functions")) {
+                                if (fe == null) continue;
+                                if (fe.isJsonPrimitive()) {
+                                    String f = fe.getAsString();
+                                    if (f != null && !f.isBlank()) fns.add(new FunctionReward(f, "", ""));
+                                    continue;
+                                }
+                                if (!fe.isJsonObject()) continue;
+                                JsonObject fo = fe.getAsJsonObject();
+                                String f = optString(fo, "function");
+                                String ic = optString(fo, "icon");
+                                String ti = optString(fo, "title");
+                                if (f != null && !f.isBlank()) fns.add(new FunctionReward(f, ic, ti));
+                            }
+                        }
+
                         String expType = optString(ro, "expType");
                         int expAmount = ro.has("expAmount") && ro.get("expAmount").isJsonPrimitive() && ro.getAsJsonPrimitive("expAmount").isNumber()
                                 ? ro.get("expAmount").getAsInt() : 0;
-                        rewards = new Rewards(rItems, cmd, expType, expAmount);
+
+                        rewards = new Rewards(rItems, cmds, fns, expType, expAmount);
                     } else {
-                        rewards = new Rewards(List.of(), "", "", 0);
+                        rewards = new Rewards(List.of(), List.of(), List.of(), "", 0);
                     }
 
                     String type = optString(o, "type");
@@ -667,9 +798,7 @@ public final class QuestData {
                         listDataQuestsFromPack(res, ns);
                     }
                 } finally {
-                    try {
-                        res.close();
-                    } catch (Exception ignored) {}
+                    try { res.close(); } catch (Exception ignored) {}
                 }
             }
         } catch (Throwable ignored) {}
@@ -720,7 +849,6 @@ public final class QuestData {
     }
 
     private static void loadDataPackQuests(ResourceManager rm) {
-
         Map<ResourceLocation, List<Resource>> catStacks =
                 rm.listResourceStacks(PATH_CATEGORIES, rl -> rl.getPath().endsWith(".json"));
 
@@ -744,7 +872,6 @@ public final class QuestData {
                 String dependency = optString(obj, "dependency");
 
                 CATEGORIES.put(id, new Category(id, icon, name, order, exclude, dependency));
-
             } catch (Exception ignored) {}
         }
 

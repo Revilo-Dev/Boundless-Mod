@@ -1,7 +1,7 @@
 {
   "category": "minecraft",
   "id": "Ocean Monuments",
-  "name": "King of the Ocean",
+  "name": "Ocean Monuments",
   "icon": "minecraft:conduit",
   "description": "Defeat an ocean monument and gather precious wet sponges.",
   "dependencies": "treasure_hunter",

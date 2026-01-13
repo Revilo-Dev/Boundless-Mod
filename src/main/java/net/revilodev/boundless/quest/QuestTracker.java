@@ -330,21 +330,77 @@ public final class QuestTracker {
 
     public static boolean serverRedeem(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return false;
-        if (q.rewards != null && q.rewards.items != null)
+
+        // Hard guard: never run rewards twice
+        Status current = getServerStatus(player, q.id);
+        if (current == Status.REDEEMED || current == Status.REJECTED) return false;
+
+        // Items
+        if (q.rewards != null && q.rewards.items != null) {
             for (QuestData.RewardEntry r : q.rewards.items) {
+                if (r == null || r.item == null || r.item.isBlank()) continue;
                 ResourceLocation rl = ResourceLocation.parse(r.item);
                 Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
                 if (item != null) player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
             }
-        if (q.rewards != null && q.rewards.command != null && !q.rewards.command.isBlank()) {
-            String cmd = q.rewards.command.startsWith("/") ? q.rewards.command.substring(1) : q.rewards.command;
-            CommandSourceStack css = player.createCommandSourceStack().withPermission(4);
-            player.server.getCommands().performPrefixedCommand(css, cmd);
         }
+
+        // Commands + Functions (execute exactly once; dedupe by normalized command string)
+        if (q.rewards != null) {
+            CommandSourceStack css = player.createCommandSourceStack().withPermission(4);
+
+            java.util.LinkedHashSet<String> toRun = new java.util.LinkedHashSet<>();
+
+            // commands[]
+            if (q.rewards.commands != null) {
+                for (QuestData.CommandReward cr : q.rewards.commands) {
+                    if (cr == null || cr.command == null) continue;
+                    String cmd = cr.command.trim();
+                    if (cmd.isBlank()) continue;
+
+                    // normalize
+                    if (cmd.startsWith("/")) cmd = cmd.substring(1).trim();
+
+                    // if user wrote "/function x:y" in commands, normalize it the same way
+                    if (cmd.regionMatches(true, 0, "function", 0, "function".length())) {
+                        cmd = cmd.trim();
+                    }
+
+                    toRun.add(cmd);
+                }
+            }
+
+            // functions[] => always run as "function <id>"
+            if (q.rewards.functions != null) {
+                for (QuestData.FunctionReward fr : q.rewards.functions) {
+                    if (fr == null || fr.function == null) continue;
+                    String fn = fr.function.trim();
+                    if (fn.isBlank()) continue;
+
+                    // normalize input in case user writes "function x:y" or "/function x:y"
+                    if (fn.startsWith("/")) fn = fn.substring(1).trim();
+                    if (fn.regionMatches(true, 0, "function", 0, "function".length())) {
+                        fn = fn.substring("function".length()).trim();
+                    }
+
+                    String cmd = "function " + fn;
+                    toRun.add(cmd);
+                }
+            }
+
+            for (String cmd : toRun) {
+                try {
+                    player.server.getCommands().performPrefixedCommand(css, cmd);
+                } catch (Throwable ignored) {}
+            }
+        }
+
         setServerStatus(player, q.id, Status.COMPLETED);
         setServerStatus(player, q.id, Status.REDEEMED);
         return true;
     }
+
+
 
     public static void forceCompleteWithoutRewards(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return;

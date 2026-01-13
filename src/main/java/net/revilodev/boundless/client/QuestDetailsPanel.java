@@ -423,15 +423,14 @@ public final class QuestDetailsPanel extends AbstractWidget {
         }
 
         boolean hasItemRewards = quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty();
-        boolean hasCommandReward = quest.rewards != null && quest.rewards.command != null && !quest.rewards.command.isBlank();
+        boolean hasCommandRewards = quest.rewards != null && quest.rewards.hasCommands();
+        boolean hasFunctionRewards = quest.rewards != null && quest.rewards.hasFunctions();
         boolean hasExpReward = quest.rewards != null && quest.rewards.hasExp();
 
-        boolean hasAnyReward = hasItemRewards || hasCommandReward || hasExpReward;
+        boolean hasAnyReward = hasItemRewards || hasCommandRewards || hasFunctionRewards || hasExpReward;
         if (!hasAnyReward) {
             gg.disableScissor();
-            for (Component tip : hoveredTooltips) {
-                gg.renderTooltip(mc.font, tip, mouseX, mouseY);
-            }
+            for (Component tip : hoveredTooltips) gg.renderTooltip(mc.font, tip, mouseX, mouseY);
             updateBottomButtons();
             return;
         }
@@ -460,15 +459,54 @@ public final class QuestDetailsPanel extends AbstractWidget {
             }
         }
 
-        if (hasCommandReward) {
-            int lineY = curY[0];
-            gg.renderItem(new ItemStack(Items.COMMAND_BLOCK), x + 4, lineY);
-            gg.drawWordWrap(mc.font, Component.literal(quest.rewards.command),
-                    x + 24, lineY + 4, w - 30, 0xA8FFA8);
-            if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
-                hoveredTooltips.add(Component.literal("Command Reward"));
+        if (hasCommandRewards) {
+            for (QuestData.CommandReward cr : quest.rewards.commands) {
+                int lineY = curY[0];
+
+                ItemStack icon = new ItemStack(Items.COMMAND_BLOCK);
+                if (cr.icon != null && !cr.icon.isBlank()) {
+                    try {
+                        Item it = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(cr.icon)).orElse(null);
+                        if (it != null) icon = new ItemStack(it);
+                    } catch (Exception ignored) {}
+                }
+
+                String display = (cr.title != null && !cr.title.isBlank()) ? cr.title : cr.command;
+
+                gg.renderItem(icon, x + 4, lineY);
+                gg.drawWordWrap(mc.font, Component.literal(display), x + 24, lineY + 4, w - 30, 0xA8FFA8);
+
+                if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
+                    hoveredTooltips.add(Component.literal(cr.command));
+                }
+
+                curY[0] += LINE_ITEM_ROW;
             }
-            curY[0] += LINE_ITEM_ROW;
+        }
+
+        if (hasFunctionRewards) {
+            for (QuestData.FunctionReward fr : quest.rewards.functions) {
+                int lineY = curY[0];
+
+                ItemStack icon = new ItemStack(Items.KNOWLEDGE_BOOK);
+                if (fr.icon != null && !fr.icon.isBlank()) {
+                    try {
+                        Item it = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(fr.icon)).orElse(null);
+                        if (it != null) icon = new ItemStack(it);
+                    } catch (Exception ignored) {}
+                }
+
+                String display = (fr.title != null && !fr.title.isBlank()) ? fr.title : fr.function;
+
+                gg.renderItem(icon, x + 4, lineY);
+                gg.drawWordWrap(mc.font, Component.literal(display), x + 24, lineY + 4, w - 30, 0xA8FFA8);
+
+                if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
+                    hoveredTooltips.add(Component.literal(fr.function));
+                }
+
+                curY[0] += LINE_ITEM_ROW;
+            }
         }
 
         if (hasExpReward) {
@@ -488,9 +526,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         gg.disableScissor();
 
-        for (Component tip : hoveredTooltips) {
-            gg.renderTooltip(mc.font, tip, mouseX, mouseY);
-        }
+        for (Component tip : hoveredTooltips) gg.renderTooltip(mc.font, tip, mouseX, mouseY);
 
         updateBottomButtons();
     }
@@ -535,11 +571,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
             }
 
             int wrapH = mc.font.wordWrapHeight(shown, w - 8);
-            if (needsMore) {
-                y += wrapH + mc.font.lineHeight + 6;
-            } else {
-                y += wrapH + 8;
-            }
+            if (needsMore) y += wrapH + mc.font.lineHeight + 6;
+            else y += wrapH + 8;
         }
 
         if (!quest.dependencies.isEmpty()) {
@@ -552,13 +585,15 @@ public final class QuestDetailsPanel extends AbstractWidget {
         }
 
         boolean hasItemRewards = quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty();
-        boolean hasCommandReward = quest.rewards != null && quest.rewards.command != null && !quest.rewards.command.isBlank();
+        boolean hasCommandRewards = quest.rewards != null && quest.rewards.hasCommands();
+        boolean hasFunctionRewards = quest.rewards != null && quest.rewards.hasFunctions();
         boolean hasExpReward = quest.rewards != null && quest.rewards.hasExp();
 
-        if (hasItemRewards || hasCommandReward || hasExpReward) {
+        if (hasItemRewards || hasCommandRewards || hasFunctionRewards || hasExpReward) {
             y += mc.font.wordWrapHeight("Reward:", w - 8) + 4;
             if (hasItemRewards) y += quest.rewards.items.size() * LINE_ITEM_ROW;
-            if (hasCommandReward) y += LINE_ITEM_ROW;
+            if (hasCommandRewards) y += quest.rewards.commands.size() * LINE_ITEM_ROW;
+            if (hasFunctionRewards) y += quest.rewards.functions.size() * LINE_ITEM_ROW;
             if (hasExpReward) y += LINE_ITEM_ROW;
             y += 2;
         }

@@ -15,7 +15,7 @@
   "description": "This is an example quest showing the correct format.",
 
   "//DEPENDENCIES": "A list OR string of quest IDs required before this quest unlocks, blank = no dependencies required.",
-  "dependencies": "",
+  "dependencies": "quest1, quest2",
 
   "//OPTIONAL": "Whether the quest is optional. Not recommended to set a quest with dependencies as optional.",
   "optional": "true",
@@ -25,7 +25,7 @@
   "completion": {
     "complete": [
       { "collect": "minecraft:crafting_table", "count": 1 },
-      { "submit": "minecraft:dirt", "count": 1 },
+      { "submit": "minecraft:diamond", "count": 5 },
       { "kill": "minecraft:zombie", "count": 3 },
       { "achieve": "minecraft:story/mine_stone" },
       { "effect": "minecraft:haste" }
@@ -35,9 +35,9 @@
   "//REWARD": "Rewards granted when completing the quest. Supports items, commands, and XP.",
   "reward": {
     "items": [{ "item": "minecraft:diamond", "count": 1 }],
-    "command": "",
-    "exp": "points", "//EXP": "Either points or levels",
-    "count": 50
+    "commands": [{ "command": "give @s minecraft:apple", "icon": "namespace:item", "title": "" }],
+    "functions": [{ "function": "function_example:test", "icon": "namespace:item", "title": "" }],
+    "exp": "points", "//EXP": "Either points or levels", "count": 50
   },
 
   "//TIP": "When naming quests, prefix with numbers (01-, 02-, 03-) to control the order."

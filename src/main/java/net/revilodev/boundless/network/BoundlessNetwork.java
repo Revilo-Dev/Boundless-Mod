@@ -1,3 +1,4 @@
+// src/main/java/net/revilodev/boundless/network/BoundlessNetwork.java
 package net.revilodev.boundless.network;
 
 import com.google.gson.Gson;
@@ -30,6 +31,8 @@ import net.revilodev.boundless.quest.QuestTracker;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class BoundlessNetwork {
 
@@ -38,6 +41,9 @@ public final class BoundlessNetwork {
     private static boolean REGISTERED = false;
 
     private static final Gson GSON = new GsonBuilder().setLenient().create();
+
+    // Hard lock to prevent double redeem packets from executing rewards twice
+    private static final Set<String> REDEEM_IN_FLIGHT = ConcurrentHashMap.newKeySet();
 
     private BoundlessNetwork() {}
 
@@ -223,6 +229,7 @@ public final class BoundlessNetwork {
 
             if (q.rewards != null) {
                 JsonObject ro = new JsonObject();
+
                 JsonArray items = new JsonArray();
                 for (QuestData.RewardEntry r : q.rewards.items) {
                     JsonObject io = new JsonObject();
@@ -231,9 +238,30 @@ public final class BoundlessNetwork {
                     items.add(io);
                 }
                 ro.add("items", items);
-                ro.addProperty("command", q.rewards.command);
+
+                JsonArray cmds = new JsonArray();
+                for (QuestData.CommandReward cr : q.rewards.commands) {
+                    JsonObject co = new JsonObject();
+                    co.addProperty("command", cr.command);
+                    co.addProperty("icon", cr.icon);
+                    co.addProperty("title", cr.title);
+                    cmds.add(co);
+                }
+                ro.add("commands", cmds);
+
+                JsonArray fns = new JsonArray();
+                for (QuestData.FunctionReward fr : q.rewards.functions) {
+                    JsonObject fo = new JsonObject();
+                    fo.addProperty("function", fr.function);
+                    fo.addProperty("icon", fr.icon);
+                    fo.addProperty("title", fr.title);
+                    fns.add(fo);
+                }
+                ro.add("functions", fns);
+
                 ro.addProperty("expType", q.rewards.expType);
                 ro.addProperty("expAmount", q.rewards.expAmount);
+
                 o.add("rewards", ro);
             }
 
@@ -285,23 +313,26 @@ public final class BoundlessNetwork {
     private static void handleRedeem(Redeem p, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             ServerPlayer sp = (ServerPlayer) ctx.player();
-            QuestData.byIdServer(sp.server, p.questId()).ifPresent(q -> {
-                if (!QuestTracker.isReady(q, sp)) return;
+            final String lockKey = sp.getUUID() + ":" + p.questId();
 
-                // If this quest has submit requirements, consume items SERVER-SIDE before redeeming.
-                if (questHasSubmit(q)) {
-                    if (!consumeSubmitItems(sp, q)) return;
-                }
+            if (!REDEEM_IN_FLIGHT.add(lockKey)) return;
 
-                boolean ok = QuestTracker.serverRedeem(q, sp);
-                if (ok) {
-                    if (q.rewards != null && q.rewards.hasExp()) {
-                        if ("points".equals(q.rewards.expType)) sp.giveExperiencePoints(q.rewards.expAmount);
-                        else if ("levels".equals(q.rewards.expType)) sp.giveExperienceLevels(q.rewards.expAmount);
+            try {
+                QuestData.byIdServer(sp.server, p.questId()).ifPresent(q -> {
+                    if (!QuestTracker.isReady(q, sp)) return;
+
+                    if (questHasSubmit(q)) {
+                        if (!consumeSubmitItems(sp, q)) return;
                     }
-                    sendStatus(sp, q.id, QuestTracker.Status.REDEEMED.name());
-                }
-            });
+
+                    boolean ok = QuestTracker.serverRedeem(q, sp);
+                    if (ok) {
+                        sendStatus(sp, q.id, QuestTracker.Status.REDEEMED.name());
+                    }
+                });
+            } finally {
+                REDEEM_IN_FLIGHT.remove(lockKey);
+            }
         });
     }
 
@@ -357,7 +388,6 @@ public final class BoundlessNetwork {
     private static boolean questHasSubmit(QuestData.Quest q) {
         if (q == null || q.completion == null) return false;
 
-        // Back-compat: some packs may use quest.type = "submission"
         if ("submission".equalsIgnoreCase(q.type) || "submit".equalsIgnoreCase(q.type)) return true;
 
         for (QuestData.Target t : q.completion.targets) {
@@ -373,7 +403,6 @@ public final class BoundlessNetwork {
         Inventory inv = sp.getInventory();
         int size = inv.getContainerSize();
 
-        // Simulate on copies first (transactional)
         ItemStack[] sim = new ItemStack[size];
         for (int i = 0; i < size; i++) sim[i] = inv.getItem(i).copy();
 
@@ -392,11 +421,9 @@ public final class BoundlessNetwork {
 
             if (raw.startsWith("#")) {
                 ResourceLocation tagRl;
-                try {
-                    tagRl = ResourceLocation.parse(raw.substring(1));
-                } catch (Exception ignored) {
-                    return false;
-                }
+                try { tagRl = ResourceLocation.parse(raw.substring(1)); }
+                catch (Exception ignored) { return false; }
+
                 TagKey<Item> tag = TagKey.create(Registries.ITEM, tagRl);
 
                 if (!canTakeTag(sim, tag, need)) return false;
@@ -404,11 +431,8 @@ public final class BoundlessNetwork {
 
             } else {
                 Item item;
-                try {
-                    item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(raw));
-                } catch (Exception ignored) {
-                    item = null;
-                }
+                try { item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(raw)); }
+                catch (Exception ignored) { item = null; }
                 if (item == null) return false;
 
                 if (!canTakeItem(sim, item, need)) return false;
@@ -416,7 +440,6 @@ public final class BoundlessNetwork {
             }
         }
 
-        // Apply to real inventory
         for (QuestData.Target t : q.completion.targets) {
             if (t == null) continue;
 
@@ -433,20 +456,15 @@ public final class BoundlessNetwork {
             boolean ok;
             if (raw.startsWith("#")) {
                 ResourceLocation tagRl;
-                try {
-                    tagRl = ResourceLocation.parse(raw.substring(1));
-                } catch (Exception ignored) {
-                    return false;
-                }
+                try { tagRl = ResourceLocation.parse(raw.substring(1)); }
+                catch (Exception ignored) { return false; }
+
                 TagKey<Item> tag = TagKey.create(Registries.ITEM, tagRl);
                 ok = takeTag(inv, tag, need);
             } else {
                 Item item;
-                try {
-                    item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(raw));
-                } catch (Exception ignored) {
-                    item = null;
-                }
+                try { item = BuiltInRegistries.ITEM.get(ResourceLocation.parse(raw)); }
+                catch (Exception ignored) { item = null; }
                 if (item == null) return false;
                 ok = takeItem(inv, item, need);
             }
@@ -459,7 +477,7 @@ public final class BoundlessNetwork {
         return true;
     }
 
-    // --- Simulation helpers (no lambdas; fixes "effectively final" errors) ---
+    // --- Simulation helpers (no lambdas) ---
 
     private static boolean canTakeItem(ItemStack[] stacks, Item item, int needed) {
         int have = 0;
@@ -515,7 +533,7 @@ public final class BoundlessNetwork {
         return remaining <= 0;
     }
 
-    // --- Apply-to-inventory helpers (real consumption) ---
+    // --- Apply-to-inventory helpers ---
 
     private static boolean takeItem(Inventory inv, Item item, int toTake) {
         int remaining = toTake;
