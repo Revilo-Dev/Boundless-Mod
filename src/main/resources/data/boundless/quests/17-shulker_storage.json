@@ -1,5 +1,6 @@
 {
   "category": "minecraft",
+  "sub-category": "end_game",
   "id": "shulker_storage",
   "name": "Shulker Storage",
   "icon": "minecraft:shulker_shell",

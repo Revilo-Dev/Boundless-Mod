@@ -1,5 +1,6 @@
 {
   "category": "minecraft",
+  "sub-category": "mid_game",
   "id": "brew_master",
   "name": "Brew Master",
   "icon": "minecraft:brewing_stand",

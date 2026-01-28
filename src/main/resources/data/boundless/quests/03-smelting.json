@@ -1,5 +1,6 @@
 {
   "category": "minecraft",
+  "sub-category": "getting_started",
   "id": "smelting",
   "name": "Smelting",
   "icon": "minecraft:furnace",

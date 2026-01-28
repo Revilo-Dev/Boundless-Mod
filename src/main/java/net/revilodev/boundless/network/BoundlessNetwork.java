@@ -44,6 +44,7 @@ public final class BoundlessNetwork {
 
     private static final Set<String> REDEEM_IN_FLIGHT = ConcurrentHashMap.newKeySet();
 
+    // keep below 32767 UTF-8 bytes for writeUtf; JSON is ASCII => chars ~= bytes
     private static final int QUEST_JSON_CHUNK = 30000;
 
     private BoundlessNetwork() {}

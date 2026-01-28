@@ -1,5 +1,6 @@
 {
   "category": "minecraft",
+  "sub-category": "getting_started",
   "id": "getting_started",
   "name": "Getting Started",
   "icon": "minecraft:crafting_table",
