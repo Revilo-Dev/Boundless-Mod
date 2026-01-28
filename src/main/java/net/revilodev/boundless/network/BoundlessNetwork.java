@@ -42,8 +42,9 @@ public final class BoundlessNetwork {
 
     private static final Gson GSON = new GsonBuilder().setLenient().create();
 
-    // Hard lock to prevent double redeem packets from executing rewards twice
     private static final Set<String> REDEEM_IN_FLIGHT = ConcurrentHashMap.newKeySet();
+
+    private static final int QUEST_JSON_CHUNK = 30000;
 
     private BoundlessNetwork() {}
 
@@ -65,7 +66,9 @@ public final class BoundlessNetwork {
         r.playToClient(SyncClear.TYPE, SyncClear.CODEC, BoundlessNetwork::handleSyncClear);
         r.playToClient(Toast.TYPE, Toast.CODEC, BoundlessNetwork::handleToast);
         r.playToClient(OpenQuestBook.TYPE, OpenQuestBook.CODEC, BoundlessNetwork::handleOpenQuestBook);
-        r.playToClient(SyncQuests.TYPE, SyncQuests.CODEC, BoundlessNetwork::handleSyncQuests);
+
+        // CHUNKED to avoid writeUtf 32767 limit
+        r.playToClient(SyncQuestsChunk.TYPE, SyncQuestsChunk.CODEC, BoundlessNetwork::handleSyncQuestsChunk);
     }
 
     public record Redeem(String questId) implements CustomPacketPayload {
@@ -155,14 +158,18 @@ public final class BoundlessNetwork {
         @Override public Type<OpenQuestBook> type() { return TYPE; }
     }
 
-    public record SyncQuests(String json) implements CustomPacketPayload {
-        public static final Type<SyncQuests> TYPE =
-                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "sync_quests"));
-        public static final StreamCodec<FriendlyByteBuf, SyncQuests> CODEC = StreamCodec.of(
-                (buf, p) -> buf.writeUtf(p.json),
-                buf -> new SyncQuests(buf.readUtf())
+    public record SyncQuestsChunk(int totalParts, int index, String part) implements CustomPacketPayload {
+        public static final Type<SyncQuestsChunk> TYPE =
+                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "sync_quests_chunk"));
+        public static final StreamCodec<FriendlyByteBuf, SyncQuestsChunk> CODEC = StreamCodec.of(
+                (buf, p) -> {
+                    buf.writeVarInt(p.totalParts);
+                    buf.writeVarInt(p.index);
+                    buf.writeUtf(p.part);
+                },
+                buf -> new SyncQuestsChunk(buf.readVarInt(), buf.readVarInt(), buf.readUtf())
         );
-        @Override public Type<SyncQuests> type() { return TYPE; }
+        @Override public Type<SyncQuestsChunk> type() { return TYPE; }
     }
 
     public static void syncPlayer(ServerPlayer p) {
@@ -282,14 +289,30 @@ public final class BoundlessNetwork {
             }
 
             o.addProperty("category", q.category);
-
             qs.add(o);
         }
 
         root.add("quests", qs);
 
         String json = GSON.toJson(root);
-        PacketDistributor.sendToPlayer(p, new SyncQuests(json));
+        sendQuestJsonChunked(p, json);
+    }
+
+    private static void sendQuestJsonChunked(ServerPlayer p, String json) {
+        if (json == null) json = "";
+        int len = json.length();
+        if (len <= QUEST_JSON_CHUNK) {
+            PacketDistributor.sendToPlayer(p, new SyncQuestsChunk(1, 0, json));
+            return;
+        }
+
+        int total = (len + QUEST_JSON_CHUNK - 1) / QUEST_JSON_CHUNK;
+        for (int i = 0; i < total; i++) {
+            int start = i * QUEST_JSON_CHUNK;
+            int end = Math.min(len, start + QUEST_JSON_CHUNK);
+            String part = json.substring(start, end);
+            PacketDistributor.sendToPlayer(p, new SyncQuestsChunk(total, i, part));
+        }
     }
 
     public static void sendStatus(ServerPlayer p, String questId, String status) {
@@ -381,8 +404,8 @@ public final class BoundlessNetwork {
         });
     }
 
-    private static void handleSyncQuests(SyncQuests p, IPayloadContext ctx) {
-        ctx.enqueueWork(() -> QuestData.applyNetworkJson(p.json()));
+    private static void handleSyncQuestsChunk(SyncQuestsChunk p, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> ClientQuestSync.accept(p));
     }
 
     private static boolean questHasSubmit(QuestData.Quest q) {
@@ -477,8 +500,6 @@ public final class BoundlessNetwork {
         return true;
     }
 
-    // --- Simulation helpers (no lambdas) ---
-
     private static boolean canTakeItem(ItemStack[] stacks, Item item, int needed) {
         int have = 0;
         for (ItemStack s : stacks) {
@@ -533,8 +554,6 @@ public final class BoundlessNetwork {
         return remaining <= 0;
     }
 
-    // --- Apply-to-inventory helpers ---
-
     private static boolean takeItem(Inventory inv, Item item, int toTake) {
         int remaining = toTake;
         int size = inv.getContainerSize();
@@ -576,6 +595,52 @@ public final class BoundlessNetwork {
         private static void openQuestBook() {
             net.minecraft.client.Minecraft.getInstance()
                     .setScreen(new net.revilodev.boundless.client.screen.StandaloneQuestBookScreen());
+        }
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static final class ClientQuestSync {
+        private static int expected = -1;
+        private static String[] parts = null;
+        private static int received = 0;
+
+        private static void reset() {
+            expected = -1;
+            parts = null;
+            received = 0;
+        }
+
+        private static void accept(SyncQuestsChunk p) {
+            if (p == null) return;
+
+            int total = p.totalParts();
+            int idx = p.index();
+
+            if (total <= 0 || total > 4096) { reset(); return; }
+            if (idx < 0 || idx >= total) { reset(); return; }
+
+            if (expected != total || parts == null) {
+                expected = total;
+                parts = new String[total];
+                received = 0;
+            }
+
+            if (parts[idx] == null) {
+                parts[idx] = p.part() == null ? "" : p.part();
+                received++;
+            }
+
+            if (received >= expected) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < expected; i++) {
+                    String s = parts[i];
+                    if (s == null) { reset(); return; }
+                    sb.append(s);
+                }
+                String json = sb.toString();
+                reset();
+                QuestData.applyNetworkJson(json);
+            }
         }
     }
 }

@@ -30,7 +30,7 @@ public final class BoundlessCommands {
                                     for (ServerPlayer p : server.getPlayerList().getPlayers()) {
                                         BoundlessNetwork.syncPlayer(p);
                                     }
-                                    ctx.getSource().sendSuccess(() -> Component.literal("Boundless quests reloaded."), true);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("Quests Reloaded."), true);
                                     return 1;
                                 })
                         )
@@ -46,7 +46,7 @@ public final class BoundlessCommands {
                                             ServerPlayer player = ctx.getSource().getPlayer();
                                             if (player != null) {
                                                 QuestTracker.reset(player);
-                                                ctx.getSource().sendSuccess(() -> Component.literal("All quests reset."), false);
+                                                ctx.getSource().sendSuccess(() -> Component.literal("Quests Progress Reset."), false);
                                             }
                                             return 1;
                                         })
@@ -74,7 +74,7 @@ public final class BoundlessCommands {
                                             QuestTracker.setServerStatus(player, id, null); // null = INCOMPLETE
                                             BoundlessNetwork.sendStatus(player, id, QuestTracker.Status.INCOMPLETE.name());
 
-                                            ctx.getSource().sendSuccess(() -> Component.literal("Quest Reset: " + id), false);
+                                            ctx.getSource().sendSuccess(() -> Component.literal(id + " Reset"), false);
                                             return 1;
                                         })
                                 )
@@ -99,7 +99,7 @@ public final class BoundlessCommands {
                                                 BoundlessNetwork.sendStatus(player, q.id, QuestTracker.Status.REDEEMED.name());
                                             }
 
-                                            ctx.getSource().sendSuccess(() -> Component.literal("All quests completed."), false);
+                                            ctx.getSource().sendSuccess(() -> Component.literal("All Quest Completed."), false);
                                             return 1;
                                         })
                                 )
@@ -118,7 +118,7 @@ public final class BoundlessCommands {
 
                                             var opt = QuestData.byIdServer(player.server, id);
                                             if (opt.isEmpty()) {
-                                                ctx.getSource().sendFailure(Component.literal("Invalid quest: " + id));
+                                                ctx.getSource().sendFailure(Component.literal(id + " Invalid"));
                                                 return 1;
                                             }
 
@@ -143,14 +143,14 @@ public final class BoundlessCommands {
                                 .then(Commands.literal("enable")
                                         .executes(ctx -> {
                                             QuestTracker.setServerToastsDisabled(false);
-                                            ctx.getSource().sendSuccess(() -> Component.literal("Boundless toasts: ENABLED"), true);
+                                            ctx.getSource().sendSuccess(() -> Component.literal("Quest Toasts Enabled"), true);
                                             return 1;
                                         })
                                 )
                                 .then(Commands.literal("disable")
                                         .executes(ctx -> {
                                             QuestTracker.setServerToastsDisabled(true);
-                                            ctx.getSource().sendSuccess(() -> Component.literal("Boundless toasts: DISABLED"), true);
+                                            ctx.getSource().sendSuccess(() -> Component.literal("Quest Toasts Disabled"), true);
                                             return 1;
                                         })
                                 )
@@ -158,8 +158,8 @@ public final class BoundlessCommands {
                                         .executes(ctx -> {
                                             boolean disabled = QuestTracker.serverToastsDisabled();
                                             ctx.getSource().sendSuccess(() ->
-                                                            Component.literal("Boundless toasts are currently: " +
-                                                                    (disabled ? "DISABLED" : "ENABLED")),
+                                                            Component.literal("Quest Toasts Are Currently: " +
+                                                                    (disabled ? "Disabled" : "Enabled")),
                                                     false);
                                             return 1;
                                         })
