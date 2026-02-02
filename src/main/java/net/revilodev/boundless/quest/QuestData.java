@@ -197,7 +197,6 @@ public final class QuestData {
         return Config.disabledCategories().contains(q.category);
     }
 
-    // ignores example.json and _example.json anywhere under quests/
     private static boolean shouldIgnoreQuestJson(ResourceLocation loc) {
         if (loc == null) return false;
         String p = loc.getPath();
@@ -227,7 +226,6 @@ public final class QuestData {
         QUESTS.clear();
         CATEGORIES.clear();
 
-        // categories (stack-aware)
         Map<ResourceLocation, List<Resource>> catStacks =
                 rm.listResourceStacks(PATH_CATEGORIES, rl -> rl.getPath().endsWith(".json"));
 
@@ -253,7 +251,6 @@ public final class QuestData {
             } catch (Exception ignored) {}
         }
 
-        // quests (stack-aware)
         Map<ResourceLocation, List<Resource>> questStacks =
                 rm.listResourceStacks(PATH_QUESTS, rl -> rl.getPath().endsWith(".json"));
 

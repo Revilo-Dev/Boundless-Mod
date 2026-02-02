@@ -1,3 +1,4 @@
+// src/main/java/net/revilodev/boundless/quest/QuestObjectiveState.java
 package net.revilodev.boundless.quest;
 
 import net.minecraft.core.HolderLookup;
@@ -14,13 +15,12 @@ public final class QuestObjectiveState extends SavedData {
     private final Map<String, Map<String, Integer>> itemProgressByPlayer = new HashMap<>();
     private final Map<String, Map<String, Boolean>> effectProgressByPlayer = new HashMap<>();
 
-    private QuestObjectiveState() {
-    }
+    private QuestObjectiveState() {}
 
     public static QuestObjectiveState get(ServerLevel level) {
         ServerLevel overworld = level.getServer().overworld();
         return overworld.getDataStorage().computeIfAbsent(
-                new SavedData.Factory<>(QuestObjectiveState::new, QuestObjectiveState::load),
+                new SavedData.Factory<>(QuestObjectiveState::new, QuestObjectiveState::load, null),
                 "boundless_quest_objectives"
         );
     }

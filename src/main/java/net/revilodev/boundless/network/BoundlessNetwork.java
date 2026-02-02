@@ -29,23 +29,24 @@ import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestProgressState;
 import net.revilodev.boundless.quest.QuestTracker;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class BoundlessNetwork {
 
     private static final String CHANNEL = "boundless";
-    private static final String VERSION = "1";
+    private static final String VERSION = "2";
     private static boolean REGISTERED = false;
 
     private static final Gson GSON = new GsonBuilder().setLenient().create();
-
     private static final Set<String> REDEEM_IN_FLIGHT = ConcurrentHashMap.newKeySet();
 
-    // keep below 32767 UTF-8 bytes for writeUtf; JSON is ASCII => chars ~= bytes
-    private static final int QUEST_JSON_CHUNK = 30000;
+    private static final AtomicInteger SYNC_ID_GEN = new AtomicInteger();
+    private static final int QUEST_CHUNK_BYTES = 60000;
 
     private BoundlessNetwork() {}
 
@@ -67,8 +68,6 @@ public final class BoundlessNetwork {
         r.playToClient(SyncClear.TYPE, SyncClear.CODEC, BoundlessNetwork::handleSyncClear);
         r.playToClient(Toast.TYPE, Toast.CODEC, BoundlessNetwork::handleToast);
         r.playToClient(OpenQuestBook.TYPE, OpenQuestBook.CODEC, BoundlessNetwork::handleOpenQuestBook);
-
-        // CHUNKED to avoid writeUtf 32767 limit
         r.playToClient(SyncQuestsChunk.TYPE, SyncQuestsChunk.CODEC, BoundlessNetwork::handleSyncQuestsChunk);
     }
 
@@ -159,16 +158,27 @@ public final class BoundlessNetwork {
         @Override public Type<OpenQuestBook> type() { return TYPE; }
     }
 
-    public record SyncQuestsChunk(int totalParts, int index, String part) implements CustomPacketPayload {
+    public record SyncQuestsChunk(int syncId, int totalParts, int index, byte[] part) implements CustomPacketPayload {
         public static final Type<SyncQuestsChunk> TYPE =
                 new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "sync_quests_chunk"));
         public static final StreamCodec<FriendlyByteBuf, SyncQuestsChunk> CODEC = StreamCodec.of(
                 (buf, p) -> {
+                    buf.writeVarInt(p.syncId);
                     buf.writeVarInt(p.totalParts);
                     buf.writeVarInt(p.index);
-                    buf.writeUtf(p.part);
+                    buf.writeVarInt(p.part.length);
+                    buf.writeBytes(p.part);
                 },
-                buf -> new SyncQuestsChunk(buf.readVarInt(), buf.readVarInt(), buf.readUtf())
+                buf -> {
+                    int syncId = buf.readVarInt();
+                    int total = buf.readVarInt();
+                    int idx = buf.readVarInt();
+                    int len = buf.readVarInt();
+                    if (len < 0 || len > 1_200_000) throw new IllegalArgumentException("chunk len " + len);
+                    byte[] bytes = new byte[len];
+                    buf.readBytes(bytes);
+                    return new SyncQuestsChunk(syncId, total, idx, bytes);
+                }
         );
         @Override public Type<SyncQuestsChunk> type() { return TYPE; }
     }
@@ -195,7 +205,7 @@ public final class BoundlessNetwork {
             if (q == null) continue;
             QuestTracker.Status st = QuestTracker.getStatus(q, p);
             if (st == QuestTracker.Status.REDEEMED || st == QuestTracker.Status.REJECTED) continue;
-            if (st == QuestTracker.Status.INCOMPLETE && QuestTracker.isReady(q, p)) {
+            if (QuestTracker.isReady(q, p) && st == QuestTracker.Status.INCOMPLETE) {
                 QuestTracker.setServerStatus(p, q.id, QuestTracker.Status.COMPLETED);
                 sendStatus(p, q.id, QuestTracker.Status.COMPLETED.name());
             }
@@ -301,18 +311,17 @@ public final class BoundlessNetwork {
 
     private static void sendQuestJsonChunked(ServerPlayer p, String json) {
         if (json == null) json = "";
-        int len = json.length();
-        if (len <= QUEST_JSON_CHUNK) {
-            PacketDistributor.sendToPlayer(p, new SyncQuestsChunk(1, 0, json));
-            return;
-        }
+        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
+        int syncId = SYNC_ID_GEN.incrementAndGet();
 
-        int total = (len + QUEST_JSON_CHUNK - 1) / QUEST_JSON_CHUNK;
+        int total = (bytes.length + QUEST_CHUNK_BYTES - 1) / QUEST_CHUNK_BYTES;
+        if (total <= 0) total = 1;
+
         for (int i = 0; i < total; i++) {
-            int start = i * QUEST_JSON_CHUNK;
-            int end = Math.min(len, start + QUEST_JSON_CHUNK);
-            String part = json.substring(start, end);
-            PacketDistributor.sendToPlayer(p, new SyncQuestsChunk(total, i, part));
+            int start = i * QUEST_CHUNK_BYTES;
+            int end = Math.min(bytes.length, start + QUEST_CHUNK_BYTES);
+            byte[] part = start >= end ? new byte[0] : java.util.Arrays.copyOfRange(bytes, start, end);
+            PacketDistributor.sendToPlayer(p, new SyncQuestsChunk(syncId, total, i, part));
         }
     }
 
@@ -601,11 +610,13 @@ public final class BoundlessNetwork {
 
     @OnlyIn(Dist.CLIENT)
     private static final class ClientQuestSync {
+        private static int activeSyncId = -1;
         private static int expected = -1;
-        private static String[] parts = null;
+        private static byte[][] parts = null;
         private static int received = 0;
 
         private static void reset() {
+            activeSyncId = -1;
             expected = -1;
             parts = null;
             received = 0;
@@ -614,31 +625,41 @@ public final class BoundlessNetwork {
         private static void accept(SyncQuestsChunk p) {
             if (p == null) return;
 
+            int sid = p.syncId();
             int total = p.totalParts();
             int idx = p.index();
 
-            if (total <= 0 || total > 4096) { reset(); return; }
+            if (total <= 0 || total > 65536) { reset(); return; }
             if (idx < 0 || idx >= total) { reset(); return; }
 
-            if (expected != total || parts == null) {
+            if (activeSyncId != sid || expected != total || parts == null) {
+                activeSyncId = sid;
                 expected = total;
-                parts = new String[total];
+                parts = new byte[total][];
                 received = 0;
             }
 
             if (parts[idx] == null) {
-                parts[idx] = p.part() == null ? "" : p.part();
+                parts[idx] = p.part() == null ? new byte[0] : p.part();
                 received++;
             }
 
             if (received >= expected) {
-                StringBuilder sb = new StringBuilder();
+                int totalLen = 0;
                 for (int i = 0; i < expected; i++) {
-                    String s = parts[i];
-                    if (s == null) { reset(); return; }
-                    sb.append(s);
+                    if (parts[i] == null) { reset(); return; }
+                    totalLen += parts[i].length;
                 }
-                String json = sb.toString();
+
+                byte[] all = new byte[totalLen];
+                int off = 0;
+                for (int i = 0; i < expected; i++) {
+                    byte[] b = parts[i];
+                    System.arraycopy(b, 0, all, off, b.length);
+                    off += b.length;
+                }
+
+                String json = new String(all, StandardCharsets.UTF_8);
                 reset();
                 QuestData.applyNetworkJson(json);
             }

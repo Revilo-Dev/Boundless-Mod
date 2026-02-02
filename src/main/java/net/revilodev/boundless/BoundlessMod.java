@@ -51,6 +51,8 @@ public final class BoundlessMod {
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.addListener(QuestEvents::onPlayerTick);
         NeoForge.EVENT_BUS.addListener(ServerQuestEvents::onLogout);
+        NeoForge.EVENT_BUS.addListener(net.revilodev.boundless.quest.ServerQuestTicker::onPlayerTick);
+
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
@@ -66,6 +68,7 @@ public final class BoundlessMod {
         NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLogin);
         NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLogout);
         NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLevelUnload);
+
     }
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {

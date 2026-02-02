@@ -1,3 +1,4 @@
+// src/main/java/net/revilodev/boundless/quest/QuestProgressState.java
 package net.revilodev.boundless.quest;
 
 import net.minecraft.core.HolderLookup;
@@ -29,11 +30,10 @@ public final class QuestProgressState extends SavedData {
             CompoundTag inner = tag.getCompound(playerKey);
             Map<String, String> m = new HashMap<>();
             for (String questId : inner.getAllKeys()) {
-                m.put(questId, inner.getString(questId));
+                String v = inner.getString(questId);
+                if (v != null && !v.isBlank()) m.put(questId, v);
             }
-            if (!m.isEmpty()) {
-                s.byPlayer.put(playerKey, m);
-            }
+            if (!m.isEmpty()) s.byPlayer.put(playerKey, m);
         }
         return s;
     }
@@ -43,7 +43,7 @@ public final class QuestProgressState extends SavedData {
         for (Map.Entry<String, Map<String, String>> e : byPlayer.entrySet()) {
             CompoundTag inner = new CompoundTag();
             for (Map.Entry<String, String> q : e.getValue().entrySet()) {
-                inner.putString(q.getKey(), q.getValue());
+                if (q.getValue() != null && !q.getValue().isBlank()) inner.putString(q.getKey(), q.getValue());
             }
             tag.put(e.getKey(), inner);
         }
@@ -78,20 +78,7 @@ public final class QuestProgressState extends SavedData {
     }
 
     public void clear(UUID player) {
-        String key = player.toString();
-        Map<String, String> m = byPlayer.get(key);
-        if (m == null) return;
-
-        m.entrySet().removeIf(e ->
-                e.getValue().equals("REDEEMED") ||
-                        e.getValue().equals("REJECTED")
-        );
-
-        if (m.isEmpty()) {
-            byPlayer.remove(key);
-        }
-
+        byPlayer.remove(player.toString());
         setDirty();
     }
-
 }

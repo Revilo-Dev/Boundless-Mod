@@ -1,3 +1,4 @@
+// src/main/java/net/revilodev/boundless/quest/QuestTracker.java
 package net.revilodev.boundless.quest;
 
 import com.google.gson.Gson;
@@ -30,9 +31,7 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.*;
 
 import static net.revilodev.boundless.network.BoundlessNetwork.sendToastLocal;
 
@@ -50,28 +49,41 @@ public final class QuestTracker {
     private static final Map<String, Boolean> CLIENT_EFFECT_PROGRESS = new HashMap<>();
 
     private static boolean SERVER_TOASTS_DISABLED = false;
-
     private static String ACTIVE_KEY = null;
 
-    private QuestTracker() {
-    }
+    private QuestTracker() {}
 
     public static int getPermanentItemProgress(String key, int current, int required) {
+        int req = Math.max(0, required);
+        int cur = Math.max(0, current);
+
+        if (req <= 0) return 0;
+
         int prev = CLIENT_ITEM_PROGRESS.getOrDefault(key, 0);
-        int now = Math.max(prev, Math.min(current, required));
+        int now = Math.max(prev, Math.min(cur, req));
+
         if (FMLEnvironment.dist == Dist.CLIENT && prev > 0) {
-            now = ClientOnly.adjustItemProgress(key, current, required, prev, now);
+            now = ClientOnly.adjustItemProgress(key, cur, req, prev, now);
         }
+
         if (now <= 0) {
             CLIENT_ITEM_PROGRESS.remove(key);
             return 0;
         }
+
         CLIENT_ITEM_PROGRESS.put(key, now);
         return now;
     }
 
+    private static boolean getPermanentEffectProgress(String key, boolean hasEffect) {
+        boolean prev = CLIENT_EFFECT_PROGRESS.getOrDefault(key, false);
+        boolean now = prev || hasEffect;
+        if (now) CLIENT_EFFECT_PROGRESS.put(key, true);
+        return now;
+    }
+
     private static String sanitize(String s) {
-        return s.replaceAll("[^a-zA-Z0-9._-]", "_");
+        return s == null ? "default" : s.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 
     private static String computeClientKey() {
@@ -84,44 +96,27 @@ public final class QuestTracker {
         return WORLD_STATES.computeIfAbsent(key, k -> new LinkedHashMap<>());
     }
 
-    private static Path clientSavePath(String key) {
-        return ClientOnly.clientSavePath(key);
-    }
-
-    private static void loadClientState(String key) {
-        ClientOnly.loadClientState(key);
-    }
-
-    private static void saveClientState(String key) {
-        ClientOnly.saveClientState(key);
-    }
-
     public static void forceSave() {
         if (FMLEnvironment.dist != Dist.CLIENT) return;
         try {
             if (ACTIVE_KEY == null) ensureClientStateLoaded(null);
-        } catch (Throwable ignored) {
-        }
-        if (ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
+        } catch (Throwable ignored) {}
+        if (ACTIVE_KEY != null) ClientOnly.saveClientState(ACTIVE_KEY);
     }
 
     private static void ensureClientStateLoaded(Player player) {
         if (FMLEnvironment.dist != Dist.CLIENT) return;
         String key = computeClientKey();
         if (!key.equals(ACTIVE_KEY)) {
-            if (ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
+            if (ACTIVE_KEY != null) ClientOnly.saveClientState(ACTIVE_KEY);
             ACTIVE_KEY = key;
-            loadClientState(key);
+            ClientOnly.loadClientState(key);
         }
     }
 
     private static Status decodeStatus(String raw) {
         if (raw == null || raw.isBlank()) return Status.INCOMPLETE;
-        try {
-            return Status.valueOf(raw);
-        } catch (Exception ignored) {
-            return Status.INCOMPLETE;
-        }
+        try { return Status.valueOf(raw); } catch (Exception ignored) { return Status.INCOMPLETE; }
     }
 
     private static Status getServerStatus(ServerPlayer player, String questId) {
@@ -151,7 +146,7 @@ public final class QuestTracker {
     public static boolean dependenciesMet(QuestData.Quest q, Player player) {
         if (q == null || q.dependencies.isEmpty()) return true;
         for (String depId : q.dependencies) {
-            var dep = QuestData.byId(depId).orElse(null);
+            QuestData.Quest dep = QuestData.byId(depId).orElse(null);
             if (dep == null) return false;
             if (getStatus(dep, player) != Status.REDEEMED) return false;
         }
@@ -165,13 +160,38 @@ public final class QuestTracker {
         return st != Status.REDEEMED && st != Status.REJECTED;
     }
 
+    public static boolean hasAnyCompleted(Player player) {
+        if (player != null && player.level().isClientSide) ensureClientStateLoaded(player);
+        QuestData.loadClient(false);
+        for (QuestData.Quest q : QuestData.all()) {
+            if (q == null) continue;
+            if (getStatus(q, player) == Status.COMPLETED) return true;
+        }
+        return false;
+    }
+
+    public static boolean hasCompleted(Player player, String questId) {
+        return getStatus(questId, player) == Status.REDEEMED;
+    }
+
+    private static boolean isSubmissionQuestType(QuestData.Quest q) {
+        if (q == null || q.type == null) return false;
+        return "submission".equalsIgnoreCase(q.type) || "submit".equalsIgnoreCase(q.type);
+    }
+
+    private static boolean isSubmitTarget(QuestData.Quest q, QuestData.Target t) {
+        if (t == null) return false;
+        if (t.isSubmit()) return true;
+        return isSubmissionQuestType(q) && t.isItem();
+    }
+
     public static boolean isReady(QuestData.Quest q, Player player) {
         if (player == null || q == null || q.completion == null) return false;
 
         if (q.completion.targets != null && !q.completion.targets.isEmpty()) {
             boolean hasItemTargets = false;
             for (QuestData.Target t : q.completion.targets) {
-                if (t.isItem()) {
+                if (t != null && (t.isItem() || t.isSubmit())) {
                     hasItemTargets = true;
                     break;
                 }
@@ -182,6 +202,14 @@ public final class QuestTracker {
         if (!dependenciesMet(q, player)) return false;
 
         for (QuestData.Target t : q.completion.targets) {
+            if (t == null) continue;
+
+            if (isSubmitTarget(q, t)) {
+                int cur = getCountInInventory(t.id, player);
+                if (cur < t.count) return false;
+                continue;
+            }
+
             if (t.isItem()) {
                 String key = q.id + ":" + t.id;
                 int cur = getCountInInventory(t.id, player);
@@ -189,7 +217,9 @@ public final class QuestTracker {
                 if (prog < t.count) return false;
                 continue;
             }
+
             if (t.isEntity() && getKillCount(player, t.id) < t.count) return false;
+
             if (t.isEffect()) {
                 String key = q.id + ":effect:" + t.id;
                 boolean hasNow = hasEffect(player, t.id);
@@ -197,6 +227,7 @@ public final class QuestTracker {
                 if (!done) return false;
                 continue;
             }
+
             if (t.isAdvancement() && !hasAdvancement(player, t.id)) return false;
             if (t.isStat() && getStatCount(player, t.id) < t.count) return false;
         }
@@ -233,42 +264,36 @@ public final class QuestTracker {
                 };
             }
             if (player.level().isClientSide) return CLIENT_STATS.getOrDefault(statId, 0);
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
         return 0;
-    }
-
-    public static boolean hasAnyCompleted(Player player) {
-        if (player != null && player.level().isClientSide) ensureClientStateLoaded(player);
-        for (QuestData.Quest q : QuestData.all()) {
-            if (getStatus(q, player) == Status.COMPLETED) return true;
-        }
-        return false;
-    }
-
-    public static boolean hasCompleted(Player player, String questId) {
-        return getStatus(questId, player) == Status.REDEEMED;
     }
 
     public static int getCountInInventory(String id, Player player) {
         if (player == null || id == null || id.isBlank()) return 0;
         boolean isTagSyntax = id.startsWith("#");
         String key = isTagSyntax ? id.substring(1) : id;
-        ResourceLocation rl = ResourceLocation.parse(key);
+
+        ResourceLocation rl;
+        try { rl = ResourceLocation.parse(key); } catch (Exception e) { return 0; }
+
         Item direct = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
         int found = 0;
+
         if (isTagSyntax || direct == null) {
             var itemTag = net.minecraft.tags.TagKey.create(Registries.ITEM, rl);
             for (ItemStack s : player.getInventory().items) if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
             if (found == 0) {
                 var blockTag = net.minecraft.tags.TagKey.create(Registries.BLOCK, rl);
-                for (ItemStack s : player.getInventory().items)
-                    if (!s.isEmpty() && s.getItem() instanceof BlockItem bi && bi.getBlock().builtInRegistryHolder().is(blockTag))
+                for (ItemStack s : player.getInventory().items) {
+                    if (!s.isEmpty() && s.getItem() instanceof BlockItem bi && bi.getBlock().builtInRegistryHolder().is(blockTag)) {
                         found += s.getCount();
+                    }
+                }
             }
         } else {
             for (ItemStack s : player.getInventory().items) if (!s.isEmpty() && s.is(direct)) found += s.getCount();
         }
+
         return found;
     }
 
@@ -281,7 +306,8 @@ public final class QuestTracker {
     }
 
     public static boolean hasEffect(Player player, String effectId) {
-        ResourceLocation rl = ResourceLocation.parse(effectId);
+        ResourceLocation rl;
+        try { rl = ResourceLocation.parse(effectId); } catch (Exception e) { return false; }
         Holder<MobEffect> opt = BuiltInRegistries.MOB_EFFECT.getHolder(rl).orElse(null);
         return opt != null && player.hasEffect(opt);
     }
@@ -290,11 +316,7 @@ public final class QuestTracker {
         if (player == null || advId == null || advId.isBlank()) return false;
 
         final ResourceLocation rl;
-        try {
-            rl = ResourceLocation.parse(advId);
-        } catch (Exception e) {
-            return false;
-        }
+        try { rl = ResourceLocation.parse(advId); } catch (Exception e) { return false; }
 
         if (player instanceof ServerPlayer sp) return hasAdvancementServer(sp, rl);
 
@@ -308,8 +330,7 @@ public final class QuestTracker {
                     ServerPlayer sp = srv.getPlayerList().getPlayer(player.getUUID());
                     if (sp != null) return hasAdvancementServer(sp, rl);
                 }
-            } catch (Throwable ignored) {
-            }
+            } catch (Throwable ignored) {}
 
             return CLIENT_ADV_DONE.getOrDefault(rl.toString(), false);
         }
@@ -331,11 +352,9 @@ public final class QuestTracker {
     public static boolean serverRedeem(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return false;
 
-        // Hard guard: never run rewards twice
         Status current = getServerStatus(player, q.id);
         if (current == Status.REDEEMED || current == Status.REJECTED) return false;
 
-        // Items
         if (q.rewards != null && q.rewards.items != null) {
             for (QuestData.RewardEntry r : q.rewards.items) {
                 if (r == null || r.item == null || r.item.isBlank()) continue;
@@ -345,53 +364,36 @@ public final class QuestTracker {
             }
         }
 
-        // Commands + Functions (execute exactly once; dedupe by normalized command string)
         if (q.rewards != null) {
             CommandSourceStack css = player.createCommandSourceStack().withPermission(4);
 
-            java.util.LinkedHashSet<String> toRun = new java.util.LinkedHashSet<>();
+            LinkedHashSet<String> toRun = new LinkedHashSet<>();
 
-            // commands[]
             if (q.rewards.commands != null) {
                 for (QuestData.CommandReward cr : q.rewards.commands) {
                     if (cr == null || cr.command == null) continue;
                     String cmd = cr.command.trim();
                     if (cmd.isBlank()) continue;
-
-                    // normalize
                     if (cmd.startsWith("/")) cmd = cmd.substring(1).trim();
-
-                    // if user wrote "/function x:y" in commands, normalize it the same way
-                    if (cmd.regionMatches(true, 0, "function", 0, "function".length())) {
-                        cmd = cmd.trim();
-                    }
-
                     toRun.add(cmd);
                 }
             }
 
-            // functions[] => always run as "function <id>"
             if (q.rewards.functions != null) {
                 for (QuestData.FunctionReward fr : q.rewards.functions) {
                     if (fr == null || fr.function == null) continue;
                     String fn = fr.function.trim();
                     if (fn.isBlank()) continue;
-
-                    // normalize input in case user writes "function x:y" or "/function x:y"
                     if (fn.startsWith("/")) fn = fn.substring(1).trim();
                     if (fn.regionMatches(true, 0, "function", 0, "function".length())) {
                         fn = fn.substring("function".length()).trim();
                     }
-
-                    String cmd = "function " + fn;
-                    toRun.add(cmd);
+                    toRun.add("function " + fn);
                 }
             }
 
             for (String cmd : toRun) {
-                try {
-                    player.server.getCommands().performPrefixedCommand(css, cmd);
-                } catch (Throwable ignored) {}
+                try { player.server.getCommands().performPrefixedCommand(css, cmd); } catch (Throwable ignored) {}
             }
         }
 
@@ -399,8 +401,6 @@ public final class QuestTracker {
         setServerStatus(player, q.id, Status.REDEEMED);
         return true;
     }
-
-
 
     public static void forceCompleteWithoutRewards(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return;
@@ -431,24 +431,14 @@ public final class QuestTracker {
     public static void clientSetStatus(String questId, Status st) {
         if (questId == null || st == null) return;
         if (FMLEnvironment.dist == Dist.CLIENT) {
-            try {
-                ensureClientStateLoaded(null);
-            } catch (Throwable ignored) {
-            }
+            try { ensureClientStateLoaded(null); } catch (Throwable ignored) {}
         }
         activeStateMap().put(questId, st);
-        if (FMLEnvironment.dist == Dist.CLIENT && ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
+        if (FMLEnvironment.dist == Dist.CLIENT && ACTIVE_KEY != null) ClientOnly.saveClientState(ACTIVE_KEY);
     }
 
     public static void clientSetKill(String entityId, int count) {
         CLIENT_KILLS.put(entityId, Math.max(0, count));
-    }
-
-    private static boolean getPermanentEffectProgress(String key, boolean hasEffect) {
-        boolean prev = CLIENT_EFFECT_PROGRESS.getOrDefault(key, false);
-        boolean now = prev || hasEffect;
-        if (now) CLIENT_EFFECT_PROGRESS.put(key, true);
-        return now;
     }
 
     public static void clientClearAll() {
@@ -458,29 +448,30 @@ public final class QuestTracker {
         CLIENT_ITEM_PROGRESS.clear();
         CLIENT_EFFECT_PROGRESS.clear();
         if (FMLEnvironment.dist == Dist.CLIENT) {
-            try {
-                ensureClientStateLoaded(null);
-            } catch (Throwable ignored) {
-            }
+            try { ensureClientStateLoaded(null); } catch (Throwable ignored) {}
             activeStateMap().clear();
-            if (ACTIVE_KEY != null) saveClientState(ACTIVE_KEY);
+            if (ACTIVE_KEY != null) ClientOnly.saveClientState(ACTIVE_KEY);
         }
     }
 
     public static void tickPlayer(Player player) {
         if (player == null || !player.level().isClientSide) return;
+
         ensureClientStateLoaded(player);
         QuestData.loadClient(false);
+
         for (QuestData.Quest q : QuestData.all()) {
             if (q == null) continue;
+
             Status cur = getStatus(q, player);
             if (cur == Status.REDEEMED || cur == Status.REJECTED) continue;
+
             boolean ready = dependenciesMet(q, player) && isReady(q, player);
 
             boolean hasItemTargets = false;
             if (q.completion != null && q.completion.targets != null) {
                 for (QuestData.Target t : q.completion.targets) {
-                    if (t.isItem()) {
+                    if (t != null && (t.isItem() || t.isSubmit())) {
                         hasItemTargets = true;
                         break;
                     }
@@ -489,7 +480,6 @@ public final class QuestTracker {
 
             if (ready && cur == Status.INCOMPLETE) {
                 clientSetStatus(q.id, Status.COMPLETED);
-                if (player instanceof ServerPlayer sp) setServerStatus(sp, q.id, Status.COMPLETED);
                 if (!QuestTracker.serverToastsDisabled()) sendToastLocal(q.id);
                 continue;
             }
@@ -497,6 +487,45 @@ public final class QuestTracker {
             if (hasItemTargets && cur == Status.COMPLETED) continue;
 
             if (!ready && cur == Status.COMPLETED) clientSetStatus(q.id, Status.INCOMPLETE);
+        }
+    }
+
+    public static void serverTickPlayer(ServerPlayer sp) {
+        if (sp == null) return;
+
+        QuestData.allServer(sp.server);
+
+        for (QuestData.Quest q : QuestData.allServer(sp.server)) {
+            if (q == null) continue;
+            if (Config.disabledCategories().contains(q.category)) continue;
+
+            Status cur = getServerStatus(sp, q.id);
+            if (cur == Status.REDEEMED || cur == Status.REJECTED) continue;
+
+            boolean ready = dependenciesMet(q, sp) && isReady(q, sp);
+
+            boolean hasItemTargets = false;
+            if (q.completion != null && q.completion.targets != null) {
+                for (QuestData.Target t : q.completion.targets) {
+                    if (t != null && (t.isItem() || t.isSubmit())) {
+                        hasItemTargets = true;
+                        break;
+                    }
+                }
+            }
+
+            if (ready && cur == Status.INCOMPLETE) {
+                setServerStatus(sp, q.id, Status.COMPLETED);
+                BoundlessNetwork.sendStatus(sp, q.id, Status.COMPLETED.name());
+                continue;
+            }
+
+            if (hasItemTargets && cur == Status.COMPLETED) continue;
+
+            if (!ready && cur == Status.COMPLETED) {
+                setServerStatus(sp, q.id, Status.INCOMPLETE);
+                BoundlessNetwork.sendStatus(sp, q.id, Status.INCOMPLETE.name());
+            }
         }
     }
 
@@ -510,6 +539,7 @@ public final class QuestTracker {
 
     @OnlyIn(Dist.CLIENT)
     private static final class ClientOnly {
+
         private static int adjustItemProgress(String key, int current, int required, int prev, int now) {
             try {
                 var mc = net.minecraft.client.Minecraft.getInstance();
@@ -520,8 +550,7 @@ public final class QuestTracker {
                         if (getStatus(questId, mc.player) == Status.INCOMPLETE) return Math.min(current, required);
                     }
                 }
-            } catch (Throwable ignored) {
-            }
+            } catch (Throwable ignored) {}
             return now;
         }
 
@@ -539,8 +568,7 @@ public final class QuestTracker {
                     if (ip == null || ip.isBlank()) ip = "multiplayer";
                     return "mp_" + sanitize(ip);
                 }
-            } catch (Throwable ignored) {
-            }
+            } catch (Throwable ignored) {}
             return "default";
         }
 
@@ -563,12 +591,10 @@ public final class QuestTracker {
                         try {
                             Status st = Status.valueOf(obj.get(qid).getAsString());
                             map.put(qid, st);
-                        } catch (Exception ignored) {
-                        }
+                        } catch (Exception ignored) {}
                     }
                 }
-            } catch (Throwable ignored) {
-            }
+            } catch (Throwable ignored) {}
         }
 
         private static void saveClientState(String key) {
@@ -581,8 +607,7 @@ public final class QuestTracker {
                 try (BufferedWriter w = new BufferedWriter(new FileWriter(p.toFile()))) {
                     GSON.toJson(obj, w);
                 }
-            } catch (Throwable ignored) {
-            }
+            } catch (Throwable ignored) {}
         }
     }
 }
