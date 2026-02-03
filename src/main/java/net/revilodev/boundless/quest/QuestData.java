@@ -1,4 +1,3 @@
-// src/main/java/net/revilodev/boundless/quest/QuestData.java
 package net.revilodev.boundless.quest;
 
 import com.google.gson.*;
@@ -31,9 +30,14 @@ public final class QuestData {
     private static final Gson GSON = new GsonBuilder().setLenient().create();
     private static final String PATH_QUESTS = "quests";
     private static final String PATH_CATEGORIES = "quests/categories";
+    private static final String PATH_SUBCATEGORIES = "quests/subcategories";
+    private static final String PATH_SUBCATEGORIES_ALT = "quests/sub_categories";
+    private static final String PATH_SUBCATEGORY = "quests/subcategory";
+    private static final String PATH_SUBCATEGORY_ALT = "quests/sub-category";
 
     private static final Map<String, Quest> QUESTS = new LinkedHashMap<>();
     private static final Map<String, Category> CATEGORIES = new LinkedHashMap<>();
+    private static final Map<String, SubCategory> SUBCATEGORIES = new LinkedHashMap<>();
     private static boolean loadedClient = false;
     private static boolean loadedServer = false;
 
@@ -50,10 +54,13 @@ public final class QuestData {
         public final String type;
         public final Completion completion;
         public final String category;
+        public final String subCategory;
+        public final String sourcePath;
 
         public Quest(String id, String name, String icon, String description,
                      List<String> dependencies, boolean optional, Rewards rewards,
-                     String type, Completion completion, String category) {
+                     String type, Completion completion, String category,
+                     String subCategory, String sourcePath) {
 
             this.id = Objects.requireNonNull(id);
             this.name = name == null ? id : name;
@@ -65,6 +72,8 @@ public final class QuestData {
             this.type = type == null ? "collection" : type;
             this.completion = completion;
             this.category = (category == null || category.isBlank()) ? "misc" : category;
+            this.subCategory = subCategory == null ? "" : subCategory;
+            this.sourcePath = sourcePath == null ? "" : sourcePath;
         }
 
         public Optional<Item> iconItem() {
@@ -74,6 +83,19 @@ public final class QuestData {
             } catch (Exception ignored) {
                 return Optional.empty();
             }
+        }
+
+        public String sourceSortKey() {
+            if (sourcePath != null && !sourcePath.isBlank()) {
+                return sourcePath.toLowerCase(Locale.ROOT);
+            }
+            return id.toLowerCase(Locale.ROOT);
+        }
+
+        public String sourceFileName() {
+            if (sourcePath == null || sourcePath.isBlank()) return id;
+            int lastSlash = sourcePath.lastIndexOf('/');
+            return lastSlash >= 0 ? sourcePath.substring(lastSlash + 1) : sourcePath;
         }
     }
 
@@ -193,6 +215,48 @@ public final class QuestData {
         }
     }
 
+    public static final class SubCategory {
+        public final String id;
+        public final String category;
+        public final String icon;
+        public final String name;
+        public final int order;
+        public final boolean defaultOpen;
+        public final List<String> quests;
+        public final String sourcePath;
+
+        public SubCategory(String id, String category, String icon, String name,
+                           int order, boolean defaultOpen, List<String> quests, String sourcePath) {
+            this.id = id == null ? "" : id;
+            this.category = category == null ? "" : category;
+            this.icon = icon == null || icon.isBlank() ? "minecraft:book" : icon;
+            this.name = name == null || name.isBlank() ? this.id : name;
+            this.order = order;
+            this.defaultOpen = defaultOpen;
+            this.quests = quests == null ? List.of() : List.copyOf(quests);
+            this.sourcePath = sourcePath == null ? "" : sourcePath;
+        }
+
+        public Optional<Item> iconItem() {
+            try {
+                ResourceLocation rl = ResourceLocation.parse(icon);
+                return Optional.ofNullable(BuiltInRegistries.ITEM.get(rl));
+            } catch (Exception ignored) {
+                return Optional.empty();
+            }
+        }
+
+        public String sourceSortKey() {
+            if (sourcePath != null && !sourcePath.isBlank()) {
+                String p = sourcePath;
+                int lastSlash = p.lastIndexOf('/');
+                String name = lastSlash >= 0 ? p.substring(lastSlash + 1) : p;
+                return name.toLowerCase(Locale.ROOT);
+            }
+            return id.toLowerCase(Locale.ROOT);
+        }
+    }
+
     private static boolean isQuestDisabled(Quest q) {
         return Config.disabledCategories().contains(q.category);
     }
@@ -213,6 +277,35 @@ public final class QuestData {
         return false;
     }
 
+    private static String subKey(String category, String subId) {
+        String c = category == null ? "" : category;
+        String s = subId == null ? "" : subId;
+        return c + "::" + s;
+    }
+
+    private static boolean isSubCategoryPath(String path) {
+        if (path == null || path.isBlank()) return false;
+        String p = path.toLowerCase(Locale.ROOT);
+        return p.contains("/sub-category/")
+                || p.contains("/subcategories/")
+                || p.contains("/sub_category/")
+                || p.contains("/subcategory/");
+    }
+
+    private static String prettifyId(String raw) {
+        if (raw == null || raw.isBlank()) return "";
+        String clean = raw.replace('_', ' ').replace('-', ' ').trim();
+        String[] parts = clean.split("\\s+");
+        StringBuilder out = new StringBuilder();
+        for (String part : parts) {
+            if (part.isEmpty()) continue;
+            if (out.length() > 0) out.append(' ');
+            out.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) out.append(part.substring(1));
+        }
+        return out.toString();
+    }
+
     public static void forceReloadAll(MinecraftServer server) {
         loadedClient = false;
         loadedServer = false;
@@ -225,6 +318,7 @@ public final class QuestData {
 
         QUESTS.clear();
         CATEGORIES.clear();
+        SUBCATEGORIES.clear();
 
         Map<ResourceLocation, List<Resource>> catStacks =
                 rm.listResourceStacks(PATH_CATEGORIES, rl -> rl.getPath().endsWith(".json"));
@@ -251,12 +345,19 @@ public final class QuestData {
             } catch (Exception ignored) {}
         }
 
+        loadSubCategoriesFromManager(rm, PATH_SUBCATEGORIES);
+        loadSubCategoriesFromManager(rm, PATH_SUBCATEGORIES_ALT);
+        loadSubCategoriesFromManager(rm, PATH_SUBCATEGORY);
+        loadSubCategoriesFromManager(rm, PATH_SUBCATEGORY_ALT);
+
         Map<ResourceLocation, List<Resource>> questStacks =
                 rm.listResourceStacks(PATH_QUESTS, rl -> rl.getPath().endsWith(".json"));
 
         for (var entry : questStacks.entrySet()) {
             ResourceLocation loc = entry.getKey();
-            if (loc.getPath().contains("/categories/")) continue;
+            String path = loc.getPath();
+            if (path.contains("/categories/")) continue;
+            if (isSubCategoryPath(path)) continue;
             if (shouldIgnoreQuestJson(loc)) continue;
 
             List<Resource> stack = entry.getValue();
@@ -276,6 +377,8 @@ public final class QuestData {
             scanSelectedResourcePacksData();
         }
 
+        ensureSubCategoriesFromQuests();
+
         if (!CATEGORIES.containsKey("all")) {
             CATEGORIES.put("all", new Category("all", "minecraft:book", "All",
                     Integer.MIN_VALUE, false, ""));
@@ -292,6 +395,10 @@ public final class QuestData {
                     Set<String> namespaces = res.getNamespaces(PackType.SERVER_DATA);
                     for (String ns : namespaces) {
                         listDataCategoriesFromPack(res, ns);
+                        listDataSubCategoriesFromPack(res, ns, PATH_SUBCATEGORIES);
+                        listDataSubCategoriesFromPack(res, ns, PATH_SUBCATEGORIES_ALT);
+                        listDataSubCategoriesFromPack(res, ns, PATH_SUBCATEGORY);
+                        listDataSubCategoriesFromPack(res, ns, PATH_SUBCATEGORY_ALT);
                         listDataQuestsFromPack(res, ns);
                     }
                 } catch (Throwable ignored) {}
@@ -323,11 +430,64 @@ public final class QuestData {
         return count[0];
     }
 
+    private static void loadSubCategoriesFromManager(ResourceManager rm, String path) {
+        Map<ResourceLocation, List<Resource>> subStacks =
+                rm.listResourceStacks(path, rl -> rl.getPath().endsWith(".json"));
+
+        for (var entry : subStacks.entrySet()) {
+            ResourceLocation loc = entry.getKey();
+            List<Resource> stack = entry.getValue();
+            if (stack == null || stack.isEmpty()) continue;
+
+            Resource top = stack.get(stack.size() - 1);
+            try (Reader raw = top.openAsReader(); Reader reader = new BufferedReader(raw)) {
+                JsonObject obj = safeObject(reader);
+                if (obj == null) continue;
+                readSubCategoryObject(obj, loc == null ? "" : loc.getPath());
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private static int listDataSubCategoriesFromPack(PackResources res, String ns, String path) {
+        final int[] count = {0};
+        res.listResources(PackType.SERVER_DATA, ns, path, (loc, supplier) -> {
+            if (!loc.getPath().endsWith(".json")) return;
+            try (Reader r = supplierToReader(supplier)) {
+                JsonObject obj = safeObject(r);
+                if (obj == null) return;
+                if (readSubCategoryObject(obj, loc.getPath())) count[0]++;
+            } catch (Exception ignored) {}
+        });
+        return count[0];
+    }
+
+    private static boolean readSubCategoryObject(JsonObject obj, String sourcePath) {
+        String id = optString(obj, "id");
+        if (id == null || id.isBlank()) return false;
+
+        String cat = optString(obj, "category");
+        if (cat == null) cat = "";
+
+        String icon = optString(obj, "icon");
+        String name = optString(obj, "name");
+        int order = parseIntFlexible(obj, "order", 0);
+        boolean defaultOpen = parseBoolFlexible(obj, "default_open", true);
+        if (obj.has("defaultOpen")) {
+            defaultOpen = parseBoolFlexible(obj, "defaultOpen", defaultOpen);
+        }
+
+        String key = subKey(cat, id);
+        SUBCATEGORIES.put(key, new SubCategory(id, cat, icon, name, order, defaultOpen, List.of(), sourcePath));
+        return true;
+    }
+
     private static int listDataQuestsFromPack(PackResources res, String ns) {
         final int[] count = {0};
         res.listResources(PackType.SERVER_DATA, ns, PATH_QUESTS, (loc, supplier) -> {
             if (!loc.getPath().endsWith(".json")) return;
-            if (loc.getPath().contains("/categories/")) return;
+            String path = loc.getPath();
+            if (path.contains("/categories/")) return;
+            if (isSubCategoryPath(path)) return;
             if (shouldIgnoreQuestJson(loc)) return;
 
             try (Reader r = supplierToReader(supplier)) {
@@ -342,6 +502,24 @@ public final class QuestData {
             } catch (Exception ignored) {}
         });
         return count[0];
+    }
+
+    private static void ensureSubCategoriesFromQuests() {
+        for (Quest q : QUESTS.values()) {
+            if (q == null || q.subCategory == null || q.subCategory.isBlank()) continue;
+
+            String cat = q.category;
+            String subId = q.subCategory;
+            String key = subKey(cat, subId);
+
+            String wildcardKey = subKey("", subId);
+            if (!SUBCATEGORIES.containsKey(key) && !SUBCATEGORIES.containsKey(wildcardKey)) {
+                Category c = CATEGORIES.get(cat);
+                String icon = c != null ? c.icon : q.icon;
+                String name = prettifyId(subId);
+                SUBCATEGORIES.put(key, new SubCategory(subId, cat, icon, name, 0, true, List.of(), ""));
+            }
+        }
     }
 
     private static Reader supplierToReader(IoSupplier<java.io.InputStream> supplier) throws IOException {
@@ -484,6 +662,71 @@ public final class QuestData {
         return list;
     }
 
+    public static List<SubCategory> subCategoriesAllOrdered() {
+        if (!loadedClient) loadClient(false);
+        ensureSubCategoriesFromQuests();
+        return buildSubCategoryList(null);
+    }
+
+    public static synchronized List<SubCategory> subCategoriesAllOrderedServer(MinecraftServer server) {
+        loadServer(server, false);
+        ensureSubCategoriesFromQuests();
+        return buildSubCategoryList(null);
+    }
+
+    public static List<SubCategory> subCategoriesForCategory(String categoryId) {
+        if (!loadedClient) loadClient(false);
+        ensureSubCategoriesFromQuests();
+        return buildSubCategoryList(categoryId);
+    }
+
+    private static List<SubCategory> buildSubCategoryList(String categoryFilter) {
+        Map<String, List<Quest>> grouped = new LinkedHashMap<>();
+        for (Quest q : QUESTS.values()) {
+            if (q == null || q.subCategory == null || q.subCategory.isBlank()) continue;
+            if (categoryFilter != null && !q.category.equalsIgnoreCase(categoryFilter)) continue;
+
+            String key = subKey(q.category, q.subCategory);
+            grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(q);
+        }
+
+        List<SubCategory> out = new ArrayList<>();
+        for (var entry : grouped.entrySet()) {
+            String key = entry.getKey();
+            List<Quest> qs = entry.getValue();
+            if (qs == null || qs.isEmpty()) continue;
+
+            qs.sort(Comparator.comparing(Quest::sourceSortKey));
+
+            SubCategory meta = SUBCATEGORIES.get(key);
+            if (meta == null) meta = SUBCATEGORIES.get(subKey("", qs.get(0).subCategory));
+            String cat = qs.get(0).category;
+            String id = meta != null ? meta.id : qs.get(0).subCategory;
+            String icon = meta != null ? meta.icon : qs.get(0).icon;
+            String name = meta != null ? meta.name : prettifyId(id);
+            int order = meta != null ? meta.order : 0;
+            boolean defaultOpen = meta != null ? meta.defaultOpen : true;
+            String sourcePath = meta != null ? meta.sourcePath : "";
+
+            List<String> questIds = new ArrayList<>(qs.size());
+            for (Quest q : qs) questIds.add(q.id);
+
+            out.add(new SubCategory(id, cat, icon, name, order, defaultOpen, questIds, sourcePath));
+        }
+
+        out.sort((a, b) -> {
+            int cat = a.category.compareToIgnoreCase(b.category);
+            if (cat != 0) return cat;
+            String ak = a.sourceSortKey();
+            String bk = b.sourceSortKey();
+            int sk = ak.compareToIgnoreCase(bk);
+            if (sk != 0) return sk;
+            return a.name.compareToIgnoreCase(b.name);
+        });
+
+        return out;
+    }
+
     private static Quest parseQuestObject(JsonObject obj, ResourceLocation src) {
         String id = optString(obj, "id");
 
@@ -508,8 +751,14 @@ public final class QuestData {
         Completion completion = parseCompletion(obj.get("completion"), type);
 
         String category = optString(obj, "category");
+        String subCategory = optString(obj, "sub-category");
+        if (subCategory == null) subCategory = optString(obj, "sub_category");
+        if (subCategory == null) subCategory = optString(obj, "subCategory");
 
-        return new Quest(id, name, icon, description, deps, optional, rewards, type, completion, category);
+        String sourcePath = src == null ? "" : src.getPath();
+
+        return new Quest(id, name, icon, description, deps, optional, rewards, type, completion,
+                category, subCategory, sourcePath);
     }
 
     private static List<String> parseDependencies(JsonObject obj) {
@@ -803,6 +1052,7 @@ public final class QuestData {
     public static synchronized void applyNetworkJson(String json) {
         QUESTS.clear();
         CATEGORIES.clear();
+        SUBCATEGORIES.clear();
 
         try {
             JsonElement rootEl = GSON.fromJson(json, JsonElement.class);
@@ -828,6 +1078,37 @@ public final class QuestData {
                     String dependency = optString(o, "dependency");
 
                     CATEGORIES.put(id, new Category(id, icon, name, order, excludeFromAll, dependency));
+                }
+            }
+
+            if (root.has("subCategories") && root.get("subCategories").isJsonArray()) {
+                for (JsonElement el : root.getAsJsonArray("subCategories")) {
+                    if (!el.isJsonObject()) continue;
+                    JsonObject o = el.getAsJsonObject();
+
+                    String id = optString(o, "id");
+                    if (id == null || id.isBlank()) continue;
+
+                    String cat = optString(o, "category");
+                    if (cat == null) cat = "";
+                    String icon = optString(o, "icon");
+                    String name = optString(o, "name");
+                    int order = parseIntFlexible(o, "order", 0);
+                    boolean defaultOpen = parseBoolFlexible(o, "defaultOpen", true);
+                    String sourcePath = optString(o, "sourcePath");
+
+                    List<String> questIds = new ArrayList<>();
+                    if (o.has("quests") && o.get("quests").isJsonArray()) {
+                        for (JsonElement qe : o.getAsJsonArray("quests")) {
+                            if (qe.isJsonPrimitive()) {
+                                String qid = qe.getAsString();
+                                if (qid != null && !qid.isBlank()) questIds.add(qid);
+                            }
+                        }
+                    }
+
+                    String key = subKey(cat, id);
+                    SUBCATEGORIES.put(key, new SubCategory(id, cat, icon, name, order, defaultOpen, questIds, sourcePath));
                 }
             }
 
@@ -939,8 +1220,11 @@ public final class QuestData {
                     }
 
                     String category = optString(o, "category");
+                    String subCategory = optString(o, "subCategory");
+                    String sourcePath = optString(o, "sourcePath");
 
-                    Quest q = new Quest(id, name, icon, description, deps, optional, rewards, type, completion, category);
+                    Quest q = new Quest(id, name, icon, description, deps, optional, rewards, type, completion,
+                            category, subCategory, sourcePath);
                     if (!isQuestDisabled(q)) QUESTS.put(q.id, q);
                 }
             }
@@ -950,10 +1234,12 @@ public final class QuestData {
                         Integer.MIN_VALUE, false, ""));
             }
 
+            ensureSubCategoriesFromQuests();
             loadedClient = true;
         } catch (Exception e) {
             QUESTS.clear();
             CATEGORIES.clear();
+            SUBCATEGORIES.clear();
             loadedClient = false;
         }
     }

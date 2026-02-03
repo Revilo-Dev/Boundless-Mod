@@ -32,8 +32,8 @@ import java.util.List;
 public final class QuestDetailsPanel extends AbstractWidget {
 
     private static final int LINE_ITEM_ROW = 22;
-    private static final int BOTTOM_PADDING = 28;
-    private static final int HEADER_HEIGHT = 28;
+    private static final int BOTTOM_PADDING = 6;
+    private static final int HEADER_HEIGHT = 22;
     private static final int DESC_CHAR_LIMIT = 180;
 
     private static final ResourceLocation TEX_PIN =
@@ -130,7 +130,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
         complete.setPosition(cxCenter, cy);
         reject.setPosition(x + w - reject.getWidth() - 2, cy);
 
-        pin.setPosition(x + w - pin.getWidth() - 6, y + 9);
+        pin.setPosition(x + w - pin.getWidth() - 5, y + 4);
     }
 
     public void setQuest(QuestData.Quest q) {
@@ -152,20 +152,27 @@ public final class QuestDetailsPanel extends AbstractWidget {
         int w = this.width;
 
         int contentTop = y + HEADER_HEIGHT;
-        int contentBottom = complete.getY() - 6;
+        int contentBottom = complete.getY() - 3;
         int viewportH = Math.max(0, contentBottom - contentTop);
 
         measuredContentHeight = measureContentHeight(w);
         int maxScroll = Math.max(0, measuredContentHeight + BOTTOM_PADDING - viewportH);
         scrollY = Mth.clamp(scrollY, 0f, maxScroll);
 
-        quest.iconItem().ifPresent(item ->
-                gg.renderItem(new ItemStack(item), x + 4, y + 4)
-        );
+        quest.iconItem().ifPresent(item -> {
+            float iconScale = 1f / 1.2f;
+            int iconX = x + 4;
+            int iconY = y + 2;
+            gg.pose().pushPose();
+            gg.pose().translate(iconX, iconY, 0);
+            gg.pose().scale(iconScale, iconScale, 1f);
+            gg.renderItem(new ItemStack(item), 0, 0);
+            gg.pose().popPose();
+        });
 
         String title = quest.name;
         int nameWidth = w - 32 - 18;
-        gg.drawWordWrap(mc.font, Component.literal(title), x + 26, y + 8, nameWidth, 0xFFFFFF);
+        gg.drawWordWrap(mc.font, Component.literal(title), x + 26, y + 6, nameWidth, 0xFFFFFF);
 
         pin.visible = true;
         pin.active = true;
@@ -173,7 +180,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         gg.enableScissor(x, contentTop, x + w, contentBottom);
 
-        int[] curY = {contentTop + 4 - Mth.floor(scrollY)};
+        int[] curY = {contentTop + 3 - Mth.floor(scrollY)};
 
         if (!quest.description.isBlank()) {
             String full = quest.description;
@@ -251,6 +258,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
             boolean printedCollectHeader = false;
             boolean printedSubmitHeader = false;
+            boolean printedKillHeader = false;
 
             boolean legacySubmission = "submission".equalsIgnoreCase(quest.type) || "submit".equalsIgnoreCase(quest.type);
 
@@ -316,8 +324,11 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     curY[0] += LINE_ITEM_ROW;
                     continue;
                 } else if (t.isEntity()) {
-                    gg.drawString(mc.font, "Kill:", x + 4, curY[0], 0x1d9633, false);
-                    curY[0] += mc.font.lineHeight + 2;
+                    if (!printedKillHeader) {
+                        gg.drawString(mc.font, "Kill:", x + 4, curY[0], 0x1d9633, false);
+                        curY[0] += mc.font.lineHeight + 2;
+                        printedKillHeader = true;
+                    }
 
                     ResourceLocation rl = ResourceLocation.parse(t.id);
                     EntityType<?> et = BuiltInRegistries.ENTITY_TYPE.getOptional(rl).orElse(null);
@@ -622,7 +633,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
         if (!this.visible || !this.active) return false;
 
         int contentTop = this.getY() + HEADER_HEIGHT;
-        int contentBottom = complete.getY() - 6;
+        int contentBottom = complete.getY() - 3;
 
         if (mouseX < this.getX() || mouseX > this.getX() + this.width) return false;
         if (mouseY < contentTop || mouseY > contentBottom) return false;

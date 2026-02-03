@@ -114,6 +114,8 @@ public final class BoundlessNetwork {
         );
     }
 
+
+
     public record SyncKills(List<KillEntry> entries) implements CustomPacketPayload {
         public static final Type<SyncKills> TYPE =
                 new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "sync_kills"));
@@ -212,9 +214,11 @@ public final class BoundlessNetwork {
         }
     }
 
+    // inside BoundlessNetwork.java
     private static void sendQuestData(ServerPlayer p) {
         var quests = QuestData.allServer(p.server);
         var categories = QuestData.categoriesOrderedServer(p.server);
+        var subCats = QuestData.subCategoriesAllOrderedServer(p.server);
 
         JsonObject root = new JsonObject();
 
@@ -230,6 +234,27 @@ public final class BoundlessNetwork {
             cats.add(o);
         }
         root.add("categories", cats);
+
+        JsonArray scs = new JsonArray();
+        for (QuestData.SubCategory sc : subCats) {
+            JsonObject o = new JsonObject();
+            o.addProperty("id", sc.id);
+            o.addProperty("category", sc.category);
+            o.addProperty("icon", sc.icon);
+            o.addProperty("name", sc.name);
+            o.addProperty("order", sc.order);
+            o.addProperty("defaultOpen", sc.defaultOpen);
+            if (sc.sourcePath != null && !sc.sourcePath.isBlank()) {
+                o.addProperty("sourcePath", sc.sourcePath);
+            }
+
+            JsonArray qids = new JsonArray();
+            for (String qid : sc.quests) qids.add(qid);
+            o.add("quests", qids);
+
+            scs.add(o);
+        }
+        root.add("subCategories", scs);
 
         JsonArray qs = new JsonArray();
         for (QuestData.Quest q : quests) {
@@ -300,6 +325,14 @@ public final class BoundlessNetwork {
             }
 
             o.addProperty("category", q.category);
+
+            if (q.subCategory != null && !q.subCategory.isBlank()) {
+                o.addProperty("subCategory", q.subCategory);
+            }
+            if (q.sourcePath != null && !q.sourcePath.isBlank()) {
+                o.addProperty("sourcePath", q.sourcePath);
+            }
+
             qs.add(o);
         }
 
@@ -308,6 +341,7 @@ public final class BoundlessNetwork {
         String json = GSON.toJson(root);
         sendQuestJsonChunked(p, json);
     }
+
 
     private static void sendQuestJsonChunked(ServerPlayer p, String json) {
         if (json == null) json = "";
