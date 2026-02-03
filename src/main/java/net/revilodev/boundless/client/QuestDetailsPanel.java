@@ -33,7 +33,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
     private static final int LINE_ITEM_ROW = 22;
     private static final int BOTTOM_PADDING = 6;
-    private static final int HEADER_HEIGHT = 22;
+    private static final int HEADER_HEIGHT = 19;
     private static final int DESC_CHAR_LIMIT = 180;
 
     private static final ResourceLocation TEX_PIN =

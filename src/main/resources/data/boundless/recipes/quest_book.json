@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    { "items": ["minecraft:book"] },
+    { "items": ["minecraft:lapis_lazuli"] }
+  ],
+  "result": { "id": "boundless:quest_book", "count": 1 }
+}

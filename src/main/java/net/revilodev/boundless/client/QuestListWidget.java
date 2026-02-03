@@ -339,19 +339,18 @@ public final class QuestListWidget extends AbstractWidget {
 
                 gg.blit(tex, getX(), top, 0, 0, 127, 27, 127, 27);
 
-                int indent = ("all".equalsIgnoreCase(category) || q.subCategory == null || q.subCategory.isBlank()) ? 0 : 8;
+                int indent = 0;
 
                 q.iconItem().ifPresent(item ->
                         gg.renderItem(new ItemStack(item), getX() + 6 + indent, top + 5)
                 );
 
                 String name = q.name;
-                int maxW = width - 42 - indent;
-                if (mc.font.width(name) > maxW) {
-                    name = mc.font.plainSubstrByWidth(name, maxW - mc.font.width("...")) + "...";
+                if (name.length() > 18) {
+                    name = name.substring(0, 18) + "...";
                 }
 
-                gg.drawString(mc.font, name, getX() + 30 + indent, top + 9,
+                gg.drawString(mc.font, name, getX() + 25 + indent, top + 9,
                         deps ? 0xFFFFFF : 0xA0A0A0, false);
             }
 
