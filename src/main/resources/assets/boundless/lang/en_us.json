@@ -5,5 +5,7 @@
 
   "quest.boundless.toggle": "Quest completed!",
 
-  "item.boundless.quest_book": "Quest Book"
+  "item.boundless.quest_book": "Quest Book",
+  "key.categories.boundless": "Boundless",
+  "key.boundless.open_quest_book": "Open Quest Book"
 }

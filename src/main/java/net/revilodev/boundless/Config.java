@@ -13,11 +13,21 @@ public final class Config {
                     .defineListAllowEmpty(List.of("disabledQuestCategories"), List::of, o -> o instanceof String);
 
     public static final ModConfigSpec.ConfigValue<String> PINNED_QUEST_HUD_POSITION =
-            BUILDER.define("pinnedQuestHudPosition", "bottom_left", o -> {
+
+            BUILDER.comment("Pin the Quest hud to the: bottom_left, bottom_right, top_left, top_right")
+                    .define("pinnedQuestHudPosition", "bottom_left", o -> {
                 if (!(o instanceof String s)) return false;
                 s = s.trim().toLowerCase();
                 return s.equals("top_left") || s.equals("top_right") || s.equals("bottom_left") || s.equals("bottom_right");
             });
+
+    public static final ModConfigSpec.ConfigValue<Boolean> SPAWN_WITH_QUEST_BOOK =
+            BUILDER.comment("If true, players spawn with the quest book.")
+                    .define("spawnWithQuestBook", false);
+
+    public static final ModConfigSpec.ConfigValue<Boolean> HIDE_QUEST_BOOK_TOGGLE =
+            BUILDER.comment("If true, hides the quest book toggle in the inventory.")
+                    .define("hideQuestBookToggle", false);
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 
@@ -32,15 +42,25 @@ public final class Config {
         return s.isBlank() ? "bottom_left" : s;
     }
 
+    public static boolean spawnWithQuestBook() {
+        return SPAWN_WITH_QUEST_BOOK.get();
+    }
+
+    public static boolean hideQuestBookToggle() {
+        return HIDE_QUEST_BOOK_TOGGLE.get();
+    }
+
     @SubscribeEvent
     public static void onLoad(ModConfigEvent.Loading e) {
         if (e.getConfig().getSpec() == SPEC)
-            BoundlessMod.LOGGER.info("[Boundless] Config loaded: {}, {}", disabledCategories(), pinnedQuestHudPosition());
+            BoundlessMod.LOGGER.info("[Boundless] Config loaded: {}, {}, {}, {}",
+                    disabledCategories(), pinnedQuestHudPosition(), spawnWithQuestBook(), hideQuestBookToggle());
     }
 
     @SubscribeEvent
     public static void onReload(ModConfigEvent.Reloading e) {
         if (e.getConfig().getSpec() == SPEC)
-            BoundlessMod.LOGGER.info("[Boundless] Config reloaded: {}, {}", disabledCategories(), pinnedQuestHudPosition());
+            BoundlessMod.LOGGER.info("[Boundless] Config reloaded: {}, {}, {}, {}",
+                    disabledCategories(), pinnedQuestHudPosition(), spawnWithQuestBook(), hideQuestBookToggle());
     }
 }

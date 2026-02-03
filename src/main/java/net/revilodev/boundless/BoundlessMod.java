@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -21,6 +22,7 @@ import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.revilodev.boundless.client.QuestBookKeybinds;
 import net.revilodev.boundless.client.ClientQuestEvents;
 import net.revilodev.boundless.client.QuestPanelClient;
 import net.revilodev.boundless.command.BoundlessCommands;
@@ -46,6 +48,8 @@ public final class BoundlessMod {
         modBus.addListener(this::addCreative);
         if (net.neoforged.fml.loading.FMLEnvironment.dist == Dist.CLIENT) {
             modBus.addListener(this::clientSetup);
+            modBus.addListener(QuestBookKeybinds::onRegisterKeyMappings);
+            NeoForge.EVENT_BUS.addListener(QuestBookKeybinds::onClientTick);
         }
         BoundlessNetwork.bootstrap(modBus);
         NeoForge.EVENT_BUS.register(this);
@@ -73,7 +77,9 @@ public final class BoundlessMod {
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) {
-            event.accept(ModItems.QUEST_BOOK.get());
+            if (!Config.hideQuestBookToggle()) {
+                event.accept(ModItems.QUEST_BOOK.get());
+            }
         }
     }
 
@@ -92,7 +98,20 @@ public final class BoundlessMod {
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer sp) {
             BoundlessNetwork.syncPlayer(sp);
+            if (Config.spawnWithQuestBook() && !hasQuestBook(sp)) {
+                sp.getInventory().add(new ItemStack(ModItems.QUEST_BOOK.get()));
+            }
         }
+    }
+
+    private static boolean hasQuestBook(ServerPlayer player) {
+        if (player == null) return false;
+        for (ItemStack stack : player.getInventory().items) {
+            if (!stack.isEmpty() && stack.is(ModItems.QUEST_BOOK.get())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @SubscribeEvent

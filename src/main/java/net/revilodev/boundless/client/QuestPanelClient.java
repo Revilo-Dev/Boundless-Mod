@@ -13,6 +13,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.revilodev.boundless.Config;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestTracker;
 
@@ -48,10 +49,13 @@ public final class QuestPanelClient {
         State st = new State(inv);
         STATES.put(s, st);
 
-        int btnX = inv.getGuiLeft() + 125;
-        int btnY = inv.getGuiTop() + 61;
-        QuestToggleButton btn = new QuestToggleButton(btnX, btnY, BTN_TEX, BTN_TEX_HOVER, () -> toggle(st));
-        st.btn = btn;
+        if (!Config.hideQuestBookToggle()) {
+            int btnX = inv.getGuiLeft() + 125;
+            int btnY = inv.getGuiTop() + 61;
+            QuestToggleButton btn = new QuestToggleButton(btnX, btnY, BTN_TEX, BTN_TEX_HOVER, () -> toggle(st));
+            st.btn = btn;
+            e.addListener(btn);
+        }
 
         st.bg = new PanelBackground(0, 0, PANEL_W, PANEL_H);
         e.addListener(st.bg);
@@ -80,7 +84,6 @@ public final class QuestPanelClient {
         st.filter = new QuestFilterBar(filterX, filterY);
         e.addListener(st.filter);
 
-        e.addListener(btn);
         reposition(inv, st);
 
         if (lastQuestOpen) {
