@@ -172,7 +172,25 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         String title = quest.name;
         int nameWidth = w - 32 - 18;
-        gg.drawWordWrap(mc.font, Component.literal(title), x + 26, y + 6, nameWidth, 0xFFFFFF);
+        float titleScale = 1f;
+        if (title != null && title.length() > 16) {
+            int textW = mc.font.width(title);
+            if (textW > 0) titleScale = Math.max(0.5f, Math.min(1f, (float) nameWidth / (float) textW));
+        }
+        if (titleScale < 1f) {
+            gg.pose().pushPose();
+            gg.pose().scale(titleScale, titleScale, 1f);
+            float inv = 1f / titleScale;
+            if (titleScale <= 0.5f && mc.font.width(title) * titleScale > nameWidth) {
+                int wrapW = (int) (nameWidth * inv);
+                gg.drawWordWrap(mc.font, Component.literal(title), (int) ((x + 26) * inv), (int) ((y + 6) * inv), wrapW, 0xFFFFFF);
+            } else {
+                gg.drawString(mc.font, title, (int) ((x + 26) * inv), (int) ((y + 6) * inv), 0xFFFFFF, false);
+            }
+            gg.pose().popPose();
+        } else {
+            gg.drawString(mc.font, title, x + 26, y + 6, 0xFFFFFF, false);
+        }
 
         pin.visible = true;
         pin.active = true;
@@ -551,7 +569,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
         boolean red = status == QuestTracker.Status.REDEEMED;
         boolean rej = status == QuestTracker.Status.REJECTED;
         boolean done = red || rej;
-        boolean ready = depsMet && !done && QuestTracker.isReady(quest, mc.player);
+        boolean ready = depsMet && !done
+                && (status == QuestTracker.Status.COMPLETED || QuestTracker.isReady(quest, mc.player));
 
         complete.active = ready;
         complete.visible = !done;

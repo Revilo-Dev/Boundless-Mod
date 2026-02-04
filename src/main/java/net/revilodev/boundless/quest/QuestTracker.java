@@ -50,8 +50,27 @@ public final class QuestTracker {
 
     private static boolean SERVER_TOASTS_DISABLED = false;
     private static String ACTIVE_KEY = null;
+    private static volatile boolean CLIENT_IN_MULTIPLAYER = false;
 
     private QuestTracker() {}
+
+    public static void setClientMultiplayer(boolean v) {
+        CLIENT_IN_MULTIPLAYER = v;
+    }
+
+    private static boolean isClientMultiplayer() {
+        if (FMLEnvironment.dist != Dist.CLIENT) return false;
+        try {
+            Class<?> mcClass = Class.forName("net.minecraft.client.Minecraft");
+            Object mc = mcClass.getMethod("getInstance").invoke(null);
+            if (mc == null) return CLIENT_IN_MULTIPLAYER;
+            Object conn = mcClass.getMethod("getConnection").invoke(mc);
+            if (conn == null) return false;
+            Object hasSp = mcClass.getMethod("hasSingleplayerServer").invoke(mc);
+            return hasSp instanceof Boolean b ? !b : CLIENT_IN_MULTIPLAYER;
+        } catch (Throwable ignored) {}
+        return CLIENT_IN_MULTIPLAYER;
+    }
 
     public static int getPermanentItemProgress(String key, int current, int required) {
         int req = Math.max(0, required);
@@ -75,11 +94,27 @@ public final class QuestTracker {
         return now;
     }
 
+    private static int getPermanentItemProgress(Player player, String key, int current, int required) {
+        if (player instanceof ServerPlayer sp) {
+            return QuestObjectiveState.get(sp.serverLevel())
+                    .updateItemProgress(sp.getUUID(), key, current, required);
+        }
+        return getPermanentItemProgress(key, current, required);
+    }
+
     private static boolean getPermanentEffectProgress(String key, boolean hasEffect) {
         boolean prev = CLIENT_EFFECT_PROGRESS.getOrDefault(key, false);
         boolean now = prev || hasEffect;
         if (now) CLIENT_EFFECT_PROGRESS.put(key, true);
         return now;
+    }
+
+    private static boolean getPermanentEffectProgress(Player player, String key, boolean hasEffect) {
+        if (player instanceof ServerPlayer sp) {
+            return QuestObjectiveState.get(sp.serverLevel())
+                    .updateEffectDone(sp.getUUID(), key, hasEffect);
+        }
+        return getPermanentEffectProgress(key, hasEffect);
     }
 
     private static String sanitize(String s) {
@@ -213,7 +248,7 @@ public final class QuestTracker {
             if (t.isItem()) {
                 String key = q.id + ":" + t.id;
                 int cur = getCountInInventory(t.id, player);
-                int prog = getPermanentItemProgress(key, cur, t.count);
+                int prog = getPermanentItemProgress(player, key, cur, t.count);
                 if (prog < t.count) return false;
                 continue;
             }
@@ -223,7 +258,7 @@ public final class QuestTracker {
             if (t.isEffect()) {
                 String key = q.id + ":effect:" + t.id;
                 boolean hasNow = hasEffect(player, t.id);
-                boolean done = getPermanentEffectProgress(key, hasNow);
+                boolean done = getPermanentEffectProgress(player, key, hasNow);
                 if (!done) return false;
                 continue;
             }
@@ -330,6 +365,7 @@ public final class QuestTracker {
                     ServerPlayer sp = srv.getPlayerList().getPlayer(player.getUUID());
                     if (sp != null) return hasAdvancementServer(sp, rl);
                 }
+
             } catch (Throwable ignored) {}
 
             return CLIENT_ADV_DONE.getOrDefault(rl.toString(), false);
@@ -348,6 +384,7 @@ public final class QuestTracker {
         CLIENT_ADV_DONE.put(rl.toString(), done);
         return done;
     }
+
 
     public static boolean serverRedeem(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return false;
@@ -420,6 +457,7 @@ public final class QuestTracker {
     public static void reset(Player player) {
         if (player instanceof ServerPlayer sp) {
             QuestProgressState.get(sp.serverLevel()).clear(sp.getUUID());
+            QuestObjectiveState.get(sp.serverLevel()).clearPlayer(sp.getUUID());
             BoundlessNetwork.syncPlayer(sp);
             CLIENT_EFFECT_PROGRESS.clear();
             if (FMLEnvironment.dist == Dist.CLIENT) clientClearAll();
@@ -456,6 +494,7 @@ public final class QuestTracker {
 
     public static void tickPlayer(Player player) {
         if (player == null || !player.level().isClientSide) return;
+        if (isClientMultiplayer()) return;
 
         ensureClientStateLoaded(player);
         QuestData.loadClient(false);
