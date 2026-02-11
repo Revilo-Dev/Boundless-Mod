@@ -49,6 +49,7 @@ public final class QuestListWidget extends AbstractWidget {
     private final int subHeaderH = 12;
 
     private String category = "all";
+    private boolean bypassFilters = false;
 
     public QuestListWidget(int x, int y, int w, int h, Consumer<QuestData.Quest> onClick) {
         super(x, y, w, h, Component.empty());
@@ -65,6 +66,10 @@ public final class QuestListWidget extends AbstractWidget {
     public void setCategory(String cat) {
         category = cat == null ? "all" : cat;
         scrollY = 0;
+    }
+
+    public void setBypassFilters(boolean bypass) {
+        this.bypassFilters = bypass;
     }
 
     public void setBounds(int x, int y, int w, int h) {
@@ -147,6 +152,7 @@ public final class QuestListWidget extends AbstractWidget {
     }
 
     private boolean matchesCategory(QuestData.Quest q) {
+        if (bypassFilters) return true;
         if (Config.disabledCategories().contains(q.category)) return false;
         if ("all".equalsIgnoreCase(category)) return includeInAll(q);
         if (!q.category.equalsIgnoreCase(category)) return false;
@@ -154,6 +160,7 @@ public final class QuestListWidget extends AbstractWidget {
     }
 
     private boolean isActuallyVisible(QuestData.Quest q) {
+        if (bypassFilters) return true;
         if (mc.player == null) return true;
         QuestTracker.Status st = QuestTracker.getStatus(q, mc.player);
         if (st == QuestTracker.Status.INCOMPLETE) {
@@ -163,6 +170,7 @@ public final class QuestListWidget extends AbstractWidget {
     }
 
     private boolean passesFilters(QuestData.Quest q) {
+        if (bypassFilters) return true;
         if (mc.player == null) return true;
 
         QuestTracker.Status st = QuestTracker.getStatus(q, mc.player);

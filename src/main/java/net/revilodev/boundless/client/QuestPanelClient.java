@@ -14,6 +14,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.revilodev.boundless.Config;
+import net.revilodev.boundless.client.screen.QuestSettingsScreen;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestTracker;
 
@@ -81,7 +82,7 @@ public final class QuestPanelClient {
 
         int filterX = computePanelX(inv) + 10;
         int filterY = inv.getGuiTop() + PANEL_H + 6;
-        st.filter = new QuestFilterBar(filterX, filterY);
+        st.filter = new QuestFilterBar(filterX, filterY, () -> openSettings(inv));
         e.addListener(st.filter);
 
         reposition(inv, st);
@@ -211,7 +212,7 @@ public final class QuestPanelClient {
         if (st.filter != null) {
             int filterX = px;
             int filterY = bgy + PANEL_H + 6;
-            st.filter.setBounds(filterX, filterY, 88, 20);
+            st.filter.setBounds(filterX, filterY, st.filter.getPreferredWidth(), 20);
         }
     }
 
@@ -338,6 +339,12 @@ public final class QuestPanelClient {
             st.filter.visible = st.open;
             st.filter.active = st.open;
         }
+    }
+
+    private static void openSettings(InventoryScreen inv) {
+        var mc = Minecraft.getInstance();
+        if (mc.player == null || !mc.player.hasPermissions(2)) return;
+        mc.setScreen(new QuestSettingsScreen(inv));
     }
 
 

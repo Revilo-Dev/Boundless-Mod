@@ -2,6 +2,9 @@
   "//CATEGORY": "The category this quest belongs to. Use 'minecraft' or your own custom category.",
   "category": "minecraft",
 
+  "//SUB-CATEGORY": "Define a sub category for this quest to appear under, define subs under a sub-category folder in the quest folder.",
+  "sub-category": "getting_started",
+
   "//ID": "A unique id for this quest. Do NOT use spaces or caps.",
   "id": "example_quest",
 

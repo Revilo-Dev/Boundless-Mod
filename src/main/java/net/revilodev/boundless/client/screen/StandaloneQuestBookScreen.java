@@ -75,7 +75,11 @@ public final class StandaloneQuestBookScreen extends Screen {
 
         int filterX = pxLeft;
         int filterY = topY + panelHeight + 6;
-        filter = new QuestFilterBar(filterX, filterY);
+        filter = new QuestFilterBar(filterX, filterY, () -> {
+            if (minecraft == null || minecraft.player == null || !minecraft.player.hasPermissions(2)) return;
+            minecraft.setScreen(new QuestSettingsScreen(this));
+        });
+        filter.setBounds(filterX, filterY, filter.getPreferredWidth(), 20);
 
         addRenderableWidget(tabs);
         addRenderableWidget(list);

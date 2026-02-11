@@ -29,13 +29,24 @@ public final class QuestFilterBar extends AbstractWidget {
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/locked_filter.png");
     private static final ResourceLocation TEX_LOCKED_DISABLED =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/locked_filter_disabled.png");
+    private static final ResourceLocation TEX_SETTINGS =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/settings_button.png");
+    private static final ResourceLocation TEX_SETTINGS_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/settings_button_hovered.png");
 
     private static boolean showCompleted = false;
     private static boolean showRejected = false;
     private static boolean showLocked = true;
 
+    private final Runnable onSettings;
+
     public QuestFilterBar(int x, int y) {
+        this(x, y, null);
+    }
+
+    public QuestFilterBar(int x, int y, Runnable onSettings) {
         super(x, y, SIZE * 3 + GAP * 2, SIZE, Component.empty());
+        this.onSettings = onSettings;
     }
 
     public static boolean allowCompleted() {
@@ -57,6 +68,11 @@ public final class QuestFilterBar extends AbstractWidget {
         this.height = h;
     }
 
+    public int getPreferredWidth() {
+        int count = showSettingsButton() ? 4 : 3;
+        return SIZE * count + GAP * (count - 1);
+    }
+
     @Override
     protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
         int bx = getX();
@@ -72,6 +88,12 @@ public final class QuestFilterBar extends AbstractWidget {
 
         drawButton(gg, bx, by, showLocked, TEX_LOCKED, TEX_LOCKED_DISABLED,
                 "Show locked quests", mouseX, mouseY);
+        bx += SIZE + GAP;
+
+        if (showSettingsButton()) {
+            drawHoverButton(gg, bx, by, TEX_SETTINGS, TEX_SETTINGS_HOVER,
+                    "Settings", mouseX, mouseY);
+        }
     }
 
     private void drawButton(GuiGraphics gg, int x, int y, boolean state,
@@ -81,6 +103,19 @@ public final class QuestFilterBar extends AbstractWidget {
         gg.blit(state ? on : off, x, y, 0, 0, SIZE, SIZE, SIZE, SIZE);
 
         boolean hover = mouseX >= x && mouseX < x + SIZE && mouseY >= y && mouseY < y + SIZE;
+
+        if (hover) {
+            gg.renderTooltip(Minecraft.getInstance().font,
+                    Component.literal(tooltip),
+                    mouseX, mouseY);
+        }
+    }
+
+    private void drawHoverButton(GuiGraphics gg, int x, int y,
+                                 ResourceLocation normal, ResourceLocation hoverTex,
+                                 String tooltip, int mouseX, int mouseY) {
+        boolean hover = mouseX >= x && mouseX < x + SIZE && mouseY >= y && mouseY < y + SIZE;
+        gg.blit(hover ? hoverTex : normal, x, y, 0, 0, SIZE, SIZE, SIZE, SIZE);
 
         if (hover) {
             gg.renderTooltip(Minecraft.getInstance().font,
@@ -113,6 +148,12 @@ public final class QuestFilterBar extends AbstractWidget {
             showLocked = !showLocked;
             return true;
         }
+        bx += SIZE + GAP;
+
+        if (showSettingsButton() && hit(mx, my, bx, by)) {
+            if (onSettings != null) onSettings.run();
+            return true;
+        }
 
         return false;
     }
@@ -123,5 +164,11 @@ public final class QuestFilterBar extends AbstractWidget {
 
     @Override
     protected void updateWidgetNarration(NarrationElementOutput narration) {
+    }
+
+    private boolean showSettingsButton() {
+        if (onSettings == null) return false;
+        var player = Minecraft.getInstance().player;
+        return player != null && player.hasPermissions(2);
     }
 }
