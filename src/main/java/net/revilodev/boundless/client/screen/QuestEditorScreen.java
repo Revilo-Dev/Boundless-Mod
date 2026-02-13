@@ -7,17 +7,25 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractButton;
+import net.minecraft.client.gui.components.AbstractScrollWidget;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.MultiLineEditBox;
+import net.minecraft.client.gui.components.Whence;
+import net.minecraft.client.gui.narration.NarratedElementType;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
+import net.minecraft.util.StringUtil;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
@@ -74,6 +82,7 @@ public final class QuestEditorScreen extends Screen {
     private static final int FIELD_ROW_GAP = 6;
     private static final int BOX_H = 20;
     private static final int BOX_H_TALL = 28;
+    private static final float INPUT_TEXT_SCALE = 0.5f;
 
     private static final int PACK_FORMAT = 48;
 
@@ -145,13 +154,13 @@ public final class QuestEditorScreen extends Screen {
     private EditBox questIndexBox;
     private EditBox questNameBox;
     private EditBox questIconBox;
-    private MultiLineEditBox questDescriptionBox;
+    private ScaledMultiLineEditBox questDescriptionBox;
     private EditBox questCategoryBox;
     private EditBox questSubCategoryBox;
     private EditBox questDependenciesBox;
     private ToggleButton questOptionalToggle;
-    private MultiLineEditBox questCompletionBox;
-    private MultiLineEditBox questRewardBox;
+    private ScaledMultiLineEditBox questCompletionBox;
+    private ScaledMultiLineEditBox questRewardBox;
 
     private Path editingPath;
     private String loadedQuestType = "";
@@ -219,6 +228,8 @@ public final class QuestEditorScreen extends Screen {
         questOptionalToggle = createToggle(false);
         questCompletionBox = createMultiLineBox("Completion JSON", BOX_H_TALL);
         questRewardBox = createMultiLineBox("Reward JSON", BOX_H_TALL);
+
+        // no extra widgets
     }
 
     private EditBox createBox(String hint, int height) {
@@ -230,8 +241,8 @@ public final class QuestEditorScreen extends Screen {
         return box;
     }
 
-    private MultiLineEditBox createMultiLineBox(String hint, int height) {
-        MultiLineEditBox box = new MultiLineEditBox(font, 0, 0, pw - 4, height, Component.literal(hint), Component.empty());
+    private ScaledMultiLineEditBox createMultiLineBox(String hint, int height) {
+        ScaledMultiLineEditBox box = new ScaledMultiLineEditBox(font, 0, 0, pw - 4, height, Component.literal(hint), Component.empty(), INPUT_TEXT_SCALE);
         box.setCharacterLimit(4096);
         box.visible = false;
         box.active = false;
@@ -767,6 +778,8 @@ public final class QuestEditorScreen extends Screen {
         editorScroll = 0f;
     }
 
+    // removed dynamic entry builder
+
     private FormField field(String label, AbstractWidget widget) {
         FormField field = new FormField(label, widget);
         if (!allFields.contains(field)) allFields.add(field);
@@ -834,6 +847,12 @@ public final class QuestEditorScreen extends Screen {
         } catch (Exception ignored) {
             return ItemStack.EMPTY;
         }
+    }
+
+    private int parseCount(String raw, int def) {
+        String v = raw == null ? "" : raw.trim();
+        if (v.isBlank()) return def;
+        try { return Integer.parseInt(v); } catch (Exception ignored) { return def; }
     }
     private Path resourcePacksRoot() {
         return Minecraft.getInstance().gameDirectory.toPath()
@@ -1193,7 +1212,24 @@ public final class QuestEditorScreen extends Screen {
 
         renderEditorFields(gg, mouseX, mouseY);
 
+        boolean leftVisible = leftList != null && leftList.visible;
+        boolean backVisible = backButton != null && backButton.visible;
+        boolean saveVisible = saveButton != null && saveButton.visible;
+        if (leftList != null) leftList.visible = false;
+        if (backButton != null) backButton.visible = false;
+        if (saveButton != null) saveButton.visible = false;
+
+        gg.enableScissor(pxRight, py, pxRight + pw, py + ph);
         super.render(gg, mouseX, mouseY, partialTick);
+        gg.disableScissor();
+
+        if (leftList != null) leftList.visible = leftVisible;
+        if (backButton != null) backButton.visible = backVisible;
+        if (saveButton != null) saveButton.visible = saveVisible;
+
+        if (leftList != null && leftList.visible) leftList.render(gg, mouseX, mouseY, partialTick);
+        if (backButton != null && backButton.visible) backButton.render(gg, mouseX, mouseY, partialTick);
+        if (saveButton != null && saveButton.visible) saveButton.render(gg, mouseX, mouseY, partialTick);
         renderIconOverlays(gg);
 
         if (!statusMessage.isBlank()) {
@@ -1211,6 +1247,7 @@ public final class QuestEditorScreen extends Screen {
         renderIconOverlay(gg, questIconBox);
         renderIconOverlay(gg, catIconBox);
         renderIconOverlay(gg, subIconBox);
+        // no extra reward fields
         gg.disableScissor();
     }
 
@@ -1260,17 +1297,17 @@ public final class QuestEditorScreen extends Screen {
             field.widget.setY(boxY);
             if (field.widget instanceof EditBox eb) {
                 eb.setWidth(pw - 4);
-            } else if (field.widget instanceof MultiLineEditBox mb) {
+            } else if (field.widget instanceof ScaledMultiLineEditBox mb) {
                 mb.setWidth(pw - 4);
             } else if (field.widget instanceof ToggleButton tb) {
                 tb.setSize(TOGGLE_SIZE, TOGGLE_SIZE);
             }
 
-            boolean inside = boxY >= clipTop && boxY + field.widget.getHeight() <= clipBottom;
+            boolean inside = boxY + field.widget.getHeight() > clipTop && boxY < clipBottom;
             field.widget.visible = inside;
             field.widget.active = inside;
 
-            if (labelY >= clipTop && labelY + font.lineHeight <= clipBottom) {
+            if (labelY + font.lineHeight > clipTop && labelY < clipBottom) {
                 gg.drawString(font, field.displayLabel, pxRight + 2, labelY, 0xFFFFFF, false);
                 if (!field.tooltip.isBlank()) {
                     int labelW = font.width(field.displayLabel);
@@ -1317,7 +1354,7 @@ public final class QuestEditorScreen extends Screen {
 
     private int fieldHeight(FormField field) {
         if (field == null || field.widget == null) return 0;
-        if (field.widget instanceof MultiLineEditBox mb) {
+        if (field.widget instanceof ScaledMultiLineEditBox mb) {
             return computeMultilineHeight(mb, BOX_H_TALL);
         }
         return field.widget.getHeight();
@@ -1325,21 +1362,19 @@ public final class QuestEditorScreen extends Screen {
 
     private void updateDynamicFieldSizes() {
         for (FormField field : activeFields) {
-            if (field.widget instanceof MultiLineEditBox mb) {
+            if (field.widget instanceof ScaledMultiLineEditBox mb) {
                 mb.setWidth(pw - 4);
                 mb.setHeight(computeMultilineHeight(mb, BOX_H_TALL));
             }
         }
     }
 
-    private int computeMultilineHeight(MultiLineEditBox box, int minHeight) {
-        int width = Math.max(20, box.getWidth() - 8);
-        String text = box.getValue();
-        int lines = text == null || text.isBlank()
-                ? 1
-                : Math.max(1, font.split(Component.literal(text), width).size());
-        int content = lines * 9 + 8;
-        return Math.max(minHeight, content);
+    private int computeMultilineHeight(ScaledMultiLineEditBox box, int minHeight) {
+        int lines = Math.max(1, box.getLineCount());
+        double lineHeight = box.getLineHeight();
+        int content = (int) Math.ceil(lines * lineHeight) + 8;
+        int maxHeight = Math.max(minHeight, ph - (font.lineHeight + FIELD_LABEL_GAP + FIELD_ROW_GAP + 6));
+        return Math.max(minHeight, Math.min(maxHeight, content));
     }
 
     private void updateBackButtonVisibility() {
@@ -1369,7 +1404,7 @@ public final class QuestEditorScreen extends Screen {
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (keyCode == GLFW.GLFW_KEY_TAB) {
-            EditBox focused = focusedIconBox();
+            EditBox focused = focusedEditBox();
             if (focused != null) {
                 String suggestion = computeIconSuggestion(focused.getValue());
                 if (suggestion != null && !suggestion.isBlank()) {
@@ -1382,15 +1417,15 @@ public final class QuestEditorScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
-    private EditBox focusedIconBox() {
+    private boolean isIconBox(EditBox box) {
+        return box == questIconBox || box == catIconBox || box == subIconBox;
+    }
+
+    private EditBox focusedEditBox() {
         if (questIconBox != null && questIconBox.isFocused()) return questIconBox;
         if (catIconBox != null && catIconBox.isFocused()) return catIconBox;
         if (subIconBox != null && subIconBox.isFocused()) return subIconBox;
         return null;
-    }
-
-    private boolean isIconBox(EditBox box) {
-        return box == questIconBox || box == catIconBox || box == subIconBox;
     }
 
     private void ensureItemIdCache() {
@@ -1407,20 +1442,619 @@ public final class QuestEditorScreen extends Screen {
         if (input.isBlank()) return "";
         ensureItemIdCache();
 
-        String suggestion = findSuggestion(input);
+        String suggestion = findSuggestion(itemIdCache, input);
         if ((suggestion == null || suggestion.isBlank()) && !input.contains(":")) {
-            suggestion = findSuggestion("minecraft:" + input);
+            suggestion = findSuggestion(itemIdCache, "minecraft:" + input);
         }
         return suggestion == null ? "" : suggestion;
     }
 
-    private String findSuggestion(String prefix) {
-        if (prefix == null || prefix.isBlank()) return "";
-        for (String id : itemIdCache) {
+    private String findSuggestion(List<String> cache, String prefix) {
+        if (cache == null || cache.isEmpty() || prefix == null || prefix.isBlank()) return "";
+        for (String id : cache) {
             if (id.startsWith(prefix)) return id;
         }
         return "";
     }
+
+    private static final class ScaledMultiLineEditBox extends AbstractScrollWidget {
+        private static final int CURSOR_INSERT_COLOR = -3092272;
+        private static final int TEXT_COLOR = -2039584;
+        private static final int PLACEHOLDER_TEXT_COLOR = -857677600;
+        private static final int CURSOR_BLINK_INTERVAL_MS = 300;
+        private final Font font;
+        private final Component placeholder;
+        private final ScaledTextField textField;
+        private final float textScale;
+        private final double lineHeight;
+        private long focusedTime = Util.getMillis();
+
+        ScaledMultiLineEditBox(Font font, int x, int y, int width, int height, Component placeholder, Component message, float textScale) {
+            super(x, y, width, height, message);
+            this.font = font;
+            this.placeholder = placeholder;
+            this.textScale = textScale <= 0f ? 1f : textScale;
+            this.lineHeight = 9.0 * this.textScale;
+            int fieldWidth = Math.max(20, Math.round((width - this.totalInnerPadding()) / this.textScale));
+            this.textField = new ScaledTextField(font, fieldWidth);
+            this.textField.setCursorListener(this::scrollToCursor);
+        }
+
+        public void setCharacterLimit(int characterLimit) {
+            this.textField.setCharacterLimit(characterLimit);
+        }
+
+        public void setValueListener(Consumer<String> valueListener) {
+            this.textField.setValueListener(valueListener);
+        }
+
+        public void setValue(String fullText) {
+            this.textField.setValue(fullText);
+        }
+
+        public String getValue() {
+            return this.textField.value();
+        }
+
+        public int getLineCount() {
+            return this.textField.getLineCount();
+        }
+
+        public double getLineHeight() {
+            return this.lineHeight;
+        }
+
+        @Override
+        public void updateWidgetNarration(NarrationElementOutput narrationElementOutput) {
+            narrationElementOutput.add(NarratedElementType.TITLE, Component.translatable("gui.narrate.editBox", this.getMessage(), this.getValue()));
+        }
+
+        @Override
+        public boolean mouseClicked(double mouseX, double mouseY, int button) {
+            if (this.withinContentAreaPoint(mouseX, mouseY) && button == 0) {
+                this.textField.setSelecting(Screen.hasShiftDown());
+                this.seekCursorScreen(mouseX, mouseY);
+                return true;
+            }
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+
+        @Override
+        public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+            if (super.mouseDragged(mouseX, mouseY, button, dragX, dragY)) {
+                return true;
+            } else if (this.withinContentAreaPoint(mouseX, mouseY) && button == 0) {
+                this.textField.setSelecting(true);
+                this.seekCursorScreen(mouseX, mouseY);
+                this.textField.setSelecting(Screen.hasShiftDown());
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+            return this.textField.keyPressed(keyCode);
+        }
+
+        @Override
+        public boolean charTyped(char codePoint, int modifiers) {
+            if (this.visible && this.isFocused() && StringUtil.isAllowedChatCharacter(codePoint)) {
+                this.textField.insertText(Character.toString(codePoint));
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+            if (!this.visible) return;
+            this.renderBackground(guiGraphics);
+            guiGraphics.enableScissor(this.getX() + 1, this.getY() + 1, this.getX() + this.width - 1, this.getY() + this.height - 1);
+            guiGraphics.pose().pushPose();
+            guiGraphics.pose().translate(0.0, -this.scrollAmount(), 0.0);
+            guiGraphics.pose().scale(this.textScale, this.textScale, 1.0f);
+            this.renderContents(guiGraphics, mouseX, mouseY, partialTick);
+            guiGraphics.pose().popPose();
+            guiGraphics.disableScissor();
+            this.renderDecorations(guiGraphics);
+        }
+
+        @Override
+        protected void renderContents(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+            String text = this.textField.value();
+            float invScale = 1.0f / this.textScale;
+            int baseX = Math.round((this.getX() + this.innerPadding()) * invScale);
+            int baseY = Math.round((this.getY() + this.innerPadding()) * invScale);
+            int wrapWidth = Math.round((this.width - this.totalInnerPadding()) * invScale);
+
+            if (text.isEmpty() && !this.isFocused()) {
+                guiGraphics.drawWordWrap(this.font, this.placeholder, baseX, baseY, wrapWidth, PLACEHOLDER_TEXT_COLOR);
+                return;
+            }
+
+            int cursor = this.textField.cursor();
+            boolean showCursor = this.isFocused() && (Util.getMillis() - this.focusedTime) / CURSOR_BLINK_INTERVAL_MS % 2L == 0L;
+            boolean cursorInText = cursor < text.length();
+            int drawX = baseX;
+            double lineScreenY = this.getY() + this.innerPadding();
+            double lastLineScreenY = lineScreenY;
+
+            for (ScaledTextField.StringView line : this.textField.iterateLines()) {
+                boolean visible = this.withinContentAreaTopBottom((int) lineScreenY, (int) (lineScreenY + this.lineHeight));
+                if (showCursor && cursorInText && cursor >= line.beginIndex() && cursor <= line.endIndex()) {
+                    if (visible) {
+                        int drawY = Math.round((float) (lineScreenY * invScale));
+                        drawX = guiGraphics.drawString(
+                                this.font, text.substring(line.beginIndex(), cursor), baseX, drawY, TEXT_COLOR, false
+                            )
+                            - 1;
+                        guiGraphics.fill(drawX, drawY - 1, drawX + 1, drawY + 1 + this.font.lineHeight, CURSOR_INSERT_COLOR);
+                        guiGraphics.drawString(this.font, text.substring(cursor, line.endIndex()), drawX, drawY, TEXT_COLOR, false);
+                    }
+                } else {
+                    if (visible) {
+                        int drawY = Math.round((float) (lineScreenY * invScale));
+                        drawX = guiGraphics.drawString(
+                                this.font,
+                                text.substring(line.beginIndex(), line.endIndex()),
+                                baseX,
+                                drawY,
+                                TEXT_COLOR,
+                                false
+                            )
+                            - 1;
+                    }
+                }
+
+                lastLineScreenY = lineScreenY;
+                lineScreenY += this.lineHeight;
+            }
+
+            if (showCursor && !cursorInText
+                    && this.withinContentAreaTopBottom((int) lastLineScreenY, (int) (lastLineScreenY + this.lineHeight))) {
+                int drawY = Math.round((float) (lastLineScreenY * invScale));
+                guiGraphics.drawString(this.font, "_", drawX, drawY, CURSOR_INSERT_COLOR, false);
+            }
+
+            if (this.textField.hasSelection()) {
+                ScaledTextField.StringView selected = this.textField.getSelected();
+                int startX = baseX;
+                int maxLineWidth = Math.round((this.width - this.innerPadding()) * invScale);
+                double selScreenY = this.getY() + this.innerPadding();
+
+                for (ScaledTextField.StringView line : this.textField.iterateLines()) {
+                    if (selected.beginIndex() > line.endIndex()) {
+                        selScreenY += this.lineHeight;
+                        continue;
+                    }
+                    if (line.beginIndex() > selected.endIndex()) break;
+
+                    if (this.withinContentAreaTopBottom((int) selScreenY, (int) (selScreenY + this.lineHeight))) {
+                        int offset = this.font.width(
+                                text.substring(line.beginIndex(), Math.max(selected.beginIndex(), line.beginIndex()))
+                        );
+                        int endWidth;
+                        if (selected.endIndex() > line.endIndex()) {
+                            endWidth = maxLineWidth;
+                        } else {
+                            endWidth = this.font.width(text.substring(line.beginIndex(), selected.endIndex()));
+                        }
+                        int drawY = Math.round((float) (selScreenY * invScale));
+                        this.renderHighlight(guiGraphics, startX + offset, drawY, startX + endWidth, drawY + this.font.lineHeight);
+                    }
+                    selScreenY += this.lineHeight;
+                }
+            }
+        }
+
+        @Override
+        protected void renderDecorations(GuiGraphics guiGraphics) {
+            super.renderDecorations(guiGraphics);
+            if (this.textField.hasCharacterLimit()) {
+                int limit = this.textField.characterLimit();
+                Component component = Component.translatable("gui.multiLineEditBox.character_limit", this.textField.value().length(), limit);
+                guiGraphics.drawString(this.font, component, this.getX() + this.width - this.font.width(component), this.getY() + this.height + 4, 10526880);
+            }
+        }
+
+        @Override
+        public int getInnerHeight() {
+            return (int) Math.ceil(this.lineHeight * this.textField.getLineCount());
+        }
+
+        @Override
+        protected boolean scrollbarVisible() {
+            return (double) this.textField.getLineCount() > this.getDisplayableLineCount();
+        }
+
+        @Override
+        protected double scrollRate() {
+            return this.lineHeight / 2.0;
+        }
+
+        private void renderHighlight(GuiGraphics guiGraphics, int minX, int minY, int maxX, int maxY) {
+            guiGraphics.fill(RenderType.guiTextHighlight(), minX, minY, maxX, maxY, -16776961);
+        }
+
+        private void scrollToCursor() {
+            if (this.lineHeight <= 0.0) return;
+            double scroll = this.scrollAmount();
+            ScaledTextField.StringView line = this.textField.getLineView((int) (scroll / this.lineHeight));
+            if (this.textField.cursor() <= line.beginIndex()) {
+                scroll = (double) this.textField.getLineAtCursor() * this.lineHeight;
+            } else {
+                ScaledTextField.StringView lastVisible = this.textField.getLineView((int) ((scroll + (double) this.height) / this.lineHeight) - 1);
+                if (this.textField.cursor() > lastVisible.endIndex()) {
+                    scroll = (double) this.textField.getLineAtCursor() * this.lineHeight - this.height + this.lineHeight + this.totalInnerPadding();
+                }
+            }
+
+            this.setScrollAmount(scroll);
+        }
+
+        private double getDisplayableLineCount() {
+            return (double) (this.height - this.totalInnerPadding()) / this.lineHeight;
+        }
+
+        private void seekCursorScreen(double mouseX, double mouseY) {
+            double d0 = (mouseX - (double) this.getX() - (double) this.innerPadding()) / this.textScale;
+            double d1 = (mouseY - (double) this.getY() - (double) this.innerPadding() + this.scrollAmount()) / this.textScale;
+            this.textField.seekCursorToPoint(d0, d1);
+        }
+
+        @Override
+        public void setFocused(boolean focused) {
+            super.setFocused(focused);
+            if (focused) {
+                this.focusedTime = Util.getMillis();
+            }
+        }
+    }
+
+    private static final class ScaledTextField {
+        private final Font font;
+        private final List<StringView> displayLines = new ArrayList<>();
+        private final int width;
+        private String value = "";
+        private int cursor;
+        private int selectCursor;
+        private boolean selecting;
+        private int characterLimit = Integer.MAX_VALUE;
+        private Consumer<String> valueListener = ignored -> {
+        };
+        private Runnable cursorListener = () -> {
+        };
+
+        ScaledTextField(Font font, int width) {
+            this.font = font;
+            this.width = width;
+            this.setValue("");
+        }
+
+        public int characterLimit() {
+            return this.characterLimit;
+        }
+
+        public void setCharacterLimit(int characterLimit) {
+            if (characterLimit < 0) {
+                throw new IllegalArgumentException("Character limit cannot be negative");
+            }
+            this.characterLimit = characterLimit;
+        }
+
+        public boolean hasCharacterLimit() {
+            return this.characterLimit != Integer.MAX_VALUE;
+        }
+
+        public void setValueListener(Consumer<String> valueListener) {
+            this.valueListener = valueListener == null ? ignored -> {
+            } : valueListener;
+        }
+
+        public void setCursorListener(Runnable cursorListener) {
+            this.cursorListener = cursorListener == null ? () -> {
+            } : cursorListener;
+        }
+
+        public void setValue(String fullText) {
+            String next = fullText == null ? "" : fullText;
+            this.value = this.truncateFullText(next);
+            this.cursor = this.value.length();
+            this.selectCursor = this.cursor;
+            this.onValueChange();
+        }
+
+        public String value() {
+            return this.value;
+        }
+
+        public void insertText(String text) {
+            if (!text.isEmpty() || this.hasSelection()) {
+                String filtered = this.truncateInsertionText(StringUtil.filterText(text, true));
+                StringView selected = this.getSelected();
+                this.value = new StringBuilder(this.value).replace(selected.beginIndex, selected.endIndex, filtered).toString();
+                this.cursor = selected.beginIndex + filtered.length();
+                this.selectCursor = this.cursor;
+                this.onValueChange();
+            }
+        }
+
+        public void deleteText(int length) {
+            if (!this.hasSelection()) {
+                this.selectCursor = Mth.clamp(this.cursor + length, 0, this.value.length());
+            }
+            this.insertText("");
+        }
+
+        public int cursor() {
+            return this.cursor;
+        }
+
+        public void setSelecting(boolean selecting) {
+            this.selecting = selecting;
+        }
+
+        public StringView getSelected() {
+            return new StringView(Math.min(this.selectCursor, this.cursor), Math.max(this.selectCursor, this.cursor));
+        }
+
+        public int getLineCount() {
+            return this.displayLines.size();
+        }
+
+        public int getLineAtCursor() {
+            for (int i = 0; i < this.displayLines.size(); i++) {
+                StringView line = this.displayLines.get(i);
+                if (this.cursor >= line.beginIndex && this.cursor <= line.endIndex) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        public StringView getLineView(int lineNumber) {
+            return this.displayLines.get(Mth.clamp(lineNumber, 0, this.displayLines.size() - 1));
+        }
+
+        public void seekCursor(Whence whence, int position) {
+            switch (whence) {
+                case ABSOLUTE -> this.cursor = position;
+                case RELATIVE -> this.cursor += position;
+                case END -> this.cursor = this.value.length() + position;
+            }
+
+            this.cursor = Mth.clamp(this.cursor, 0, this.value.length());
+            this.cursorListener.run();
+            if (!this.selecting) {
+                this.selectCursor = this.cursor;
+            }
+        }
+
+        public void seekCursorLine(int offset) {
+            if (offset != 0) {
+                int width = this.font.width(this.value.substring(this.getCursorLineView().beginIndex, this.cursor)) + 2;
+                StringView line = this.getCursorLineView(offset);
+                int length = this.font
+                        .plainSubstrByWidth(this.value.substring(line.beginIndex, line.endIndex), width)
+                        .length();
+                this.seekCursor(Whence.ABSOLUTE, line.beginIndex + length);
+            }
+        }
+
+        public void seekCursorToPoint(double x, double y) {
+            int xi = Mth.floor(x);
+            int yi = Mth.floor(y / 9.0);
+            StringView line = this.displayLines.get(Mth.clamp(yi, 0, this.displayLines.size() - 1));
+            int length = this.font
+                    .plainSubstrByWidth(this.value.substring(line.beginIndex, line.endIndex), xi)
+                    .length();
+            this.seekCursor(Whence.ABSOLUTE, line.beginIndex + length);
+        }
+
+        public boolean keyPressed(int keyCode) {
+            this.selecting = Screen.hasShiftDown();
+            if (Screen.isSelectAll(keyCode)) {
+                this.cursor = this.value.length();
+                this.selectCursor = 0;
+                return true;
+            } else if (Screen.isCopy(keyCode)) {
+                Minecraft.getInstance().keyboardHandler.setClipboard(this.getSelectedText());
+                return true;
+            } else if (Screen.isPaste(keyCode)) {
+                this.insertText(Minecraft.getInstance().keyboardHandler.getClipboard());
+                return true;
+            } else if (Screen.isCut(keyCode)) {
+                Minecraft.getInstance().keyboardHandler.setClipboard(this.getSelectedText());
+                this.insertText("");
+                return true;
+            } else {
+                switch (keyCode) {
+                    case 257, 335 -> {
+                        this.insertText("\n");
+                        return true;
+                    }
+                    case 259 -> {
+                        if (Screen.hasControlDown()) {
+                            StringView word = this.getPreviousWord();
+                            this.deleteText(word.beginIndex - this.cursor);
+                        } else {
+                            this.deleteText(-1);
+                        }
+                        return true;
+                    }
+                    case 261 -> {
+                        if (Screen.hasControlDown()) {
+                            StringView word = this.getNextWord();
+                            this.deleteText(word.beginIndex - this.cursor);
+                        } else {
+                            this.deleteText(1);
+                        }
+                        return true;
+                    }
+                    case 262 -> {
+                        if (Screen.hasControlDown()) {
+                            StringView word = this.getNextWord();
+                            this.seekCursor(Whence.ABSOLUTE, word.beginIndex);
+                        } else {
+                            this.seekCursor(Whence.RELATIVE, 1);
+                        }
+                        return true;
+                    }
+                    case 263 -> {
+                        if (Screen.hasControlDown()) {
+                            StringView word = this.getPreviousWord();
+                            this.seekCursor(Whence.ABSOLUTE, word.beginIndex);
+                        } else {
+                            this.seekCursor(Whence.RELATIVE, -1);
+                        }
+                        return true;
+                    }
+                    case 264 -> {
+                        if (!Screen.hasControlDown()) {
+                            this.seekCursorLine(1);
+                        }
+                        return true;
+                    }
+                    case 265 -> {
+                        if (!Screen.hasControlDown()) {
+                            this.seekCursorLine(-1);
+                        }
+                        return true;
+                    }
+                    case 266 -> {
+                        this.seekCursor(Whence.ABSOLUTE, 0);
+                        return true;
+                    }
+                    case 267 -> {
+                        this.seekCursor(Whence.END, 0);
+                        return true;
+                    }
+                    case 268 -> {
+                        if (Screen.hasControlDown()) {
+                            this.seekCursor(Whence.ABSOLUTE, 0);
+                        } else {
+                            this.seekCursor(Whence.ABSOLUTE, this.getCursorLineView().beginIndex);
+                        }
+                        return true;
+                    }
+                    case 269 -> {
+                        if (Screen.hasControlDown()) {
+                            this.seekCursor(Whence.END, 0);
+                        } else {
+                            this.seekCursor(Whence.ABSOLUTE, this.getCursorLineView().endIndex);
+                        }
+                        return true;
+                    }
+                    default -> {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        public Iterable<StringView> iterateLines() {
+            return this.displayLines;
+        }
+
+        public boolean hasSelection() {
+            return this.selectCursor != this.cursor;
+        }
+
+        private String getSelectedText() {
+            StringView selected = this.getSelected();
+            return this.value.substring(selected.beginIndex, selected.endIndex);
+        }
+
+        private StringView getCursorLineView() {
+            return this.getCursorLineView(0);
+        }
+
+        private StringView getCursorLineView(int offset) {
+            int line = this.getLineAtCursor();
+            if (line < 0) {
+                throw new IllegalStateException("Cursor is not within text (cursor = " + this.cursor + ", length = " + this.value.length() + ")");
+            }
+            return this.displayLines.get(Mth.clamp(line + offset, 0, this.displayLines.size() - 1));
+        }
+
+        private StringView getPreviousWord() {
+            if (this.value.isEmpty()) {
+                return StringView.EMPTY;
+            }
+            int i = Mth.clamp(this.cursor, 0, this.value.length() - 1);
+            while (i > 0 && Character.isWhitespace(this.value.charAt(i - 1))) {
+                i--;
+            }
+            while (i > 0 && !Character.isWhitespace(this.value.charAt(i - 1))) {
+                i--;
+            }
+            return new StringView(i, this.getWordEndPosition(i));
+        }
+
+        private StringView getNextWord() {
+            if (this.value.isEmpty()) {
+                return StringView.EMPTY;
+            }
+            int i = Mth.clamp(this.cursor, 0, this.value.length() - 1);
+            while (i < this.value.length() && !Character.isWhitespace(this.value.charAt(i))) {
+                i++;
+            }
+            while (i < this.value.length() && Character.isWhitespace(this.value.charAt(i))) {
+                i++;
+            }
+            return new StringView(i, this.getWordEndPosition(i));
+        }
+
+        private int getWordEndPosition(int cursor) {
+            int i = cursor;
+            while (i < this.value.length() && !Character.isWhitespace(this.value.charAt(i))) {
+                i++;
+            }
+            return i;
+        }
+
+        private void onValueChange() {
+            this.reflowDisplayLines();
+            this.valueListener.accept(this.value);
+            this.cursorListener.run();
+        }
+
+        private void reflowDisplayLines() {
+            this.displayLines.clear();
+            if (this.value.isEmpty()) {
+                this.displayLines.add(StringView.EMPTY);
+            } else {
+                this.font.getSplitter().splitLines(
+                        this.value,
+                        this.width,
+                        Style.EMPTY,
+                        false,
+                        (style, begin, end) -> this.displayLines.add(new StringView(begin, end))
+                );
+                if (this.value.charAt(this.value.length() - 1) == '\n') {
+                    this.displayLines.add(new StringView(this.value.length(), this.value.length()));
+                }
+            }
+        }
+
+        private String truncateFullText(String fullText) {
+            return this.hasCharacterLimit() ? StringUtil.truncateStringIfNecessary(fullText, this.characterLimit, false) : fullText;
+        }
+
+        private String truncateInsertionText(String text) {
+            if (this.hasCharacterLimit()) {
+                int allowed = this.characterLimit - this.value.length();
+                return StringUtil.truncateStringIfNecessary(text, allowed, false);
+            }
+            return text;
+        }
+
+        private static record StringView(int beginIndex, int endIndex) {
+            static final StringView EMPTY = new StringView(0, 0);
+        }
+    }
+
     private static final class EditorEntry {
         final String id;
         final String label;
