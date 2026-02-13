@@ -21,9 +21,12 @@ import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 import net.minecraft.util.StringUtil;
 import net.minecraft.world.item.ItemStack;
@@ -70,8 +73,14 @@ public final class QuestEditorScreen extends Screen {
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/x_button.png");
     private static final ResourceLocation TOGGLE_TEX_ON =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/complete_filter.png");
+    private static final ResourceLocation DUPLICATE_TEX =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/duplicate_button.png");
+    private static final ResourceLocation DELETE_TEX =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/reject_filter.png");
 
     private static final int TOGGLE_SIZE = 20;
+    private static final int SMALL_BTN_SIZE = 20;
+    private static final int SMALL_BTN_GAP = 4;
 
     private static final int PANEL_W = 147;
     private static final int PANEL_H = 166;
@@ -104,6 +113,11 @@ public final class QuestEditorScreen extends Screen {
     private static final String ENTRY_CATEGORIES = "__categories__";
     private static final String ENTRY_SUBCATEGORIES = "__subcategories__";
     private static final String ENTRY_QUESTS = "__quests__";
+    private static final String FOOTER_PREFIX =
+            "Welcome to the Quest editor BETA, if you require assistance head over to ";
+    private static final String FOOTER_LINK = "https://discord.gg/DARzByw6VW";
+    private static final int FOOTER_TEXT_COLOR = 0xFF5555;
+    private static final int FOOTER_LINK_COLOR = 0x3B82F6;
 
     private final Screen parent;
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
@@ -126,10 +140,18 @@ public final class QuestEditorScreen extends Screen {
 
     private EditorListWidget leftList;
     private ActionButton saveButton;
+    private IconButton duplicateButton;
+    private IconButton deleteQuestButton;
+    private IconButton deletePackButton;
 
     private float editorScroll = 0f;
     private String statusMessage = "";
     private int statusColor = 0xA0A0A0;
+    private long deletePackConfirmUntil = 0L;
+    private ScreenState pendingState;
+    private final List<FormattedCharSequence> footerLines = new ArrayList<>();
+    private final List<Integer> footerLineX = new ArrayList<>();
+    private int footerStartY = 0;
 
     private final List<FormField> activeFields = new ArrayList<>();
     private final List<FormField> allFields = new ArrayList<>();
@@ -190,14 +212,30 @@ public final class QuestEditorScreen extends Screen {
         initFormFields();
 
         int barY = py + ph + (BOTTOM_BAR_H - 20) / 2;
-        saveButton = new ActionButton(pxRight + pw - 68, barY, 68, 20,
+        int saveX = pxRight + pw - 68;
+        saveButton = new ActionButton(saveX, barY, 68, 20,
                 Component.literal("Save"), this::saveCurrent);
         addRenderableWidget(saveButton);
 
+        int deleteQuestX = saveX - SMALL_BTN_GAP - SMALL_BTN_SIZE;
+        int duplicateX = deleteQuestX - SMALL_BTN_GAP - SMALL_BTN_SIZE;
+        duplicateButton = new IconButton(duplicateX, barY, SMALL_BTN_SIZE, DUPLICATE_TEX, this::duplicateQuest);
+        deleteQuestButton = new IconButton(deleteQuestX, barY, SMALL_BTN_SIZE, DELETE_TEX, this::deleteQuest);
+        addRenderableWidget(duplicateButton);
+        addRenderableWidget(deleteQuestButton);
+
         backButton = new BackButton(pxLeft + 2, barY, this::goBack);
         addRenderableWidget(backButton);
+        deletePackButton = new IconButton(pxLeft + 2 + 24 + SMALL_BTN_GAP, barY, SMALL_BTN_SIZE, DELETE_TEX, this::confirmDeletePack);
+        addRenderableWidget(deletePackButton);
 
-        setMode(Mode.PACK_LIST);
+        if (pendingState != null) {
+            ScreenState state = pendingState;
+            pendingState = null;
+            restoreState(state);
+        } else {
+            setMode(Mode.PACK_LIST);
+        }
     }
 
     private void initFormFields() {
@@ -262,6 +300,7 @@ public final class QuestEditorScreen extends Screen {
         mode = next;
         statusMessage = "";
         editorScroll = 0f;
+        deletePackConfirmUntil = 0L;
         refreshLeftList();
         clearEditor();
         updateBackButtonVisibility();
@@ -439,6 +478,7 @@ public final class QuestEditorScreen extends Screen {
         saveButton.setMessage(Component.literal("Create"));
         saveButton.visible = true;
         saveButton.active = true;
+        updateBackButtonVisibility();
     }
 
     private void showCategoryEditor(CategoryData data, Path sourcePath) {
@@ -461,6 +501,7 @@ public final class QuestEditorScreen extends Screen {
         saveButton.setMessage(Component.literal("Save"));
         saveButton.visible = true;
         saveButton.active = true;
+        updateBackButtonVisibility();
     }
 
     private void showSubCategoryEditor(SubCategoryData data, Path sourcePath) {
@@ -485,6 +526,7 @@ public final class QuestEditorScreen extends Screen {
         saveButton.setMessage(Component.literal("Save"));
         saveButton.visible = true;
         saveButton.active = true;
+        updateBackButtonVisibility();
     }
 
     private void showQuestEditor(QuestEntryData data, Path sourcePath) {
@@ -530,6 +572,7 @@ public final class QuestEditorScreen extends Screen {
         saveButton.setMessage(Component.literal("Save"));
         saveButton.visible = true;
         saveButton.active = true;
+        updateBackButtonVisibility();
     }
     private void saveCurrent() {
         if (currentPack == null && editorType != EditorType.PACK_CREATE) return;
@@ -619,13 +662,22 @@ public final class QuestEditorScreen extends Screen {
 
     private void saveQuest() {
         String id = safe(questIdBox.getValue()).trim();
-        if (id.isBlank()) {
+        JsonObject obj = buildQuestJson(id);
+        if (obj == null) return;
+
+        Path target = currentPack.questsDir.resolve(id + ".json");
+        saveJson(obj, target, editingPath);
+    }
+
+    private JsonObject buildQuestJson(String id) {
+        String questId = safe(id).trim();
+        if (questId.isBlank()) {
             setError("Quest id required");
-            return;
+            return null;
         }
 
         JsonObject obj = new JsonObject();
-        obj.addProperty("id", id);
+        obj.addProperty("id", questId);
         String nameRaw = safe(questNameBox.getValue()).trim();
         String indexRaw = safe(questIndexBox.getValue()).trim();
         String fullName = nameRaw;
@@ -666,7 +718,7 @@ public final class QuestEditorScreen extends Screen {
             JsonElement completion = parseCompletionJson(completionRaw);
             if (completion == null) {
                 setError("Invalid JSON");
-                return;
+                return null;
             }
             obj.add("completion", completion);
         }
@@ -676,13 +728,12 @@ public final class QuestEditorScreen extends Screen {
             JsonElement reward = parseRewardJson(rewardRaw);
             if (reward == null || !reward.isJsonObject()) {
                 setError("Invalid JSON");
-                return;
+                return null;
             }
             obj.add("reward", reward);
         }
 
-        Path target = currentPack.questsDir.resolve(id + ".json");
-        saveJson(obj, target, editingPath);
+        return obj;
     }
 
     private void saveJson(JsonObject obj, Path target, Path original) {
@@ -705,6 +756,99 @@ public final class QuestEditorScreen extends Screen {
             refreshLeftList();
         } catch (IOException e) {
             setError("Save failed");
+        }
+    }
+
+    private void duplicateQuest() {
+        if (currentPack == null || editorType != EditorType.QUEST) return;
+        String baseId = safe(questIdBox.getValue()).trim();
+        if (baseId.isBlank()) {
+            setError("Quest id required");
+            return;
+        }
+
+        String newId = nextAvailableQuestId(baseId);
+        JsonObject obj = buildQuestJson(newId);
+        if (obj == null) return;
+
+        Path target = currentPack.questsDir.resolve(newId + ".json");
+        selectedEntryId = newId;
+        saveJson(obj, target, null);
+        QuestEntryData data = loadQuest(currentPack, newId);
+        if (data != null) {
+            showQuestEditor(data, target);
+        }
+    }
+
+    private void deleteQuest() {
+        if (currentPack == null || editorType != EditorType.QUEST) return;
+        String id = safe(questIdBox.getValue()).trim();
+        if (id.isBlank()) {
+            setError("Quest id required");
+            return;
+        }
+
+        Path target = editingPath != null ? editingPath : currentPack.questsDir.resolve(id + ".json");
+        try {
+            boolean deleted = Files.deleteIfExists(target);
+            applyChanges();
+            selectedEntryId = "";
+            clearEditor();
+            refreshLeftList();
+            if (deleted) {
+                statusMessage = "Deleted";
+                statusColor = 0xA0FFA0;
+            } else {
+                statusMessage = "Nothing to delete";
+                statusColor = 0xA0A0A0;
+            }
+        } catch (IOException e) {
+            setError("Delete failed");
+        }
+    }
+
+    private String nextAvailableQuestId(String baseId) {
+        if (currentPack == null) return baseId;
+        String base = safe(baseId).trim();
+        if (base.isBlank()) return baseId;
+
+        Path dir = currentPack.questsDir;
+        String candidate = base + "_copy";
+        int counter = 2;
+        while (Files.exists(dir.resolve(candidate + ".json"))) {
+            candidate = base + "_copy" + counter;
+            counter++;
+        }
+        return candidate;
+    }
+
+    private void confirmDeletePack() {
+        if (currentPack == null || mode != Mode.PACK_MENU) return;
+        long now = Util.getMillis();
+        if (now < deletePackConfirmUntil) {
+            deletePackConfirmUntil = 0L;
+            deletePack(currentPack);
+            return;
+        }
+        deletePackConfirmUntil = now + 5000L;
+        statusMessage = "Are you sure? Click delete again to confirm";
+        statusColor = 0xFFD080;
+    }
+
+    private void deletePack(QuestPack pack) {
+        if (pack == null) return;
+        try {
+            if (Files.exists(pack.root)) {
+                deleteDirectory(pack.root);
+            }
+            Files.deleteIfExists(packZipPath(pack.name));
+            currentPack = null;
+            selectedEntryId = "";
+            setMode(Mode.PACK_LIST);
+            statusMessage = "Pack deleted";
+            statusColor = 0xA0FFA0;
+        } catch (IOException e) {
+            setError("Delete failed");
         }
     }
 
@@ -761,6 +905,7 @@ public final class QuestEditorScreen extends Screen {
         setActiveFields(List.of());
         saveButton.visible = false;
         saveButton.active = false;
+        updateBackButtonVisibility();
     }
 
     private void setActiveFields(List<FormField> fields) {
@@ -1054,6 +1199,137 @@ public final class QuestEditorScreen extends Screen {
         }
     }
 
+    private void deleteDirectory(Path root) throws IOException {
+        if (root == null || !Files.exists(root)) return;
+        try (var walk = Files.walk(root)) {
+            walk.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
+        }
+    }
+
+    private ScreenState captureState() {
+        if (leftList == null) return null;
+        ScreenState state = new ScreenState();
+        state.mode = mode;
+        state.editorType = editorType;
+        state.currentPack = currentPack;
+        state.selectedEntryId = selectedEntryId;
+        state.editingPath = editingPath;
+        state.loadedQuestType = loadedQuestType;
+        state.editorScroll = editorScroll;
+        state.leftScroll = leftList.getScrollY();
+        state.statusMessage = statusMessage;
+        state.statusColor = statusColor;
+        state.deletePackConfirmUntil = deletePackConfirmUntil;
+
+        state.packName = safe(packNameBox == null ? "" : packNameBox.getValue());
+        state.packNamespace = safe(packNamespaceBox == null ? "" : packNamespaceBox.getValue());
+
+        state.catId = safe(catIdBox == null ? "" : catIdBox.getValue());
+        state.catName = safe(catNameBox == null ? "" : catNameBox.getValue());
+        state.catIcon = safe(catIconBox == null ? "" : catIconBox.getValue());
+        state.catOrder = safe(catOrderBox == null ? "" : catOrderBox.getValue());
+        state.catDependency = safe(catDependencyBox == null ? "" : catDependencyBox.getValue());
+
+        state.subId = safe(subIdBox == null ? "" : subIdBox.getValue());
+        state.subCategory = safe(subCategoryBox == null ? "" : subCategoryBox.getValue());
+        state.subName = safe(subNameBox == null ? "" : subNameBox.getValue());
+        state.subIcon = safe(subIconBox == null ? "" : subIconBox.getValue());
+        state.subOrder = safe(subOrderBox == null ? "" : subOrderBox.getValue());
+        state.subDefaultOpen = subDefaultOpenToggle != null && subDefaultOpenToggle.isOn();
+
+        state.questId = safe(questIdBox == null ? "" : questIdBox.getValue());
+        state.questIndex = safe(questIndexBox == null ? "" : questIndexBox.getValue());
+        state.questName = safe(questNameBox == null ? "" : questNameBox.getValue());
+        state.questIcon = safe(questIconBox == null ? "" : questIconBox.getValue());
+        state.questDescription = safe(questDescriptionBox == null ? "" : questDescriptionBox.getValue());
+        state.questCategory = safe(questCategoryBox == null ? "" : questCategoryBox.getValue());
+        state.questSubCategory = safe(questSubCategoryBox == null ? "" : questSubCategoryBox.getValue());
+        state.questDependencies = safe(questDependenciesBox == null ? "" : questDependenciesBox.getValue());
+        state.questOptional = questOptionalToggle != null && questOptionalToggle.isOn();
+        state.questCompletion = safe(questCompletionBox == null ? "" : questCompletionBox.getValue());
+        state.questReward = safe(questRewardBox == null ? "" : questRewardBox.getValue());
+        return state;
+    }
+
+    private void restoreState(ScreenState state) {
+        if (state == null) {
+            setMode(Mode.PACK_LIST);
+            return;
+        }
+        currentPack = state.currentPack;
+        selectedEntryId = state.selectedEntryId == null ? "" : state.selectedEntryId;
+        mode = state.mode == null ? Mode.PACK_LIST : state.mode;
+        statusMessage = state.statusMessage == null ? "" : state.statusMessage;
+        statusColor = state.statusColor;
+        deletePackConfirmUntil = state.deletePackConfirmUntil;
+        refreshLeftList();
+        leftList.setScrollY(state.leftScroll);
+
+        switch (state.editorType) {
+            case PACK_CREATE -> {
+                showPackCreate();
+                packNameBox.setValue(state.packName);
+                packNamespaceBox.setValue(state.packNamespace);
+            }
+            case CATEGORY -> {
+                CategoryData data = new CategoryData();
+                data.id = state.catId;
+                data.name = state.catName;
+                data.icon = state.catIcon;
+                data.order = state.catOrder;
+                data.dependency = state.catDependency;
+                showCategoryEditor(data, state.editingPath);
+            }
+            case SUBCATEGORY -> {
+                SubCategoryData data = new SubCategoryData();
+                data.id = state.subId;
+                data.category = state.subCategory;
+                data.name = state.subName;
+                data.icon = state.subIcon;
+                data.order = state.subOrder;
+                data.defaultOpen = state.subDefaultOpen ? "true" : "false";
+                showSubCategoryEditor(data, state.editingPath);
+            }
+            case QUEST -> {
+                QuestEntryData data = new QuestEntryData();
+                data.id = state.questId;
+                data.name = combineIndexName(state.questIndex, state.questName);
+                data.icon = state.questIcon;
+                data.description = state.questDescription;
+                data.category = state.questCategory;
+                data.subCategory = state.questSubCategory;
+                data.dependencies = state.questDependencies;
+                data.optional = state.questOptional ? "true" : "false";
+                data.type = state.loadedQuestType;
+                data.completionJson = state.questCompletion;
+                data.rewardJson = state.questReward;
+                showQuestEditor(data, state.editingPath);
+            }
+            case NONE -> clearEditor();
+        }
+
+        loadedQuestType = state.loadedQuestType == null ? "" : state.loadedQuestType;
+        editingPath = state.editingPath;
+        editorScroll = state.editorScroll;
+        updateBackButtonVisibility();
+    }
+
+    private String combineIndexName(String index, String name) {
+        String i = safe(index).trim();
+        String n = safe(name).trim();
+        if (!i.isBlank() && !n.isBlank()) return i + "-" + n;
+        if (!i.isBlank()) return i + "-";
+        return n;
+    }
+
     private List<NamedEntry> listCategoryEntries(QuestPack pack) {
         return listEntries(pack.categoriesDir);
     }
@@ -1215,9 +1491,15 @@ public final class QuestEditorScreen extends Screen {
         boolean leftVisible = leftList != null && leftList.visible;
         boolean backVisible = backButton != null && backButton.visible;
         boolean saveVisible = saveButton != null && saveButton.visible;
+        boolean duplicateVisible = duplicateButton != null && duplicateButton.visible;
+        boolean deleteQuestVisible = deleteQuestButton != null && deleteQuestButton.visible;
+        boolean deletePackVisible = deletePackButton != null && deletePackButton.visible;
         if (leftList != null) leftList.visible = false;
         if (backButton != null) backButton.visible = false;
         if (saveButton != null) saveButton.visible = false;
+        if (duplicateButton != null) duplicateButton.visible = false;
+        if (deleteQuestButton != null) deleteQuestButton.visible = false;
+        if (deletePackButton != null) deletePackButton.visible = false;
 
         gg.enableScissor(pxRight, py, pxRight + pw, py + ph);
         super.render(gg, mouseX, mouseY, partialTick);
@@ -1226,15 +1508,24 @@ public final class QuestEditorScreen extends Screen {
         if (leftList != null) leftList.visible = leftVisible;
         if (backButton != null) backButton.visible = backVisible;
         if (saveButton != null) saveButton.visible = saveVisible;
+        if (duplicateButton != null) duplicateButton.visible = duplicateVisible;
+        if (deleteQuestButton != null) deleteQuestButton.visible = deleteQuestVisible;
+        if (deletePackButton != null) deletePackButton.visible = deletePackVisible;
 
         if (leftList != null && leftList.visible) leftList.render(gg, mouseX, mouseY, partialTick);
         if (backButton != null && backButton.visible) backButton.render(gg, mouseX, mouseY, partialTick);
         if (saveButton != null && saveButton.visible) saveButton.render(gg, mouseX, mouseY, partialTick);
+        if (duplicateButton != null && duplicateButton.visible) duplicateButton.render(gg, mouseX, mouseY, partialTick);
+        if (deleteQuestButton != null && deleteQuestButton.visible) deleteQuestButton.render(gg, mouseX, mouseY, partialTick);
+        if (deletePackButton != null && deletePackButton.visible) deletePackButton.render(gg, mouseX, mouseY, partialTick);
         renderIconOverlays(gg);
 
         if (!statusMessage.isBlank()) {
-            gg.drawString(font, statusMessage, pxRight + 2, topY + PANEL_H + 8, statusColor, false);
+            int msgW = font.width(statusMessage);
+            int msgX = (this.width - msgW) / 2;
+            gg.drawString(font, statusMessage, msgX, topY + PANEL_H + 8, statusColor, false);
         }
+        renderFooter(gg, mouseX, mouseY);
     }
 
     private void renderIconOverlays(GuiGraphics gg) {
@@ -1381,6 +1672,22 @@ public final class QuestEditorScreen extends Screen {
         if (backButton == null) return;
         backButton.visible = true;
         backButton.active = true;
+
+        boolean showQuestActions = editorType == EditorType.QUEST;
+        if (duplicateButton != null) {
+            duplicateButton.visible = showQuestActions;
+            duplicateButton.active = showQuestActions;
+        }
+        if (deleteQuestButton != null) {
+            deleteQuestButton.visible = showQuestActions;
+            deleteQuestButton.active = showQuestActions;
+        }
+
+        boolean showPackDelete = mode == Mode.PACK_MENU && currentPack != null;
+        if (deletePackButton != null) {
+            deletePackButton.visible = showPackDelete;
+            deletePackButton.active = showPackDelete;
+        }
     }
 
     private void goBack() {
@@ -1397,8 +1704,25 @@ public final class QuestEditorScreen extends Screen {
     }
 
     @Override
+    public void resize(Minecraft minecraft, int width, int height) {
+        pendingState = captureState();
+        super.resize(minecraft, width, height);
+    }
+
+    @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        Style style = getFooterStyleAt((int) mouseX, (int) mouseY);
+        if (style != null && style.getClickEvent() != null
+                && style.getClickEvent().getAction() == ClickEvent.Action.OPEN_URL) {
+            this.handleComponentClicked(style);
+            return true;
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
@@ -1455,6 +1779,59 @@ public final class QuestEditorScreen extends Screen {
             if (id.startsWith(prefix)) return id;
         }
         return "";
+    }
+
+    private void renderFooter(GuiGraphics gg, int mouseX, int mouseY) {
+        Component footer = footerComponent();
+        int maxWidth = Math.max(80, this.width - 12);
+        footerLines.clear();
+        footerLines.addAll(font.split(footer, maxWidth));
+        footerLineX.clear();
+        int totalHeight = footerLines.size() * font.lineHeight;
+        footerStartY = this.height - totalHeight - 4;
+        int y = footerStartY;
+        for (FormattedCharSequence line : footerLines) {
+            int lineWidth = font.width(line);
+            int x = (this.width - lineWidth) / 2;
+            footerLineX.add(x);
+            gg.drawString(font, line, x, y, 0xFFFFFF, false);
+            y += font.lineHeight;
+        }
+
+        Style style = getFooterStyleAt(mouseX, mouseY);
+        if (style != null) {
+            gg.renderComponentHoverEffect(font, style, mouseX, mouseY);
+        }
+    }
+
+    private Component footerComponent() {
+        Style red = Style.EMPTY.withColor(FOOTER_TEXT_COLOR);
+        Style link = Style.EMPTY
+                .withColor(FOOTER_LINK_COLOR)
+                .withUnderlined(true)
+                .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, FOOTER_LINK))
+                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Component.literal(FOOTER_LINK)));
+        return Component.literal(FOOTER_PREFIX).withStyle(red)
+                .append(Component.literal(FOOTER_LINK).withStyle(link));
+    }
+
+    private Style getFooterStyleAt(int mouseX, int mouseY) {
+        if (footerLines.isEmpty()) return null;
+        int y = footerStartY;
+        for (int i = 0; i < footerLines.size(); i++) {
+            int lineHeight = font.lineHeight;
+            if (mouseY >= y && mouseY < y + lineHeight) {
+                int x = footerLineX.get(i);
+                int width = font.width(footerLines.get(i));
+                if (mouseX >= x && mouseX <= x + width) {
+                    return Minecraft.getInstance().font.getSplitter()
+                            .componentStyleAtWidth(footerLines.get(i), mouseX - x);
+                }
+                return null;
+            }
+            y += lineHeight;
+        }
+        return null;
     }
 
     private static final class ScaledMultiLineEditBox extends AbstractScrollWidget {
@@ -2143,6 +2520,48 @@ public final class QuestEditorScreen extends Screen {
         String rewardJson = "";
     }
 
+    private static final class ScreenState {
+        Mode mode = Mode.PACK_LIST;
+        EditorType editorType = EditorType.NONE;
+        QuestPack currentPack;
+        String selectedEntryId = "";
+        Path editingPath;
+        String loadedQuestType = "";
+        float editorScroll = 0f;
+        float leftScroll = 0f;
+        String statusMessage = "";
+        int statusColor = 0xA0A0A0;
+        long deletePackConfirmUntil = 0L;
+
+        String packName = "";
+        String packNamespace = "";
+
+        String catId = "";
+        String catName = "";
+        String catIcon = "";
+        String catOrder = "";
+        String catDependency = "";
+
+        String subId = "";
+        String subCategory = "";
+        String subName = "";
+        String subIcon = "";
+        String subOrder = "";
+        boolean subDefaultOpen = false;
+
+        String questId = "";
+        String questIndex = "";
+        String questName = "";
+        String questIcon = "";
+        String questDescription = "";
+        String questCategory = "";
+        String questSubCategory = "";
+        String questDependencies = "";
+        boolean questOptional = false;
+        String questCompletion = "";
+        String questReward = "";
+    }
+
     private static final class IndexName {
         final String index;
         final String name;
@@ -2205,6 +2624,16 @@ public final class QuestEditorScreen extends Screen {
 
         void setSelectedId(String id) {
             selectedId = id == null ? "" : id;
+        }
+
+        float getScrollY() {
+            return scrollY;
+        }
+
+        void setScrollY(float value) {
+            int contentHeight = entries.size() * (ROW_H + ROW_PAD);
+            float max = Math.max(0f, contentHeight - height);
+            scrollY = Math.max(0f, Math.min(value, max));
         }
 
         @Override
@@ -2327,6 +2756,35 @@ public final class QuestEditorScreen extends Screen {
             int textY = getY() + (this.height - font.lineHeight) / 2 + 1;
             int color = this.active ? 0xFFFFFF : 0x808080;
             gg.drawString(font, getMessage(), textX, textY, color, false);
+        }
+
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput narration) {
+        }
+    }
+
+    private static final class IconButton extends AbstractButton {
+        private final ResourceLocation texture;
+        private final Runnable onPress;
+
+        public IconButton(int x, int y, int size, ResourceLocation texture, Runnable onPress) {
+            super(x, y, size, size, Component.empty());
+            this.texture = texture;
+            this.onPress = onPress;
+        }
+
+        @Override
+        public void onPress() {
+            if (onPress != null) onPress.run();
+        }
+
+        @Override
+        protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
+            float alpha = this.active ? 1.0f : 0.5f;
+            RenderSystem.enableBlend();
+            RenderSystem.setShaderColor(1f, 1f, 1f, alpha);
+            gg.blit(texture, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
+            RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
         }
 
         @Override
