@@ -82,6 +82,10 @@ public final class CategoryTabsWidget extends AbstractWidget {
         this.selected = id == null ? "" : id;
     }
 
+    public String getSelectedId() {
+        return selected;
+    }
+
     /**
      * Call this AFTER the screen finishes rendering (i.e., at the end of Screen#render),
      * so it won't be clipped by any scissor/cutout used while rendering widgets.

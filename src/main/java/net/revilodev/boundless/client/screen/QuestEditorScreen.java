@@ -96,17 +96,16 @@ public final class QuestEditorScreen extends Screen {
     private static final int PACK_FORMAT = 48;
 
     private static final String DEFAULT_COMPLETION_JSON =
-            "{ \"collect\": \"minecraft:crafting_table\", \"count\": 1 },\n" +
-                    "{ \"submit\": \"minecraft:diamond\", \"count\": 5 },\n" +
-                    "{ \"kill\": \"minecraft:zombie\", \"count\": 3 },\n" +
-                    "{ \"achieve\": \"minecraft:story/mine_stone\" },\n" +
-                    "{ \"effect\": \"minecraft:haste\" }";
+            "{ \"collect\": \"minecraft:id\", \"count\": 1 },\n" +
+                    "{ \"submit\": \"minecraft:id\", \"count\": 1 },\n" +
+                    "{ \"kill\": \"minecraft:id\", \"count\": 1 },\n" +
+                    "{ \"achieve\": \"minecraft:id/id\" },\n" +
+                    "{ \"effect\": \"minecraft:id\" }";
 
     private static final String DEFAULT_REWARD_JSON =
-            "\"items\": [{ \"item\": \"minecraft:diamond\", \"count\": 1 }],\n" +
-                    "\"commands\": [{ \"command\": \"give @s minecraft:apple\", \"icon\": \"namespace:item\", \"title\": \"\" }],\n" +
-                    "\"functions\": [{ \"function\": \"function_example:test\", \"icon\": \"namespace:item\", \"title\": \"\" }],\n" +
-                    "\"exp\": \"points\", \"//EXP\": \"Either points or levels\", \"count\": 50";
+            "\"items\": [{ \"item\": \"minecraft:id\", \"count\": 1 }],\n" +
+                    "\"commands\": [{ \"command\": \" \", \"icon\": \"minecraft:id\", \"title\": \"\" }],\n" +
+                    "\"exp\": \"points\", \"count\": 1";
 
     private static final String ENTRY_CREATE_PACK = "__create_pack__";
     private static final String ENTRY_NEW = "__new__";
@@ -118,6 +117,9 @@ public final class QuestEditorScreen extends Screen {
     private static final String FOOTER_LINK = "https://discord.gg/DARzByw6VW";
     private static final int FOOTER_TEXT_COLOR = 0xFF5555;
     private static final int FOOTER_LINK_COLOR = 0x3B82F6;
+    private static final long PENDING_INIT_TTL_MS = 15000L;
+    private static ScreenState pendingInitState;
+    private static long pendingInitUntil = 0L;
 
     private final Screen parent;
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
@@ -148,6 +150,7 @@ public final class QuestEditorScreen extends Screen {
     private String statusMessage = "";
     private int statusColor = 0xA0A0A0;
     private long deletePackConfirmUntil = 0L;
+    private long deleteQuestConfirmUntil = 0L;
     private ScreenState pendingState;
     private final List<FormattedCharSequence> footerLines = new ArrayList<>();
     private final List<Integer> footerLineX = new ArrayList<>();
@@ -233,9 +236,14 @@ public final class QuestEditorScreen extends Screen {
             ScreenState state = pendingState;
             pendingState = null;
             restoreState(state);
-        } else {
-            setMode(Mode.PACK_LIST);
+            return;
         }
+        ScreenState initState = takePendingInitState();
+        if (initState != null) {
+            restoreState(initState);
+            return;
+        }
+        setMode(Mode.PACK_LIST);
     }
 
     private void initFormFields() {
@@ -301,6 +309,7 @@ public final class QuestEditorScreen extends Screen {
         statusMessage = "";
         editorScroll = 0f;
         deletePackConfirmUntil = 0L;
+        deleteQuestConfirmUntil = 0L;
         refreshLeftList();
         clearEditor();
         updateBackButtonVisibility();
@@ -532,11 +541,20 @@ public final class QuestEditorScreen extends Screen {
     private void showQuestEditor(QuestEntryData data, Path sourcePath) {
         editorType = EditorType.QUEST;
         editingPath = sourcePath;
+        deleteQuestConfirmUntil = 0L;
 
         questIdBox.setValue(safe(data.id));
-        IndexName indexName = splitIndexName(safe(data.name));
-        questIndexBox.setValue(safe(indexName.index));
-        questNameBox.setValue(safe(indexName.name));
+        String questIndex = safe(data.index);
+        String questName = safe(data.name);
+        if (questIndex.isBlank()) {
+            IndexName fromName = splitIndexName(questName);
+            if (!fromName.index.isBlank()) {
+                questIndex = fromName.index;
+                questName = fromName.name;
+            }
+        }
+        questIndexBox.setValue(questIndex);
+        questNameBox.setValue(questName);
         questIconBox.setValue(safe(data.icon));
         questDescriptionBox.setValue(safe(data.description));
         questCategoryBox.setValue(safe(data.category));
@@ -555,6 +573,9 @@ public final class QuestEditorScreen extends Screen {
                 questRewardBox.setValue(DEFAULT_REWARD_JSON);
             }
         }
+        questDescriptionBox.scrollToTop();
+        questCompletionBox.scrollToTop();
+        questRewardBox.scrollToTop();
 
         setActiveFields(List.of(
                 field("Id", questIdBox),
@@ -630,6 +651,7 @@ public final class QuestEditorScreen extends Screen {
             setError("Category id required");
             return;
         }
+        selectedEntryId = id;
 
         JsonObject obj = new JsonObject();
         obj.addProperty("id", id);
@@ -647,6 +669,7 @@ public final class QuestEditorScreen extends Screen {
             setError("Sub-category id required");
             return;
         }
+        selectedEntryId = id;
 
         JsonObject obj = new JsonObject();
         obj.addProperty("id", id);
@@ -662,10 +685,11 @@ public final class QuestEditorScreen extends Screen {
 
     private void saveQuest() {
         String id = safe(questIdBox.getValue()).trim();
+        selectedEntryId = id;
         JsonObject obj = buildQuestJson(id);
         if (obj == null) return;
 
-        Path target = currentPack.questsDir.resolve(id + ".json");
+        Path target = currentPack.questsDir.resolve(questFileBaseName(id, questIndexBox.getValue()) + ".json");
         saveJson(obj, target, editingPath);
     }
 
@@ -679,14 +703,7 @@ public final class QuestEditorScreen extends Screen {
         JsonObject obj = new JsonObject();
         obj.addProperty("id", questId);
         String nameRaw = safe(questNameBox.getValue()).trim();
-        String indexRaw = safe(questIndexBox.getValue()).trim();
-        String fullName = nameRaw;
-        if (!indexRaw.isBlank() && !nameRaw.isBlank()) {
-            fullName = indexRaw + "-" + nameRaw;
-        } else if (!indexRaw.isBlank()) {
-            fullName = indexRaw;
-        }
-        addOptional(obj, "name", fullName);
+        addOptional(obj, "name", nameRaw);
         addOptional(obj, "icon", questIconBox.getValue());
         addOptional(obj, "description", questDescriptionBox.getValue());
         addOptional(obj, "category", questCategoryBox.getValue());
@@ -745,6 +762,7 @@ public final class QuestEditorScreen extends Screen {
             if (original != null && !original.equals(target)) {
                 Files.deleteIfExists(original);
             }
+            editingPath = target;
             boolean zipped = applyChanges();
             if (zipped) {
                 statusMessage = "Saved and applied";
@@ -771,7 +789,7 @@ public final class QuestEditorScreen extends Screen {
         JsonObject obj = buildQuestJson(newId);
         if (obj == null) return;
 
-        Path target = currentPack.questsDir.resolve(newId + ".json");
+        Path target = currentPack.questsDir.resolve(questFileBaseName(newId, questIndexBox.getValue()) + ".json");
         selectedEntryId = newId;
         saveJson(obj, target, null);
         QuestEntryData data = loadQuest(currentPack, newId);
@@ -787,6 +805,14 @@ public final class QuestEditorScreen extends Screen {
             setError("Quest id required");
             return;
         }
+        long now = Util.getMillis();
+        if (now >= deleteQuestConfirmUntil) {
+            deleteQuestConfirmUntil = now + 5000L;
+            statusMessage = "Are you sure? Click delete again to confirm";
+            statusColor = 0xFFD080;
+            return;
+        }
+        deleteQuestConfirmUntil = 0L;
 
         Path target = editingPath != null ? editingPath : currentPack.questsDir.resolve(id + ".json");
         try {
@@ -892,8 +918,19 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private boolean applyChanges() {
+        ScreenState state = captureState();
+        if (state != null) {
+            pendingState = state;
+            stashPendingInitState(state);
+        }
         boolean zipped = zipCurrentPackSafe();
-        Minecraft.getInstance().reloadResourcePacks();
+        Minecraft.getInstance().reloadResourcePacks().thenRun(() -> Minecraft.getInstance().execute(() -> {
+            if (pendingState != null) {
+                ScreenState restore = pendingState;
+                pendingState = null;
+                restoreState(restore);
+            }
+        }));
         QuestData.loadClient(true);
         return zipped;
     }
@@ -902,6 +939,7 @@ public final class QuestEditorScreen extends Screen {
         editorType = EditorType.NONE;
         editingPath = null;
         loadedQuestType = "";
+        deleteQuestConfirmUntil = 0L;
         setActiveFields(List.of());
         saveButton.visible = false;
         saveButton.active = false;
@@ -998,6 +1036,14 @@ public final class QuestEditorScreen extends Screen {
         String v = raw == null ? "" : raw.trim();
         if (v.isBlank()) return def;
         try { return Integer.parseInt(v); } catch (Exception ignored) { return def; }
+    }
+
+    private String questFileBaseName(String questId, String indexRaw) {
+        String id = safe(questId).trim();
+        if (id.isBlank()) return id;
+        String index = safe(indexRaw).trim();
+        if (index.isBlank()) return id;
+        return index + "-" + id;
     }
     private Path resourcePacksRoot() {
         return Minecraft.getInstance().gameDirectory.toPath()
@@ -1228,6 +1274,7 @@ public final class QuestEditorScreen extends Screen {
         state.statusMessage = statusMessage;
         state.statusColor = statusColor;
         state.deletePackConfirmUntil = deletePackConfirmUntil;
+        state.deleteQuestConfirmUntil = deleteQuestConfirmUntil;
 
         state.packName = safe(packNameBox == null ? "" : packNameBox.getValue());
         state.packNamespace = safe(packNamespaceBox == null ? "" : packNamespaceBox.getValue());
@@ -1270,6 +1317,7 @@ public final class QuestEditorScreen extends Screen {
         statusMessage = state.statusMessage == null ? "" : state.statusMessage;
         statusColor = state.statusColor;
         deletePackConfirmUntil = state.deletePackConfirmUntil;
+        deleteQuestConfirmUntil = state.deleteQuestConfirmUntil;
         refreshLeftList();
         leftList.setScrollY(state.leftScroll);
 
@@ -1300,8 +1348,9 @@ public final class QuestEditorScreen extends Screen {
             }
             case QUEST -> {
                 QuestEntryData data = new QuestEntryData();
+                data.index = state.questIndex;
                 data.id = state.questId;
-                data.name = combineIndexName(state.questIndex, state.questName);
+                data.name = state.questName;
                 data.icon = state.questIcon;
                 data.description = state.questDescription;
                 data.category = state.questCategory;
@@ -1423,6 +1472,8 @@ public final class QuestEditorScreen extends Screen {
 
         QuestEntryData data = new QuestEntryData();
         data.path = path;
+        IndexName indexName = splitIndexName(fileId(path));
+        data.index = indexName.index;
         data.id = optString(obj, "id", id);
         data.name = optString(obj, "name", "");
         data.icon = optString(obj, "icon", "");
@@ -1475,6 +1526,30 @@ public final class QuestEditorScreen extends Screen {
     private String fileId(Path path) {
         String name = path.getFileName().toString();
         return name.endsWith(".json") ? name.substring(0, name.length() - 5) : name;
+    }
+
+    private static void stashPendingInitState(ScreenState state) {
+        pendingInitState = state;
+        pendingInitUntil = Util.getMillis() + PENDING_INIT_TTL_MS;
+    }
+
+    private static ScreenState takePendingInitState() {
+        if (pendingInitState == null) return null;
+        long now = Util.getMillis();
+        if (now > pendingInitUntil) {
+            pendingInitState = null;
+            pendingInitUntil = 0L;
+            return null;
+        }
+        ScreenState state = pendingInitState;
+        pendingInitState = null;
+        pendingInitUntil = 0L;
+        return state;
+    }
+
+    private static void clearPendingInitState() {
+        pendingInitState = null;
+        pendingInitUntil = 0L;
     }
     @Override
     public void renderBackground(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
@@ -1700,6 +1775,7 @@ public final class QuestEditorScreen extends Screen {
 
     @Override
     public void onClose() {
+        clearPendingInitState();
         Minecraft.getInstance().setScreen(parent);
     }
 
@@ -1879,6 +1955,10 @@ public final class QuestEditorScreen extends Screen {
 
         public double getLineHeight() {
             return this.lineHeight;
+        }
+
+        public void scrollToTop() {
+            this.setScrollAmount(0.0);
         }
 
         @Override
@@ -2507,6 +2587,7 @@ public final class QuestEditorScreen extends Screen {
 
     private static final class QuestEntryData {
         Path path;
+        String index = "";
         String id = "";
         String name = "";
         String icon = "";
@@ -2532,6 +2613,7 @@ public final class QuestEditorScreen extends Screen {
         String statusMessage = "";
         int statusColor = 0xA0A0A0;
         long deletePackConfirmUntil = 0L;
+        long deleteQuestConfirmUntil = 0L;
 
         String packName = "";
         String packNamespace = "";

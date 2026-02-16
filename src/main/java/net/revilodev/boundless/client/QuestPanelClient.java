@@ -154,6 +154,27 @@ public final class QuestPanelClient {
         if (used) e.setCanceled(true);
     }
 
+    public static void applyConfigChanges() {
+        QuestData.loadClient(true);
+        for (State st : STATES.values()) {
+            if (st.list != null) {
+                st.list.setQuests(QuestData.all());
+                st.list.setCategory(st.selectedCategory);
+            }
+            if (st.tabs != null) {
+                st.tabs.setCategories(QuestData.categoriesOrdered());
+                String selected = st.tabs.getSelectedId();
+                st.selectedCategory = (selected == null || selected.isBlank()) ? "all" : selected;
+                if (st.list != null) st.list.setCategory(st.selectedCategory);
+            }
+            if (st.btn != null) {
+                boolean show = !Config.hideQuestBookToggle();
+                st.btn.visible = show;
+                st.btn.active = show;
+            }
+        }
+    }
+
     private static void toggle(State st) {
         st.open = !st.open;
         lastQuestOpen = st.open;

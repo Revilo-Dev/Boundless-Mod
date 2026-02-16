@@ -12,6 +12,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.revilodev.boundless.Config;
+import net.revilodev.boundless.client.QuestPanelClient;
 import net.revilodev.boundless.client.QuestListWidget;
 import net.revilodev.boundless.quest.QuestData;
 
@@ -197,6 +198,7 @@ public final class QuestSettingsScreen extends Screen {
         Config.SPAWN_WITH_QUEST_BOOK.set(spawnWithQuestBook);
         Config.HIDE_QUEST_BOOK_TOGGLE.set(hideQuestBookToggle);
         Config.SPEC.save();
+        QuestPanelClient.applyConfigChanges();
     }
 
     private List<QuestData.Quest> buildMenuQuests() {
