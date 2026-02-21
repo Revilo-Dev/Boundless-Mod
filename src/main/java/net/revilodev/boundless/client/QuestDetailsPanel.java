@@ -137,6 +137,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
         this.quest = q;
         this.scrollY = 0f;
         this.descExpanded = false;
+        this.reject.resetConfirmState();
         if (q != null) PinnedQuestHud.setCurrentQuestId(q.id);
     }
 
@@ -578,6 +579,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
         reject.setOptionalAllowed(quest.optional);
         reject.active = !done && quest.optional;
         reject.visible = !done;
+        if (!reject.active || !reject.visible) reject.resetConfirmState();
 
         back.visible = !hideBackButton;
         back.active = !hideBackButton;
@@ -800,9 +802,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
                 ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_reject_highlighted.png");
         private static final ResourceLocation TEX_DISABLED =
                 ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_reject_disabled.png");
+        private static final ResourceLocation TEX_CONFIRM =
+                ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/are_you_sure_button.png");
 
         private final Runnable onPress;
         private boolean optionalAllowed;
+        private boolean confirmArmed;
 
         public RejectButton(int x, int y, Runnable onPress) {
             super(x, y, 24, 20, Component.empty());
@@ -813,17 +818,39 @@ public final class QuestDetailsPanel extends AbstractWidget {
             this.optionalAllowed = v;
         }
 
+        public void resetConfirmState() {
+            this.confirmArmed = false;
+        }
+
         @Override
         public void onPress() {
-            if (this.active && onPress != null) onPress.run();
+            if (!this.active) return;
+            if (!this.confirmArmed) {
+                this.confirmArmed = true;
+                return;
+            }
+            this.confirmArmed = false;
+            if (onPress != null) onPress.run();
             this.active = false;
             this.visible = false;
         }
 
         @Override
+        public boolean mouseClicked(double mouseX, double mouseY, int button) {
+            if (!this.visible || button != 0) return false;
+            boolean over = this.isMouseOver(mouseX, mouseY);
+            if (this.confirmArmed && !over) {
+                this.confirmArmed = false;
+                return false;
+            }
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+
+        @Override
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
             boolean hovered = this.isMouseOver(mouseX, mouseY);
-            ResourceLocation tex = !this.active ? TEX_DISABLED : (hovered ? TEX_HOVER : TEX_NORMAL);
+            if (!this.active && this.confirmArmed) this.confirmArmed = false;
+            ResourceLocation tex = !this.active ? TEX_DISABLED : (this.confirmArmed ? TEX_CONFIRM : (hovered ? TEX_HOVER : TEX_NORMAL));
             gg.blit(tex, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
 
             if (hovered && !this.active && !optionalAllowed) {
