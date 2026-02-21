@@ -23,12 +23,11 @@ public final class CategoryTabsWidget extends AbstractWidget {
     private static final ResourceLocation TAB_SELECTED =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/tab_selected.png");
 
-    private static final int MAX_TABS = 5;
-
     private final Minecraft mc = Minecraft.getInstance();
     private final Consumer<String> onSelect;
     private final List<QuestData.Category> categories = new ArrayList<>();
     private String selected = "";
+    private int scrollIndex = 0;
 
     private int cellW = 26;
     private int cellH = 26;
@@ -53,15 +52,11 @@ public final class CategoryTabsWidget extends AbstractWidget {
 
     public void setCategories(List<QuestData.Category> list) {
         categories.clear();
-        int count = 0;
         for (QuestData.Category c : list) {
             if (c == null) continue;
             if ("all".equalsIgnoreCase(c.id)) continue;
             if (Config.disabledCategories().contains(c.id)) continue;
-
             categories.add(c);
-            count++;
-            if (count >= MAX_TABS) break;
         }
 
         if (!categories.isEmpty()) {
@@ -75,11 +70,15 @@ public final class CategoryTabsWidget extends AbstractWidget {
             if (!hasSelected) selected = categories.get(0).id;
         } else {
             selected = "";
+            scrollIndex = 0;
+            return;
         }
+        clampScroll();
     }
 
     public void setSelected(String id) {
         this.selected = id == null ? "" : id;
+        ensureSelectedVisible();
     }
 
     public String getSelectedId() {
@@ -107,11 +106,17 @@ public final class CategoryTabsWidget extends AbstractWidget {
 
         pendingTooltip = null;
 
+        int visibleCount = visibleTabCount();
+        if (visibleCount <= 0) return;
+        clampScroll();
+
         int x = getX();
         int y = getY();
 
-        for (int i = 0; i < Math.min(categories.size(), MAX_TABS); i++) {
-            QuestData.Category c = categories.get(i);
+        int end = Math.min(categories.size(), scrollIndex + visibleCount);
+        for (int idx = scrollIndex; idx < end; idx++) {
+            QuestData.Category c = categories.get(idx);
+            int i = idx - scrollIndex;
             int top = y + i * (cellH + gap);
 
             boolean sel = !selected.isBlank() && c.id.equalsIgnoreCase(selected);
@@ -134,13 +139,19 @@ public final class CategoryTabsWidget extends AbstractWidget {
         if (!visible || !active) return false;
         if (button != 0) return false;
 
+        int visibleCount = visibleTabCount();
+        if (visibleCount <= 0) return false;
+        clampScroll();
+
         int x = getX();
         int y = getY();
 
-        for (int i = 0; i < Math.min(categories.size(), MAX_TABS); i++) {
+        int end = Math.min(categories.size(), scrollIndex + visibleCount);
+        for (int idx = scrollIndex; idx < end; idx++) {
+            int i = idx - scrollIndex;
             int top = y + i * (cellH + gap);
             if (mouseX >= x && mouseX < x + cellW && mouseY >= top && mouseY < top + cellH) {
-                String id = categories.get(i).id;
+                String id = categories.get(idx).id;
                 selected = id;
                 if (onSelect != null) onSelect.accept(id);
                 return true;
@@ -148,6 +159,68 @@ public final class CategoryTabsWidget extends AbstractWidget {
         }
 
         return false;
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (!visible || !active) return false;
+        if (mouseX < getX() || mouseX >= getX() + cellW || mouseY < getY() || mouseY >= getY() + height) return false;
+        int max = maxScrollIndex();
+        if (max <= 0) return false;
+        if (scrollY > 0) {
+            scrollIndex = Math.max(0, scrollIndex - 1);
+            return true;
+        }
+        if (scrollY < 0) {
+            scrollIndex = Math.min(max, scrollIndex + 1);
+            return true;
+        }
+        return false;
+    }
+
+    private int visibleTabCount() {
+        int step = cellH + gap;
+        if (step <= 0) return 0;
+        return Math.max(1, height / step);
+    }
+
+    private int maxScrollIndex() {
+        int visible = visibleTabCount();
+        if (visible <= 0) return 0;
+        return Math.max(0, categories.size() - visible);
+    }
+
+    private void clampScroll() {
+        scrollIndex = Math.max(0, Math.min(scrollIndex, maxScrollIndex()));
+    }
+
+    private void ensureSelectedVisible() {
+        if (selected == null || selected.isBlank() || categories.isEmpty()) {
+            clampScroll();
+            return;
+        }
+        int selectedIndex = -1;
+        for (int i = 0; i < categories.size(); i++) {
+            if (categories.get(i).id.equalsIgnoreCase(selected)) {
+                selectedIndex = i;
+                break;
+            }
+        }
+        if (selectedIndex < 0) {
+            clampScroll();
+            return;
+        }
+        int visible = visibleTabCount();
+        if (visible <= 0) {
+            clampScroll();
+            return;
+        }
+        if (selectedIndex < scrollIndex) {
+            scrollIndex = selectedIndex;
+        } else if (selectedIndex >= scrollIndex + visible) {
+            scrollIndex = selectedIndex - visible + 1;
+        }
+        clampScroll();
     }
 
     @Override

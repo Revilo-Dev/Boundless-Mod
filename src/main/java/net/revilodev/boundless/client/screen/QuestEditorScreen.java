@@ -26,6 +26,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 import net.minecraft.util.StringUtil;
@@ -39,6 +40,8 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -46,9 +49,11 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -77,6 +82,8 @@ public final class QuestEditorScreen extends Screen {
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/duplicate_button.png");
     private static final ResourceLocation DELETE_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/reject_filter.png");
+    private static final ResourceLocation DELETE_CONFIRM_TEX =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/are_you_sure_button.png");
 
     private static final int TOGGLE_SIZE = 20;
     private static final int SMALL_BTN_SIZE = 20;
@@ -94,6 +101,13 @@ public final class QuestEditorScreen extends Screen {
     private static final float INPUT_TEXT_SCALE = 0.5f;
 
     private static final int PACK_FORMAT = 48;
+    private static final int DEFAULT_INPUT_TEXT_COLOR = 0xE0E0E0;
+    private static final int INVALID_INPUT_TEXT_COLOR = 0xFF4040;
+    private static final String INVALID_ID_TOOLTIP = "Invalid ID";
+    private static final int ID_SUGGESTION_MAX = 6;
+    private static final int ID_SUGGESTION_ROW_H = 12;
+    private static final int ID_SUGGESTION_BG_COLOR = 0xFF000000;
+    private static final int ID_SUGGESTION_TEXT_COLOR = 0xFFFFFF00;
 
     private static final String DEFAULT_COMPLETION_JSON =
             "{ \"collect\": \"minecraft:id\", \"count\": 1 },\n" +
@@ -150,7 +164,7 @@ public final class QuestEditorScreen extends Screen {
     private String statusMessage = "";
     private int statusColor = 0xA0A0A0;
     private long deletePackConfirmUntil = 0L;
-    private long deleteQuestConfirmUntil = 0L;
+    private boolean deleteConfirmArmed = false;
     private ScreenState pendingState;
     private final List<FormattedCharSequence> footerLines = new ArrayList<>();
     private final List<Integer> footerLineX = new ArrayList<>();
@@ -190,6 +204,16 @@ public final class QuestEditorScreen extends Screen {
     private Path editingPath;
     private String loadedQuestType = "";
     private final List<String> itemIdCache = new ArrayList<>();
+    private final Set<String> categoryIdCache = new HashSet<>();
+    private final Set<String> subCategoryIdCache = new HashSet<>();
+    private final Set<String> questIdCache = new HashSet<>();
+    private final List<String> categorySuggestionCache = new ArrayList<>();
+    private final List<String> subCategorySuggestionCache = new ArrayList<>();
+    private final List<String> questSuggestionCache = new ArrayList<>();
+    private final Map<String, List<String>> subCategoryByCategorySuggestion = new HashMap<>();
+    private final List<String> activeIdSuggestions = new ArrayList<>();
+    private EditBox idSuggestionField;
+    private boolean suppressIdSanitizer = false;
 
     public QuestEditorScreen(Screen parent) {
         super(Component.literal("Quest Editor"));
@@ -222,8 +246,8 @@ public final class QuestEditorScreen extends Screen {
 
         int deleteQuestX = saveX - SMALL_BTN_GAP - SMALL_BTN_SIZE;
         int duplicateX = deleteQuestX - SMALL_BTN_GAP - SMALL_BTN_SIZE;
-        duplicateButton = new IconButton(duplicateX, barY, SMALL_BTN_SIZE, DUPLICATE_TEX, this::duplicateQuest);
-        deleteQuestButton = new IconButton(deleteQuestX, barY, SMALL_BTN_SIZE, DELETE_TEX, this::deleteQuest);
+        duplicateButton = new IconButton(duplicateX, barY, SMALL_BTN_SIZE, DUPLICATE_TEX, this::duplicateCurrent);
+        deleteQuestButton = new IconButton(deleteQuestX, barY, SMALL_BTN_SIZE, DELETE_TEX, this::handleDeleteButtonPress);
         addRenderableWidget(duplicateButton);
         addRenderableWidget(deleteQuestButton);
 
@@ -275,6 +299,16 @@ public final class QuestEditorScreen extends Screen {
         questCompletionBox = createMultiLineBox("Completion JSON", BOX_H_TALL);
         questRewardBox = createMultiLineBox("Reward JSON", BOX_H_TALL);
 
+        attachIdSanitizer(packNamespaceBox, false);
+        attachIdSanitizer(catIdBox, false);
+        attachIdSanitizer(catDependencyBox, false);
+        attachIdSanitizer(subIdBox, false);
+        attachIdSanitizer(subCategoryBox, false);
+        attachIdSanitizer(questIdBox, false);
+        attachIdSanitizer(questCategoryBox, false);
+        attachIdSanitizer(questSubCategoryBox, false);
+        attachIdSanitizer(questDependenciesBox, true);
+
         // no extra widgets
     }
 
@@ -309,7 +343,7 @@ public final class QuestEditorScreen extends Screen {
         statusMessage = "";
         editorScroll = 0f;
         deletePackConfirmUntil = 0L;
-        deleteQuestConfirmUntil = 0L;
+        disarmDeleteConfirm();
         refreshLeftList();
         clearEditor();
         updateBackButtonVisibility();
@@ -325,6 +359,7 @@ public final class QuestEditorScreen extends Screen {
         };
         leftList.setEntries(entries);
         leftList.setSelectedId(selectedEntryId);
+        refreshPackIdCaches();
     }
 
     private List<EditorEntry> buildPackEntries() {
@@ -541,7 +576,7 @@ public final class QuestEditorScreen extends Screen {
     private void showQuestEditor(QuestEntryData data, Path sourcePath) {
         editorType = EditorType.QUEST;
         editingPath = sourcePath;
-        deleteQuestConfirmUntil = 0L;
+        disarmDeleteConfirm();
 
         questIdBox.setValue(safe(data.id));
         String questIndex = safe(data.index);
@@ -652,13 +687,8 @@ public final class QuestEditorScreen extends Screen {
             return;
         }
         selectedEntryId = id;
-
-        JsonObject obj = new JsonObject();
-        obj.addProperty("id", id);
-        addOptional(obj, "name", catNameBox.getValue());
-        addOptional(obj, "icon", catIconBox.getValue());
-        addOptionalInt(obj, "order", catOrderBox.getValue());
-        addOptional(obj, "dependency", catDependencyBox.getValue());
+        JsonObject obj = buildCategoryJson(id);
+        if (obj == null) return;
         Path target = currentPack.categoriesDir.resolve(id + ".json");
         saveJson(obj, target, editingPath);
     }
@@ -670,17 +700,42 @@ public final class QuestEditorScreen extends Screen {
             return;
         }
         selectedEntryId = id;
+        JsonObject obj = buildSubCategoryJson(id);
+        if (obj == null) return;
 
+        Path target = currentPack.subCategoriesDir.resolve(id + ".json");
+        saveJson(obj, target, editingPath);
+    }
+
+    private JsonObject buildCategoryJson(String id) {
+        String categoryId = safe(id).trim();
+        if (categoryId.isBlank()) {
+            setError("Category id required");
+            return null;
+        }
         JsonObject obj = new JsonObject();
-        obj.addProperty("id", id);
+        obj.addProperty("id", categoryId);
+        addOptional(obj, "name", catNameBox.getValue());
+        addOptional(obj, "icon", catIconBox.getValue());
+        addOptionalInt(obj, "order", catOrderBox.getValue());
+        addOptional(obj, "dependency", catDependencyBox.getValue());
+        return obj;
+    }
+
+    private JsonObject buildSubCategoryJson(String id) {
+        String subId = safe(id).trim();
+        if (subId.isBlank()) {
+            setError("Sub-category id required");
+            return null;
+        }
+        JsonObject obj = new JsonObject();
+        obj.addProperty("id", subId);
         addOptional(obj, "category", subCategoryBox.getValue());
         addOptional(obj, "name", subNameBox.getValue());
         addOptional(obj, "icon", subIconBox.getValue());
         addOptionalInt(obj, "order", subOrderBox.getValue());
         obj.addProperty("default_open", subDefaultOpenToggle.isOn());
-
-        Path target = currentPack.subCategoriesDir.resolve(id + ".json");
-        saveJson(obj, target, editingPath);
+        return obj;
     }
 
     private void saveQuest() {
@@ -798,6 +853,49 @@ public final class QuestEditorScreen extends Screen {
         }
     }
 
+    private void duplicateCategory() {
+        if (currentPack == null || editorType != EditorType.CATEGORY) return;
+        String baseId = safe(catIdBox.getValue()).trim();
+        if (baseId.isBlank()) {
+            setError("Category id required");
+            return;
+        }
+        String newId = nextAvailableId(baseId, currentPack.categoriesDir);
+        JsonObject obj = buildCategoryJson(newId);
+        if (obj == null) return;
+        Path target = currentPack.categoriesDir.resolve(newId + ".json");
+        selectedEntryId = newId;
+        saveJson(obj, target, null);
+        CategoryData data = loadCategory(currentPack, newId);
+        if (data != null) showCategoryEditor(data, target);
+    }
+
+    private void duplicateSubCategory() {
+        if (currentPack == null || editorType != EditorType.SUBCATEGORY) return;
+        String baseId = safe(subIdBox.getValue()).trim();
+        if (baseId.isBlank()) {
+            setError("Sub-category id required");
+            return;
+        }
+        String newId = nextAvailableId(baseId, currentPack.subCategoriesDir);
+        JsonObject obj = buildSubCategoryJson(newId);
+        if (obj == null) return;
+        Path target = currentPack.subCategoriesDir.resolve(newId + ".json");
+        selectedEntryId = newId;
+        saveJson(obj, target, null);
+        SubCategoryData data = loadSubCategory(currentPack, newId);
+        if (data != null) showSubCategoryEditor(data, target);
+    }
+
+    private void duplicateCurrent() {
+        switch (editorType) {
+            case QUEST -> duplicateQuest();
+            case CATEGORY -> duplicateCategory();
+            case SUBCATEGORY -> duplicateSubCategory();
+            default -> {}
+        }
+    }
+
     private void deleteQuest() {
         if (currentPack == null || editorType != EditorType.QUEST) return;
         String id = safe(questIdBox.getValue()).trim();
@@ -805,18 +903,11 @@ public final class QuestEditorScreen extends Screen {
             setError("Quest id required");
             return;
         }
-        long now = Util.getMillis();
-        if (now >= deleteQuestConfirmUntil) {
-            deleteQuestConfirmUntil = now + 5000L;
-            statusMessage = "Are you sure? Click delete again to confirm";
-            statusColor = 0xFFD080;
-            return;
-        }
-        deleteQuestConfirmUntil = 0L;
 
         Path target = editingPath != null ? editingPath : currentPack.questsDir.resolve(id + ".json");
         try {
             boolean deleted = Files.deleteIfExists(target);
+            disarmDeleteConfirm();
             applyChanges();
             selectedEntryId = "";
             clearEditor();
@@ -833,12 +924,110 @@ public final class QuestEditorScreen extends Screen {
         }
     }
 
+    private void deleteCategory() {
+        if (currentPack == null || editorType != EditorType.CATEGORY) return;
+        String id = safe(catIdBox.getValue()).trim();
+        if (id.isBlank()) {
+            setError("Category id required");
+            return;
+        }
+
+        Path target = editingPath != null ? editingPath : currentPack.categoriesDir.resolve(id + ".json");
+        try {
+            boolean deleted = Files.deleteIfExists(target);
+            disarmDeleteConfirm();
+            applyChanges();
+            selectedEntryId = "";
+            clearEditor();
+            refreshLeftList();
+            if (deleted) {
+                statusMessage = "Deleted";
+                statusColor = 0xA0FFA0;
+            } else {
+                statusMessage = "Nothing to delete";
+                statusColor = 0xA0A0A0;
+            }
+        } catch (IOException e) {
+            setError("Delete failed");
+        }
+    }
+
+    private void deleteSubCategory() {
+        if (currentPack == null || editorType != EditorType.SUBCATEGORY) return;
+        String id = safe(subIdBox.getValue()).trim();
+        if (id.isBlank()) {
+            setError("Sub-category id required");
+            return;
+        }
+
+        Path target = editingPath != null ? editingPath : currentPack.subCategoriesDir.resolve(id + ".json");
+        try {
+            boolean deleted = Files.deleteIfExists(target);
+            disarmDeleteConfirm();
+            applyChanges();
+            selectedEntryId = "";
+            clearEditor();
+            refreshLeftList();
+            if (deleted) {
+                statusMessage = "Deleted";
+                statusColor = 0xA0FFA0;
+            } else {
+                statusMessage = "Nothing to delete";
+                statusColor = 0xA0A0A0;
+            }
+        } catch (IOException e) {
+            setError("Delete failed");
+        }
+    }
+
+    private void deleteCurrent() {
+        switch (editorType) {
+            case QUEST -> deleteQuest();
+            case CATEGORY -> deleteCategory();
+            case SUBCATEGORY -> deleteSubCategory();
+            default -> {}
+        }
+    }
+
+    private void handleDeleteButtonPress() {
+        if (editorType != EditorType.QUEST && editorType != EditorType.CATEGORY && editorType != EditorType.SUBCATEGORY) {
+            disarmDeleteConfirm();
+            return;
+        }
+        if (!deleteConfirmArmed) {
+            deleteConfirmArmed = true;
+            updateDeleteButtonTexture();
+            statusMessage = "Are you sure? Click delete again to confirm";
+            statusColor = 0xFFD080;
+            return;
+        }
+        disarmDeleteConfirm();
+        deleteCurrent();
+    }
+
+    private void disarmDeleteConfirm() {
+        if (!deleteConfirmArmed) return;
+        deleteConfirmArmed = false;
+        updateDeleteButtonTexture();
+    }
+
+    private void updateDeleteButtonTexture() {
+        if (deleteQuestButton != null) {
+            deleteQuestButton.setTexture(deleteConfirmArmed ? DELETE_CONFIRM_TEX : DELETE_TEX);
+        }
+    }
+
     private String nextAvailableQuestId(String baseId) {
         if (currentPack == null) return baseId;
         String base = safe(baseId).trim();
         if (base.isBlank()) return baseId;
 
-        Path dir = currentPack.questsDir;
+        return nextAvailableId(base, currentPack.questsDir);
+    }
+
+    private String nextAvailableId(String baseId, Path dir) {
+        String base = safe(baseId).trim();
+        if (base.isBlank() || dir == null) return baseId;
         String candidate = base + "_copy";
         int counter = 2;
         while (Files.exists(dir.resolve(candidate + ".json"))) {
@@ -923,23 +1112,269 @@ public final class QuestEditorScreen extends Screen {
             pendingState = state;
             stashPendingInitState(state);
         }
+        boolean mirrored = mirrorCurrentPackDirectorySafe();
         boolean zipped = zipCurrentPackSafe();
+        ensurePackSelected();
         Minecraft.getInstance().reloadResourcePacks().thenRun(() -> Minecraft.getInstance().execute(() -> {
             if (pendingState != null) {
                 ScreenState restore = pendingState;
                 pendingState = null;
                 restoreState(restore);
             }
+            QuestData.loadClient(true);
         }));
-        QuestData.loadClient(true);
-        return zipped;
+        return mirrored || zipped;
+    }
+
+    private boolean mirrorCurrentPackDirectorySafe() {
+        if (currentPack == null || currentPack.root == null) return false;
+        try {
+            Path targetRoot = resourcePacksRoot().resolve(currentPack.name);
+            mirrorDirectory(currentPack.root, targetRoot);
+            return true;
+        } catch (IOException ignored) {
+        }
+        return false;
+    }
+
+    private void mirrorDirectory(Path sourceRoot, Path targetRoot) throws IOException {
+        if (sourceRoot == null || targetRoot == null) return;
+        if (!Files.isDirectory(sourceRoot)) throw new IOException("Source pack folder missing");
+        if (Files.exists(targetRoot) && !Files.isDirectory(targetRoot)) {
+            Files.deleteIfExists(targetRoot);
+        }
+        if (Files.exists(targetRoot)) {
+            deleteDirectory(targetRoot);
+        }
+        Files.createDirectories(targetRoot);
+        try (var walk = Files.walk(sourceRoot)) {
+            for (Path src : (Iterable<Path>) walk::iterator) {
+                Path rel = sourceRoot.relativize(src);
+                if (rel.toString().isEmpty()) continue;
+                Path dst = targetRoot.resolve(rel.toString());
+                if (Files.isDirectory(src)) {
+                    Files.createDirectories(dst);
+                } else {
+                    Path parent = dst.getParent();
+                    if (parent != null) Files.createDirectories(parent);
+                    Files.copy(src, dst, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
+    }
+
+    private void ensurePackSelected() {
+        if (currentPack == null || currentPack.name == null || currentPack.name.isBlank()) return;
+        Minecraft mc = Minecraft.getInstance();
+        PackRepository repo = mc.getResourcePackRepository();
+        if (repo == null) return;
+        try {
+            repo.reload();
+        } catch (Exception ignored) {
+        }
+
+        String packId = findPackId(repo, currentPack);
+        if (packId == null || packId.isBlank()) return;
+        applyPackSelectionToRepo(repo, packId);
+        if (ensurePackSelectedInOptions(mc, packId)) {
+            invokeOptionsSave(mc.options);
+        }
+    }
+
+    private boolean ensurePackSelectedInOptions(Minecraft mc, String packId) {
+        if (mc == null || mc.options == null || packId == null || packId.isBlank()) return false;
+        Object options = mc.options;
+        boolean changed = false;
+        List<String> selected = getOptionsList(options, "resourcePacks");
+        if (selected != null && !selected.contains(packId)) {
+            changed |= addOptionEntry(options, "resourcePacks", selected, packId);
+        }
+        return changed;
+    }
+
+    private boolean addOptionEntry(Object options, String fieldName, List<String> current, String entry) {
+        if (current == null || entry == null) return false;
+        try {
+            current.add(preferredPackInsertIndex(current), entry);
+            return true;
+        } catch (UnsupportedOperationException ignored) {
+        }
+        List<String> copy = new ArrayList<>(current);
+        if (copy.contains(entry)) return false;
+        copy.add(preferredPackInsertIndex(copy), entry);
+        setOptionsList(options, fieldName, copy);
+        return true;
+    }
+
+    private int preferredPackInsertIndex(List<String> selected) {
+        if (selected == null || selected.isEmpty()) return 0;
+        int idx = 0;
+        for (String id : selected) {
+            if (!"vanilla".equals(id) && !"mod_resources".equals(id)) {
+                break;
+            }
+            idx++;
+        }
+        return Math.max(0, Math.min(idx, selected.size()));
+    }
+
+    private List<String> getOptionsList(Object options, String fieldName) {
+        if (options == null || fieldName == null || fieldName.isBlank()) return null;
+        try {
+            Field field = options.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            Object value = field.get(options);
+            if (value instanceof List<?> list) {
+                @SuppressWarnings("unchecked")
+                List<String> out = (List<String>) list;
+                return out;
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private void setOptionsList(Object options, String fieldName, List<String> next) {
+        if (options == null || fieldName == null || fieldName.isBlank()) return;
+        try {
+            Field field = options.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            field.set(options, next);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void invokeOptionsSave(Object options) {
+        if (options == null) return;
+        try {
+            Method save = options.getClass().getMethod("save");
+            save.invoke(options);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void applyPackSelectionToRepo(PackRepository repo, String packId) {
+        if (repo == null || packId == null || packId.isBlank()) return;
+        List<String> selectedIds = new ArrayList<>();
+        var selected = repo.getSelectedPacks();
+        if (selected != null) {
+            for (Object p : selected) {
+                String id = packIdOf(p);
+                if (id != null && !id.isBlank() && !selectedIds.contains(id)) {
+                    selectedIds.add(id);
+                }
+            }
+        }
+        if (!selectedIds.contains(packId)) {
+            selectedIds.add(packId);
+        }
+        for (Method method : repo.getClass().getMethods()) {
+            if (!"setSelected".equals(method.getName())) continue;
+            Class<?>[] params = method.getParameterTypes();
+            if (params.length != 1) continue;
+            if (params[0].isAssignableFrom(selectedIds.getClass())) {
+                try {
+                    method.invoke(repo, selectedIds);
+                    return;
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    private String findPackId(PackRepository repo, QuestPack pack) {
+        if (repo == null || pack == null) return null;
+        String name = safe(pack.name).trim();
+        if (name.isBlank()) return null;
+        String nameLower = name.toLowerCase(Locale.ROOT);
+        String[] candidates = new String[] {
+                "file/" + name,
+                "file/" + name + ".zip",
+                name,
+                name + ".zip"
+        };
+
+        String expectedDescription = "Boundless Quest Pack: " + name;
+        String fallback = null;
+        var available = repo.getAvailablePacks();
+        if (available == null) return null;
+        for (Object p : available) {
+            String id = packIdOf(p);
+            if (id == null || id.isBlank()) continue;
+            for (String candidate : candidates) {
+                if (id.equals(candidate)) return id;
+            }
+            String idLower = id.toLowerCase(Locale.ROOT);
+            if (idLower.equals(nameLower) || idLower.endsWith("/" + nameLower)
+                    || idLower.endsWith("/" + nameLower + ".zip") || idLower.endsWith(nameLower + ".zip")) {
+                fallback = id;
+            }
+        }
+
+        if (fallback != null) return fallback;
+        for (Object p : available) {
+            String id = packIdOf(p);
+            if (id == null || id.isBlank()) continue;
+            String description = packDescriptionOf(p);
+            String title = packTitleOf(p);
+            if ((description != null && description.contains(expectedDescription))
+                    || (title != null && title.contains(expectedDescription))) {
+                return id;
+            }
+        }
+
+        for (Object p : available) {
+            String id = packIdOf(p);
+            if (id == null || id.isBlank()) continue;
+            if (id.toLowerCase(Locale.ROOT).contains(nameLower)) return id;
+        }
+        return null;
+    }
+
+    private String packIdOf(Object pack) {
+        return invokeString(pack, "getId", "id");
+    }
+
+    private String packTitleOf(Object pack) {
+        Object result = invokeObject(pack, "getTitle", "title");
+        if (result instanceof Component component) {
+            return component.getString();
+        }
+        return result instanceof String s ? s : null;
+    }
+
+    private String packDescriptionOf(Object pack) {
+        Object result = invokeObject(pack, "getDescription", "description");
+        if (result instanceof Component component) {
+            return component.getString();
+        }
+        return result instanceof String s ? s : null;
+    }
+
+    private String invokeString(Object target, String... methods) {
+        Object result = invokeObject(target, methods);
+        return result instanceof String s ? s : null;
+    }
+
+    private Object invokeObject(Object target, String... methods) {
+        if (target == null || methods == null) return null;
+        for (String method : methods) {
+            if (method == null || method.isBlank()) continue;
+            try {
+                Method m = target.getClass().getMethod(method);
+                Object value = m.invoke(target);
+                if (value != null) return value;
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
     }
 
     private void clearEditor() {
         editorType = EditorType.NONE;
         editingPath = null;
         loadedQuestType = "";
-        deleteQuestConfirmUntil = 0L;
+        disarmDeleteConfirm();
         setActiveFields(List.of());
         saveButton.visible = false;
         saveButton.active = false;
@@ -976,6 +1411,39 @@ public final class QuestEditorScreen extends Screen {
 
     private String safe(String v) {
         return v == null ? "" : v;
+    }
+
+    private void attachIdSanitizer(EditBox box, boolean commaSeparated) {
+        if (box == null) return;
+        box.setResponder(value -> {
+            if (suppressIdSanitizer) return;
+            String normalized = normalizeIdInput(value, commaSeparated);
+            if (normalized.equals(value)) return;
+            int cursor = box.getCursorPosition();
+            suppressIdSanitizer = true;
+            box.setValue(normalized);
+            box.setCursorPosition(Math.min(cursor, normalized.length()));
+            box.setHighlightPos(box.getCursorPosition());
+            suppressIdSanitizer = false;
+        });
+    }
+
+    private String normalizeIdInput(String value, boolean commaSeparated) {
+        String raw = safe(value);
+        if (raw.isEmpty()) return raw;
+        if (!commaSeparated) {
+            return raw.toLowerCase(Locale.ROOT).replace(' ', '-');
+        }
+        String[] parts = raw.split(",", -1);
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            if (i > 0) out.append(',');
+            String p = parts[i];
+            String trimmedLeading = p.replaceAll("^\\s+", "");
+            String normalized = trimmedLeading.toLowerCase(Locale.ROOT).replace(' ', '-');
+            out.append(normalized);
+        }
+        return out.toString();
     }
 
     private void addOptional(JsonObject obj, String key, String value) {
@@ -1274,7 +1742,7 @@ public final class QuestEditorScreen extends Screen {
         state.statusMessage = statusMessage;
         state.statusColor = statusColor;
         state.deletePackConfirmUntil = deletePackConfirmUntil;
-        state.deleteQuestConfirmUntil = deleteQuestConfirmUntil;
+        state.deleteConfirmArmed = deleteConfirmArmed;
 
         state.packName = safe(packNameBox == null ? "" : packNameBox.getValue());
         state.packNamespace = safe(packNamespaceBox == null ? "" : packNamespaceBox.getValue());
@@ -1311,13 +1779,21 @@ public final class QuestEditorScreen extends Screen {
             setMode(Mode.PACK_LIST);
             return;
         }
+        String preservedStatusMessage = statusMessage;
+        int preservedStatusColor = statusColor;
         currentPack = state.currentPack;
         selectedEntryId = state.selectedEntryId == null ? "" : state.selectedEntryId;
         mode = state.mode == null ? Mode.PACK_LIST : state.mode;
-        statusMessage = state.statusMessage == null ? "" : state.statusMessage;
-        statusColor = state.statusColor;
+        if (preservedStatusMessage == null || preservedStatusMessage.isBlank()) {
+            statusMessage = state.statusMessage == null ? "" : state.statusMessage;
+            statusColor = state.statusColor;
+        } else {
+            statusMessage = preservedStatusMessage;
+            statusColor = preservedStatusColor;
+        }
         deletePackConfirmUntil = state.deletePackConfirmUntil;
-        deleteQuestConfirmUntil = state.deleteQuestConfirmUntil;
+        deleteConfirmArmed = state.deleteConfirmArmed;
+        updateDeleteButtonTexture();
         refreshLeftList();
         leftList.setScrollY(state.leftScroll);
 
@@ -1594,6 +2070,7 @@ public final class QuestEditorScreen extends Screen {
         if (deleteQuestButton != null && deleteQuestButton.visible) deleteQuestButton.render(gg, mouseX, mouseY, partialTick);
         if (deletePackButton != null && deletePackButton.visible) deletePackButton.render(gg, mouseX, mouseY, partialTick);
         renderIconOverlays(gg);
+        renderIdSuggestions(gg, mouseX, mouseY);
 
         if (!statusMessage.isBlank()) {
             int msgW = font.width(statusMessage);
@@ -1644,8 +2121,109 @@ public final class QuestEditorScreen extends Screen {
         gg.drawString(font, remainder, textX, textY, 0x808080, false);
     }
 
+    private void renderIdSuggestions(GuiGraphics gg, int mouseX, int mouseY) {
+        updateIdSuggestions();
+        if (idSuggestionField == null || activeIdSuggestions.isEmpty()) return;
+        int x = idSuggestionField.getX();
+        int y = idSuggestionField.getY() + idSuggestionField.getHeight() + 1;
+        int w = idSuggestionField.getWidth();
+        for (int i = 0; i < activeIdSuggestions.size(); i++) {
+            int top = y + (i * ID_SUGGESTION_ROW_H);
+            int bottom = top + ID_SUGGESTION_ROW_H;
+            gg.fill(x, top, x + w, bottom, ID_SUGGESTION_BG_COLOR);
+            gg.drawString(font, activeIdSuggestions.get(i), x + 4, top + 2, ID_SUGGESTION_TEXT_COLOR, false);
+        }
+    }
+
+    private void updateIdSuggestions() {
+        EditBox focused = focusedIdSuggestionField();
+        if (focused == null) {
+            idSuggestionField = null;
+            activeIdSuggestions.clear();
+            return;
+        }
+        idSuggestionField = focused;
+        activeIdSuggestions.clear();
+
+        List<String> all = idSuggestionValuesForField(focused);
+        if (all.isEmpty()) return;
+
+        String prefix = idSuggestionPrefix(focused).toLowerCase(Locale.ROOT);
+        for (String id : all) {
+            if (id == null || id.isBlank()) continue;
+            if (!prefix.isBlank() && !id.toLowerCase(Locale.ROOT).startsWith(prefix)) continue;
+            activeIdSuggestions.add(id);
+            if (activeIdSuggestions.size() >= ID_SUGGESTION_MAX) break;
+        }
+    }
+
+    private EditBox focusedIdSuggestionField() {
+        if (catDependencyBox != null && catDependencyBox.visible && catDependencyBox.isFocused()) return catDependencyBox;
+        if (subCategoryBox != null && subCategoryBox.visible && subCategoryBox.isFocused()) return subCategoryBox;
+        if (questCategoryBox != null && questCategoryBox.visible && questCategoryBox.isFocused()) return questCategoryBox;
+        if (questSubCategoryBox != null && questSubCategoryBox.visible && questSubCategoryBox.isFocused()) return questSubCategoryBox;
+        if (questDependenciesBox != null && questDependenciesBox.visible && questDependenciesBox.isFocused()) return questDependenciesBox;
+        return null;
+    }
+
+    private String idSuggestionPrefix(EditBox field) {
+        if (field == null) return "";
+        String raw = safe(field.getValue());
+        if (field == questDependenciesBox) {
+            int comma = raw.lastIndexOf(',');
+            return comma >= 0 ? raw.substring(comma + 1).trim() : raw.trim();
+        }
+        return raw.trim();
+    }
+
+    private List<String> idSuggestionValuesForField(EditBox field) {
+        if (field == null) return List.of();
+        if (field == catDependencyBox || field == subCategoryBox || field == questCategoryBox) {
+            return categorySuggestionCache;
+        } else if (field == questSubCategoryBox) {
+            String cat = safe(questCategoryBox == null ? "" : questCategoryBox.getValue()).trim();
+            if (!cat.isBlank()) {
+                List<String> scoped = subCategoryByCategorySuggestion.get(cat.toLowerCase(Locale.ROOT));
+                if (scoped != null && !scoped.isEmpty()) return scoped;
+            }
+            return subCategorySuggestionCache;
+        } else if (field == questDependenciesBox) {
+            return questSuggestionCache;
+        }
+        return List.of();
+    }
+
+    private boolean clickIdSuggestion(double mouseX, double mouseY) {
+        if (idSuggestionField == null || activeIdSuggestions.isEmpty()) return false;
+        int x = idSuggestionField.getX();
+        int y = idSuggestionField.getY() + idSuggestionField.getHeight() + 1;
+        int w = idSuggestionField.getWidth();
+        if (mouseX < x || mouseX > x + w || mouseY < y) return false;
+        int idx = (int) ((mouseY - y) / ID_SUGGESTION_ROW_H);
+        if (idx < 0 || idx >= activeIdSuggestions.size()) return false;
+        applyIdSuggestion(idSuggestionField, activeIdSuggestions.get(idx));
+        return true;
+    }
+
+    private void applyIdSuggestion(EditBox field, String suggestion) {
+        if (field == null || suggestion == null) return;
+        if (field == questDependenciesBox) {
+            String raw = safe(field.getValue());
+            int comma = raw.lastIndexOf(',');
+            String next = comma >= 0 ? raw.substring(0, comma + 1).trim() + " " + suggestion : suggestion;
+            field.setValue(next.trim());
+        } else {
+            field.setValue(suggestion);
+        }
+        field.setCursorPosition(field.getValue().length());
+        field.setHighlightPos(field.getCursorPosition());
+        field.setFocused(true);
+        updateIdSuggestions();
+    }
+
     private void renderEditorFields(GuiGraphics gg, int mouseX, int mouseY) {
         updateDynamicFieldSizes();
+        updateInvalidFieldStyles();
         int contentHeight = contentHeight();
         int maxScroll = Math.max(0, contentHeight - ph);
         editorScroll = Math.max(0f, Math.min(editorScroll, maxScroll));
@@ -1675,14 +2253,15 @@ public final class QuestEditorScreen extends Screen {
 
             if (labelY + font.lineHeight > clipTop && labelY < clipBottom) {
                 gg.drawString(font, field.displayLabel, pxRight + 2, labelY, 0xFFFFFF, false);
-                if (!field.tooltip.isBlank()) {
+                String tooltip = tooltipForField(field);
+                if (!tooltip.isBlank()) {
                     int labelW = font.width(field.displayLabel);
                     boolean hoverLabel = mouseX >= pxRight + 2 && mouseX <= pxRight + 2 + labelW
                             && mouseY >= labelY && mouseY <= labelY + font.lineHeight;
                     boolean hoverWidget = mouseX >= boxX && mouseX <= boxX + (pw - 4)
                             && mouseY >= boxY && mouseY <= boxY + field.widget.getHeight();
                     if (hoverLabel || hoverWidget) {
-                        gg.renderTooltip(font, Component.literal(field.tooltip), mouseX, mouseY);
+                        gg.renderTooltip(font, Component.literal(tooltip), mouseX, mouseY);
                     }
                 }
             }
@@ -1735,6 +2314,161 @@ public final class QuestEditorScreen extends Screen {
         }
     }
 
+    private void updateInvalidFieldStyles() {
+        setIdFieldColor(catDependencyBox, isInvalidCategoryDependency());
+        setIdFieldColor(subCategoryBox, isInvalidParentCategory());
+        setIdFieldColor(questCategoryBox, isInvalidQuestCategory());
+        setIdFieldColor(questSubCategoryBox, isInvalidQuestSubCategory());
+        setIdFieldColor(questDependenciesBox, isInvalidQuestDependencies());
+        setJsonFieldColor(questCompletionBox, isInvalidCompletionJson());
+        setJsonFieldColor(questRewardBox, isInvalidRewardJson());
+    }
+
+    private void setIdFieldColor(EditBox box, boolean invalid) {
+        if (box == null) return;
+        box.setTextColor(invalid ? INVALID_INPUT_TEXT_COLOR : DEFAULT_INPUT_TEXT_COLOR);
+    }
+
+    private void setJsonFieldColor(ScaledMultiLineEditBox box, boolean invalid) {
+        if (box == null) return;
+        box.setTextColor(invalid ? INVALID_INPUT_TEXT_COLOR : DEFAULT_INPUT_TEXT_COLOR);
+    }
+
+    private String tooltipForField(FormField field) {
+        if (field == null || field.widget == null) return "";
+        if (field.widget == catDependencyBox && isInvalidCategoryDependency()) return INVALID_ID_TOOLTIP;
+        if (field.widget == subCategoryBox && isInvalidParentCategory()) return INVALID_ID_TOOLTIP;
+        if (field.widget == questCategoryBox && isInvalidQuestCategory()) return INVALID_ID_TOOLTIP;
+        if (field.widget == questSubCategoryBox && isInvalidQuestSubCategory()) return INVALID_ID_TOOLTIP;
+        if (field.widget == questDependenciesBox && isInvalidQuestDependencies()) return INVALID_ID_TOOLTIP;
+        return field.tooltip == null ? "" : field.tooltip;
+    }
+
+    private boolean isInvalidCategoryDependency() {
+        return isMissingCategoryId(safe(catDependencyBox == null ? "" : catDependencyBox.getValue()));
+    }
+
+    private boolean isInvalidParentCategory() {
+        return isMissingCategoryId(safe(subCategoryBox == null ? "" : subCategoryBox.getValue()));
+    }
+
+    private boolean isInvalidQuestCategory() {
+        return isMissingCategoryId(safe(questCategoryBox == null ? "" : questCategoryBox.getValue()));
+    }
+
+    private boolean isInvalidQuestSubCategory() {
+        return isMissingSubCategoryId(safe(questSubCategoryBox == null ? "" : questSubCategoryBox.getValue()));
+    }
+
+    private boolean isInvalidQuestDependencies() {
+        String raw = safe(questDependenciesBox == null ? "" : questDependenciesBox.getValue());
+        if (currentPack == null || raw.isBlank()) return false;
+        String[] parts = raw.split(",");
+        for (String part : parts) {
+            String trimmed = part == null ? "" : part.trim();
+            if (trimmed.isBlank()) continue;
+            if (!questIdCache.contains(trimmed)) return true;
+        }
+        return false;
+    }
+
+    private boolean isInvalidCompletionJson() {
+        String raw = safe(questCompletionBox == null ? "" : questCompletionBox.getValue()).trim();
+        if (raw.isBlank()) return false;
+        return parseCompletionJson(raw) == null;
+    }
+
+    private boolean isInvalidRewardJson() {
+        String raw = safe(questRewardBox == null ? "" : questRewardBox.getValue()).trim();
+        if (raw.isBlank()) return false;
+        JsonElement parsed = parseRewardJson(raw);
+        return parsed == null || !parsed.isJsonObject();
+    }
+
+    private boolean isMissingCategoryId(String raw) {
+        if (currentPack == null) return false;
+        String id = raw == null ? "" : raw.trim();
+        if (id.isBlank()) return false;
+        return !categoryIdCache.contains(id);
+    }
+
+    private boolean isMissingSubCategoryId(String raw) {
+        if (currentPack == null) return false;
+        String id = raw == null ? "" : raw.trim();
+        if (id.isBlank()) return false;
+        return !subCategoryIdCache.contains(id);
+    }
+
+    private void refreshPackIdCaches() {
+        categoryIdCache.clear();
+        subCategoryIdCache.clear();
+        questIdCache.clear();
+        categorySuggestionCache.clear();
+        subCategorySuggestionCache.clear();
+        questSuggestionCache.clear();
+        subCategoryByCategorySuggestion.clear();
+
+        if (currentPack != null) {
+            for (NamedEntry entry : listCategoryEntries(currentPack)) {
+                if (entry != null && entry.id != null && !entry.id.isBlank()) categoryIdCache.add(entry.id);
+            }
+            for (NamedEntry entry : listSubCategoryEntries(currentPack)) {
+                if (entry != null && entry.id != null && !entry.id.isBlank()) subCategoryIdCache.add(entry.id);
+            }
+            for (NamedEntry entry : listQuestEntries(currentPack)) {
+                if (entry != null && entry.id != null && !entry.id.isBlank()) questIdCache.add(entry.id);
+            }
+        }
+
+        List<String> localCategories = sortedIds(categoryIdCache);
+        List<String> localSubCategories = sortedIds(subCategoryIdCache);
+        List<String> localQuests = sortedIds(questIdCache);
+        categorySuggestionCache.addAll(localCategories);
+        questSuggestionCache.addAll(localQuests);
+
+        if (currentPack != null) {
+            for (NamedEntry entry : listSubCategoryEntries(currentPack)) {
+                if (entry == null || entry.id == null || entry.id.isBlank()) continue;
+                SubCategoryData data = loadSubCategory(currentPack, entry.id);
+                String cat = data == null ? "" : safe(data.category).trim();
+                addSubCategorySuggestion(entry.id, cat);
+            }
+        }
+        for (String localSub : localSubCategories) {
+            if (!subCategorySuggestionCache.contains(localSub)) subCategorySuggestionCache.add(localSub);
+        }
+
+        for (QuestData.Category c : QuestData.categoriesOrdered()) {
+            if (c == null || c.id == null || c.id.isBlank()) continue;
+            if (!categorySuggestionCache.contains(c.id)) categorySuggestionCache.add(c.id);
+        }
+        for (QuestData.SubCategory sc : QuestData.subCategoriesAllOrdered()) {
+            if (sc == null || sc.id == null || sc.id.isBlank()) continue;
+            addSubCategorySuggestion(sc.id, sc.category);
+        }
+        for (QuestData.Quest q : QuestData.all()) {
+            if (q == null || q.id == null || q.id.isBlank()) continue;
+            if (!questSuggestionCache.contains(q.id)) questSuggestionCache.add(q.id);
+        }
+    }
+
+    private List<String> sortedIds(Set<String> ids) {
+        List<String> out = new ArrayList<>();
+        if (ids == null || ids.isEmpty()) return out;
+        out.addAll(ids);
+        out.sort(String::compareToIgnoreCase);
+        return out;
+    }
+
+    private void addSubCategorySuggestion(String subId, String categoryId) {
+        if (subId == null || subId.isBlank()) return;
+        if (!subCategorySuggestionCache.contains(subId)) subCategorySuggestionCache.add(subId);
+        String key = safe(categoryId).trim().toLowerCase(Locale.ROOT);
+        if (key.isBlank()) return;
+        List<String> scoped = subCategoryByCategorySuggestion.computeIfAbsent(key, k -> new ArrayList<>());
+        if (!scoped.contains(subId)) scoped.add(subId);
+    }
+
     private int computeMultilineHeight(ScaledMultiLineEditBox box, int minHeight) {
         int lines = Math.max(1, box.getLineCount());
         double lineHeight = box.getLineHeight();
@@ -1748,7 +2482,9 @@ public final class QuestEditorScreen extends Screen {
         backButton.visible = true;
         backButton.active = true;
 
-        boolean showQuestActions = editorType == EditorType.QUEST;
+        boolean showQuestActions = editorType == EditorType.QUEST
+                || editorType == EditorType.CATEGORY
+                || editorType == EditorType.SUBCATEGORY;
         if (duplicateButton != null) {
             duplicateButton.visible = showQuestActions;
             duplicateButton.active = showQuestActions;
@@ -1792,6 +2528,16 @@ public final class QuestEditorScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == 0 && deleteConfirmArmed
+                && (deleteQuestButton == null || !deleteQuestButton.visible || !deleteQuestButton.isMouseOver(mouseX, mouseY))) {
+            disarmDeleteConfirm();
+        }
+        if (button == 0 && clickToolbarButtons(mouseX, mouseY)) {
+            return true;
+        }
+        if (button == 0 && clickIdSuggestion(mouseX, mouseY)) {
+            return true;
+        }
         Style style = getFooterStyleAt((int) mouseX, (int) mouseY);
         if (style != null && style.getClickEvent() != null
                 && style.getClickEvent().getAction() == ClickEvent.Action.OPEN_URL) {
@@ -1799,6 +2545,33 @@ public final class QuestEditorScreen extends Screen {
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    private boolean clickToolbarButtons(double mouseX, double mouseY) {
+        if (saveButton != null && saveButton.visible && saveButton.active && saveButton.isMouseOver(mouseX, mouseY)) {
+            saveButton.onPress();
+            return true;
+        }
+        if (backButton != null && backButton.visible && backButton.active && backButton.isMouseOver(mouseX, mouseY)) {
+            backButton.onPress();
+            return true;
+        }
+        if (duplicateButton != null && duplicateButton.visible && duplicateButton.active
+                && duplicateButton.isMouseOver(mouseX, mouseY)) {
+            duplicateButton.onPress();
+            return true;
+        }
+        if (deleteQuestButton != null && deleteQuestButton.visible && deleteQuestButton.active
+                && deleteQuestButton.isMouseOver(mouseX, mouseY)) {
+            handleDeleteButtonPress();
+            return true;
+        }
+        if (deletePackButton != null && deletePackButton.visible && deletePackButton.active
+                && deletePackButton.isMouseOver(mouseX, mouseY)) {
+            deletePackButton.onPress();
+            return true;
+        }
+        return false;
     }
 
     @Override
@@ -1921,6 +2694,7 @@ public final class QuestEditorScreen extends Screen {
         private final float textScale;
         private final double lineHeight;
         private long focusedTime = Util.getMillis();
+        private int textColor = TEXT_COLOR;
 
         ScaledMultiLineEditBox(Font font, int x, int y, int width, int height, Component placeholder, Component message, float textScale) {
             super(x, y, width, height, message);
@@ -1943,6 +2717,10 @@ public final class QuestEditorScreen extends Screen {
 
         public void setValue(String fullText) {
             this.textField.setValue(fullText);
+        }
+
+        public void setTextColor(int color) {
+            this.textColor = color;
         }
 
         public String getValue() {
@@ -2043,11 +2821,11 @@ public final class QuestEditorScreen extends Screen {
                     if (visible) {
                         int drawY = Math.round((float) (lineScreenY * invScale));
                         drawX = guiGraphics.drawString(
-                                this.font, text.substring(line.beginIndex(), cursor), baseX, drawY, TEXT_COLOR, false
+                                this.font, text.substring(line.beginIndex(), cursor), baseX, drawY, this.textColor, false
                             )
                             - 1;
                         guiGraphics.fill(drawX, drawY - 1, drawX + 1, drawY + 1 + this.font.lineHeight, CURSOR_INSERT_COLOR);
-                        guiGraphics.drawString(this.font, text.substring(cursor, line.endIndex()), drawX, drawY, TEXT_COLOR, false);
+                        guiGraphics.drawString(this.font, text.substring(cursor, line.endIndex()), drawX, drawY, this.textColor, false);
                     }
                 } else {
                     if (visible) {
@@ -2057,7 +2835,7 @@ public final class QuestEditorScreen extends Screen {
                                 text.substring(line.beginIndex(), line.endIndex()),
                                 baseX,
                                 drawY,
-                                TEXT_COLOR,
+                                this.textColor,
                                 false
                             )
                             - 1;
@@ -2613,7 +3391,7 @@ public final class QuestEditorScreen extends Screen {
         String statusMessage = "";
         int statusColor = 0xA0A0A0;
         long deletePackConfirmUntil = 0L;
-        long deleteQuestConfirmUntil = 0L;
+        boolean deleteConfirmArmed = false;
 
         String packName = "";
         String packNamespace = "";
@@ -2846,7 +3624,7 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private static final class IconButton extends AbstractButton {
-        private final ResourceLocation texture;
+        private ResourceLocation texture;
         private final Runnable onPress;
 
         public IconButton(int x, int y, int size, ResourceLocation texture, Runnable onPress) {
@@ -2858,6 +3636,12 @@ public final class QuestEditorScreen extends Screen {
         @Override
         public void onPress() {
             if (onPress != null) onPress.run();
+        }
+
+        public void setTexture(ResourceLocation texture) {
+            if (texture != null) {
+                this.texture = texture;
+            }
         }
 
         @Override

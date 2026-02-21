@@ -161,8 +161,11 @@ public final class QuestTracker {
 
     public static void setServerStatus(ServerPlayer player, String questId, Status st) {
         QuestProgressState data = QuestProgressState.get(player.serverLevel());
-        if (st == null || st == Status.INCOMPLETE || st == Status.COMPLETED) data.set(player.getUUID(), questId, null);
-        else data.set(player.getUUID(), questId, st.name());
+        if (st == null || st == Status.INCOMPLETE) {
+            data.set(player.getUUID(), questId, null);
+        } else {
+            data.set(player.getUUID(), questId, st.name());
+        }
     }
 
     public static Status getStatus(QuestData.Quest q, Player player) {
@@ -222,6 +225,7 @@ public final class QuestTracker {
 
     public static boolean isReady(QuestData.Quest q, Player player) {
         if (player == null || q == null || q.completion == null) return false;
+        if (getStatus(q, player) == Status.COMPLETED) return true;
 
         if (q.completion.targets != null && !q.completion.targets.isEmpty()) {
             boolean hasItemTargets = false;
