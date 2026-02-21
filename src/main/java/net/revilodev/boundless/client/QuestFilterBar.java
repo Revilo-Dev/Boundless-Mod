@@ -17,16 +17,22 @@ public final class QuestFilterBar extends AbstractWidget {
 
     private static final ResourceLocation TEX_COMPLETE =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/complete_filter.png");
+    private static final ResourceLocation TEX_COMPLETE_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/complete_filter_hovered.png");
     private static final ResourceLocation TEX_COMPLETE_DISABLED =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/complete_filter_disabled.png");
 
     private static final ResourceLocation TEX_REJECT =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/reject_filter.png");
+    private static final ResourceLocation TEX_REJECT_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/reject_filter_hovered.png");
     private static final ResourceLocation TEX_REJECT_DISABLED =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/reject_filter_disabled.png");
 
     private static final ResourceLocation TEX_LOCKED =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/locked_filter.png");
+    private static final ResourceLocation TEX_LOCKED_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/locked_filter_hovered.png");
     private static final ResourceLocation TEX_LOCKED_DISABLED =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/locked_filter_disabled.png");
     private static final ResourceLocation TEX_SETTINGS =
@@ -78,15 +84,15 @@ public final class QuestFilterBar extends AbstractWidget {
         int bx = getX();
         int by = getY();
 
-        drawButton(gg, bx, by, showCompleted, TEX_COMPLETE, TEX_COMPLETE_DISABLED,
+        drawButton(gg, bx, by, showCompleted, TEX_COMPLETE, TEX_COMPLETE_HOVER, TEX_COMPLETE_DISABLED,
                 "Show redeemed quests", mouseX, mouseY);
         bx += SIZE + GAP;
 
-        drawButton(gg, bx, by, showRejected, TEX_REJECT, TEX_REJECT_DISABLED,
+        drawButton(gg, bx, by, showRejected, TEX_REJECT, TEX_REJECT_HOVER, TEX_REJECT_DISABLED,
                 "Show rejected quests", mouseX, mouseY);
         bx += SIZE + GAP;
 
-        drawButton(gg, bx, by, showLocked, TEX_LOCKED, TEX_LOCKED_DISABLED,
+        drawButton(gg, bx, by, showLocked, TEX_LOCKED, TEX_LOCKED_HOVER, TEX_LOCKED_DISABLED,
                 "Show locked quests", mouseX, mouseY);
         bx += SIZE + GAP;
 
@@ -97,12 +103,12 @@ public final class QuestFilterBar extends AbstractWidget {
     }
 
     private void drawButton(GuiGraphics gg, int x, int y, boolean state,
-                            ResourceLocation on, ResourceLocation off, String tooltip,
+                            ResourceLocation on, ResourceLocation onHover, ResourceLocation off, String tooltip,
                             int mouseX, int mouseY) {
-
-        gg.blit(state ? on : off, x, y, 0, 0, SIZE, SIZE, SIZE, SIZE);
-
         boolean hover = mouseX >= x && mouseX < x + SIZE && mouseY >= y && mouseY < y + SIZE;
+
+        ResourceLocation tex = state ? (hover ? onHover : on) : off;
+        gg.blit(tex, x, y, 0, 0, SIZE, SIZE, SIZE, SIZE);
 
         if (hover) {
             gg.renderTooltip(Minecraft.getInstance().font,

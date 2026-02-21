@@ -83,7 +83,7 @@ public final class QuestEditorScreen extends Screen {
     private static final ResourceLocation DELETE_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/reject_filter.png");
     private static final ResourceLocation DELETE_CONFIRM_TEX =
-            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/are_you_sure_button.png");
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/are_you_sure_button.png");
 
     private static final int TOGGLE_SIZE = 20;
     private static final int SMALL_BTN_SIZE = 20;
@@ -2440,14 +2440,17 @@ public final class QuestEditorScreen extends Screen {
 
         for (QuestData.Category c : QuestData.categoriesOrdered()) {
             if (c == null || c.id == null || c.id.isBlank()) continue;
+            categoryIdCache.add(c.id);
             if (!categorySuggestionCache.contains(c.id)) categorySuggestionCache.add(c.id);
         }
         for (QuestData.SubCategory sc : QuestData.subCategoriesAllOrdered()) {
             if (sc == null || sc.id == null || sc.id.isBlank()) continue;
+            subCategoryIdCache.add(sc.id);
             addSubCategorySuggestion(sc.id, sc.category);
         }
         for (QuestData.Quest q : QuestData.all()) {
             if (q == null || q.id == null || q.id.isBlank()) continue;
+            questIdCache.add(q.id);
             if (!questSuggestionCache.contains(q.id)) questSuggestionCache.add(q.id);
         }
     }
