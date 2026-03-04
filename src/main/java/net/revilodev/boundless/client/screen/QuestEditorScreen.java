@@ -104,10 +104,12 @@ public final class QuestEditorScreen extends Screen {
     private static final int BOX_H_TALL = 28;
     private static final float INPUT_TEXT_SCALE = 0.5f;
     private static final int FORMAT_BAR_GAP = 3;
-    private static final int FORMAT_BAR_H = 20;
-    private static final int FORMAT_BTN_GAP = 2;
+    private static final int FORMAT_BAR_H = 12;
+    private static final int FORMAT_BTN_GAP = 1;
 
-    private static final int PACK_FORMAT = 48;
+    private static final int PACK_FORMAT = 34;
+    private static final ResourceLocation GENERATED_PACK_ICON =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/pack.png");
     private static final int DEFAULT_INPUT_TEXT_COLOR = 0xE0E0E0;
     private static final int INVALID_INPUT_TEXT_COLOR = 0xFF4040;
     private static final String INVALID_ID_TOOLTIP = "Invalid ID";
@@ -209,8 +211,8 @@ public final class QuestEditorScreen extends Screen {
     private ScaledMultiLineEditBox questCompletionBox;
     private ScaledMultiLineEditBox questRewardBox;
     private final List<TextInsertButton> descriptionFormatButtons = new ArrayList<>();
-    private ActionButton descriptionUndoButton;
-    private ActionButton descriptionRedoButton;
+    private CompactActionButton descriptionUndoButton;
+    private CompactActionButton descriptionRedoButton;
 
     private Path editingPath;
     private String loadedQuestType = "";
@@ -344,28 +346,29 @@ public final class QuestEditorScreen extends Screen {
 
     private void initDescriptionFormatterButtons() {
         descriptionFormatButtons.clear();
-        descriptionFormatButtons.add(createDescriptionInsertButton("W", "§f"));
-        descriptionFormatButtons.add(createDescriptionInsertButton("R", "§c"));
-        descriptionFormatButtons.add(createDescriptionInsertButton("G", "§a"));
-        descriptionFormatButtons.add(createDescriptionInsertButton("B", "§9"));
-        descriptionFormatButtons.add(createDescriptionInsertButton("Y", "§e"));
-        descriptionFormatButtons.add(createDescriptionInsertButton("O", "§6"));
-        descriptionFormatButtons.add(createDescriptionInsertButton("Gray", "§7"));
-        descriptionFormatButtons.add(createDescriptionInsertButton("Reset", "§r"));
-        descriptionUndoButton = createDescriptionActionButton("Undo", this::undoDescriptionFormat);
-        descriptionRedoButton = createDescriptionActionButton("Redo", this::redoDescriptionFormat);
+        descriptionFormatButtons.add(createDescriptionInsertButton("", "/w", 0xFFFFFFFF, 9));
+        descriptionFormatButtons.add(createDescriptionInsertButton("", "/r", 0xFFFF5555, 9));
+        descriptionFormatButtons.add(createDescriptionInsertButton("", "/g", 0xFF55FF55, 9));
+        descriptionFormatButtons.add(createDescriptionInsertButton("", "/b", 0xFF5555FF, 9));
+        descriptionFormatButtons.add(createDescriptionInsertButton("", "/y", 0xFFFFFF55, 9));
+        descriptionFormatButtons.add(createDescriptionInsertButton("", "/o", 0xFFFFAA00, 9));
+        descriptionFormatButtons.add(createDescriptionInsertButton("", "/a", 0xFFAAAAAA, 9));
+        descriptionFormatButtons.add(createDescriptionInsertButton("", "/p", 0xFFAA55FF, 9));
+        descriptionFormatButtons.add(createDescriptionInsertButton("X", "/x", 0xFF4A4A4A, 11));
+        descriptionUndoButton = createDescriptionActionButton("<", this::undoDescriptionFormat, 11);
+        descriptionRedoButton = createDescriptionActionButton(">", this::redoDescriptionFormat, 11);
     }
 
-    private TextInsertButton createDescriptionInsertButton(String label, String insertText) {
-        TextInsertButton button = new TextInsertButton(0, 0, label, insertText, this::applyDescriptionFormat);
+    private TextInsertButton createDescriptionInsertButton(String label, String insertText, int fillColor, int width) {
+        TextInsertButton button = new TextInsertButton(0, 0, width, label, insertText, fillColor, this::applyDescriptionFormat);
         button.visible = false;
         button.active = false;
         addRenderableWidget(button);
         return button;
     }
 
-    private ActionButton createDescriptionActionButton(String label, Runnable action) {
-        ActionButton button = new ActionButton(0, 0, Math.max(22, font.width(label) + 10), FORMAT_BAR_H, Component.literal(label), action);
+    private CompactActionButton createDescriptionActionButton(String label, Runnable action, int width) {
+        CompactActionButton button = new CompactActionButton(0, 0, width, FORMAT_BAR_H, Component.literal(label), action);
         button.visible = false;
         button.active = false;
         addRenderableWidget(button);
@@ -747,6 +750,7 @@ public final class QuestEditorScreen extends Screen {
         try {
             Files.createDirectories(root);
             writePackMeta(root, name);
+            writePackIcon(root);
             QuestPack pack = new QuestPack(name, namespace, root);
             pack.ensureDirs();
             currentPack = pack;
@@ -1877,6 +1881,14 @@ public final class QuestEditorScreen extends Screen {
         }
     }
 
+    private void writePackIcon(Path root) throws IOException {
+        if (root == null) return;
+        Path iconPath = root.resolve("pack.png");
+        try (var in = Minecraft.getInstance().getResourceManager().open(GENERATED_PACK_ICON)) {
+            Files.copy(in, iconPath, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
     private boolean zipCurrentPackSafe() {
         if (currentPack == null) return true;
         try {
@@ -2345,7 +2357,7 @@ public final class QuestEditorScreen extends Screen {
         String text = hasUnsavedEditorChanges() ? "Not saved" : "Saved";
         int color = hasUnsavedEditorChanges() ? 0xFFD080 : 0xA0FFA0;
         int x = pxRight + pw - font.width(text) - 2;
-        int y = py - font.lineHeight - 2;
+        int y = py - font.lineHeight - 12;
         gg.drawString(font, text, x, y, color, false);
     }
 
@@ -3164,6 +3176,7 @@ public final class QuestEditorScreen extends Screen {
             boolean showCursor = this.isFocused() && (Util.getMillis() - this.focusedTime) / CURSOR_BLINK_INTERVAL_MS % 2L == 0L;
             boolean cursorInText = cursor < text.length();
             int drawX = baseX;
+            int activeColor = this.textColor;
             double lineScreenY = this.getY() + this.innerPadding();
             double lastLineScreenY = lineScreenY;
 
@@ -3172,14 +3185,21 @@ public final class QuestEditorScreen extends Screen {
                 if (showCursor && cursorInText && cursor >= line.beginIndex() && cursor <= line.endIndex()) {
                     if (visible) {
                         int drawY = Math.round((float) (lineScreenY * invScale));
-                        drawX = drawFormattedString(guiGraphics, text.substring(line.beginIndex(), cursor), baseX, drawY) - 1;
+                        FormattedRenderResult beforeCursor = drawFormattedString(guiGraphics, text.substring(line.beginIndex(), cursor), baseX, drawY, activeColor);
+                        drawX = beforeCursor.endX() - 1;
+                        activeColor = beforeCursor.finalColor();
                         guiGraphics.fill(drawX, drawY - 1, drawX + 1, drawY + 1 + this.font.lineHeight, CURSOR_INSERT_COLOR);
-                        drawFormattedString(guiGraphics, text.substring(cursor, line.endIndex()), drawX, drawY);
+                        FormattedRenderResult afterCursor = drawFormattedString(guiGraphics, text.substring(cursor, line.endIndex()), drawX, drawY, activeColor);
+                        activeColor = afterCursor.finalColor();
                     }
                 } else {
                     if (visible) {
                         int drawY = Math.round((float) (lineScreenY * invScale));
-                        drawX = drawFormattedString(guiGraphics, text.substring(line.beginIndex(), line.endIndex()), baseX, drawY) - 1;
+                        FormattedRenderResult lineRender = drawFormattedString(guiGraphics, text.substring(line.beginIndex(), line.endIndex()), baseX, drawY, activeColor);
+                        drawX = lineRender.endX() - 1;
+                        activeColor = lineRender.finalColor();
+                    } else {
+                        activeColor = drawFormattedString(null, text.substring(line.beginIndex(), line.endIndex()), baseX, 0, activeColor).finalColor();
                     }
                 }
 
@@ -3227,11 +3247,6 @@ public final class QuestEditorScreen extends Screen {
         @Override
         protected void renderDecorations(GuiGraphics guiGraphics) {
             super.renderDecorations(guiGraphics);
-            if (this.textField.hasCharacterLimit()) {
-                int limit = this.textField.characterLimit();
-                Component component = Component.translatable("gui.multiLineEditBox.character_limit", this.textField.value().length(), limit);
-                guiGraphics.drawString(this.font, component, this.getX() + this.width - this.font.width(component), this.getY() + this.height + 4, 10526880);
-            }
         }
 
         @Override
@@ -3273,49 +3288,71 @@ public final class QuestEditorScreen extends Screen {
             return (double) (this.height - this.totalInnerPadding()) / this.lineHeight;
         }
 
-        private int drawFormattedString(GuiGraphics guiGraphics, String text, int x, int y) {
+        private FormattedRenderResult drawFormattedString(GuiGraphics guiGraphics, String text, int x, int y, int initialColor) {
             int drawX = x;
-            int color = this.textColor;
+            int color = initialColor;
             StringBuilder segment = new StringBuilder();
             for (int i = 0; i < text.length(); i++) {
-                char c = text.charAt(i);
-                if (c == '\u00A7' && i + 1 < text.length()) {
+                if (startsWithColorToken(text, i)) {
                     if (!segment.isEmpty()) {
-                        drawX = guiGraphics.drawString(this.font, segment.toString(), drawX, y, color, false);
+                        if (guiGraphics != null) {
+                            drawX = guiGraphics.drawString(this.font, segment.toString(), drawX, y, color, false);
+                        } else {
+                            drawX += this.font.width(segment.toString());
+                        }
                         segment.setLength(0);
                     }
-                    color = formatColor(text.charAt(++i), this.textColor);
+                    String escape = text.substring(i, Math.min(i + 2, text.length()));
+                    if (guiGraphics != null) {
+                        drawX = guiGraphics.drawString(this.font, escape, drawX, y, 0xFF9A9A9A, false);
+                    } else {
+                        drawX += this.font.width(escape);
+                    }
+                    color = formatColor(text.charAt(i + 1), this.textColor);
+                    i += 1;
                     continue;
                 }
-                segment.append(c);
+                segment.append(text.charAt(i));
             }
             if (!segment.isEmpty()) {
-                drawX = guiGraphics.drawString(this.font, segment.toString(), drawX, y, color, false);
+                if (guiGraphics != null) {
+                    drawX = guiGraphics.drawString(this.font, segment.toString(), drawX, y, color, false);
+                } else {
+                    drawX += this.font.width(segment.toString());
+                }
             }
-            return drawX;
+            return new FormattedRenderResult(drawX, color);
+        }
+
+        private boolean startsWithColorToken(String text, int index) {
+            return index + 1 < text.length()
+                    && text.charAt(index) == '/'
+                    && isColorTokenCode(text.charAt(index + 1));
         }
 
         private int formatColor(char code, int fallback) {
             return switch (Character.toLowerCase(code)) {
-                case '0' -> 0x000000;
-                case '1' -> 0x0000AA;
-                case '2' -> 0x00AA00;
-                case '3' -> 0x00AAAA;
-                case '4' -> 0xAA0000;
-                case '5' -> 0xAA00AA;
-                case '6' -> 0xFFAA00;
-                case '7' -> 0xAAAAAA;
-                case '8' -> 0x555555;
-                case '9' -> 0x5555FF;
-                case 'a' -> 0x55FF55;
-                case 'b' -> 0x55FFFF;
-                case 'c' -> 0xFF5555;
-                case 'd' -> 0xFF55FF;
-                case 'e' -> 0xFFFF55;
-                case 'f' -> 0xFFFFFF;
-                case 'r' -> fallback;
+                case 'w' -> 0xFFFFFF;
+                case 'r' -> 0xFF5555;
+                case 'g' -> 0x55FF55;
+                case 'b' -> 0x5555FF;
+                case 'y' -> 0xFFFF55;
+                case 'o' -> 0xFFAA00;
+                case 'a' -> 0xAAAAAA;
+                case 'p' -> 0xAA55FF;
+                case 'x' -> this.textColor & 0xFFFFFF;
                 default -> fallback;
             };
+        }
+
+        private boolean isColorTokenCode(char code) {
+            return switch (Character.toLowerCase(code)) {
+                case 'w', 'r', 'g', 'b', 'y', 'o', 'a', 'p', 'x' -> true;
+                default -> false;
+            };
+        }
+
+        private record FormattedRenderResult(int endX, int finalColor) {
         }
 
         private void seekCursorScreen(double mouseX, double mouseY) {
@@ -3408,6 +3445,21 @@ public final class QuestEditorScreen extends Screen {
 
         public void deleteText(int length) {
             if (!this.hasSelection()) {
+                if (length < 0) {
+                    int tokenStart = this.findColorTokenStartBeforeCursor();
+                    if (tokenStart >= 0) {
+                        this.selectCursor = tokenStart;
+                        this.insertText("");
+                        return;
+                    }
+                } else if (length > 0) {
+                    int tokenEnd = this.findColorTokenEndAtCursor();
+                    if (tokenEnd >= 0) {
+                        this.selectCursor = tokenEnd;
+                        this.insertText("");
+                        return;
+                    }
+                }
                 this.selectCursor = Mth.clamp(this.cursor + length, 0, this.value.length());
             }
             this.insertText("");
@@ -3665,6 +3717,25 @@ public final class QuestEditorScreen extends Screen {
                 i++;
             }
             return i;
+        }
+
+        private int findColorTokenStartBeforeCursor() {
+            if (this.cursor < 2 || this.cursor > this.value.length()) return -1;
+            int start = this.cursor - 2;
+            return isColorTokenAt(start) && this.cursor == start + 2 ? start : -1;
+        }
+
+        private int findColorTokenEndAtCursor() {
+            if (this.cursor < 0 || this.cursor + 2 > this.value.length()) return -1;
+            return isColorTokenAt(this.cursor) ? this.cursor + 2 : -1;
+        }
+
+        private boolean isColorTokenAt(int index) {
+            if (index < 0 || index + 1 >= this.value.length()) return false;
+            if (this.value.charAt(index) != '/') return false;
+            char code = Character.toLowerCase(this.value.charAt(index + 1));
+            return code == 'w' || code == 'r' || code == 'g' || code == 'b'
+                    || code == 'y' || code == 'o' || code == 'a' || code == 'p' || code == 'x';
         }
 
         private void onValueChange() {
@@ -4084,13 +4155,50 @@ public final class QuestEditorScreen extends Screen {
         }
     }
 
+    private static final class CompactActionButton extends AbstractButton {
+        private final Runnable onPress;
+
+        CompactActionButton(int x, int y, int w, int h, Component text, Runnable onPress) {
+            super(x, y, w, h, text);
+            this.onPress = onPress;
+        }
+
+        @Override
+        public void onPress() {
+            if (onPress != null) onPress.run();
+        }
+
+        @Override
+        protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
+            int bg = !this.active ? 0xFF3A3A3A : (this.isMouseOver(mouseX, mouseY) ? 0xFF6A6A6A : 0xFF555555);
+            int border = this.active ? 0xFF9A9A9A : 0xFF666666;
+            gg.fill(getX(), getY(), getX() + this.width, getY() + this.height, bg);
+            gg.fill(getX(), getY(), getX() + this.width, getY() + 1, border);
+            gg.fill(getX(), getY() + this.height - 1, getX() + this.width, getY() + this.height, border);
+            gg.fill(getX(), getY(), getX() + 1, getY() + this.height, border);
+            gg.fill(getX() + this.width - 1, getY(), getX() + this.width, getY() + this.height, border);
+
+            var font = Minecraft.getInstance().font;
+            int color = this.active ? 0xFFFFFFFF : 0xFF8A8A8A;
+            int textX = getX() + (this.width - font.width(getMessage())) / 2;
+            int textY = getY() + (this.height - font.lineHeight) / 2;
+            gg.drawString(font, getMessage(), textX, textY, color, false);
+        }
+
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput narration) {
+        }
+    }
+
     private static final class TextInsertButton extends AbstractButton {
         private final String insertText;
+        private final int fillColor;
         private final Consumer<String> onPress;
 
-        TextInsertButton(int x, int y, String label, String insertText, Consumer<String> onPress) {
-            super(x, y, Math.max(18, Minecraft.getInstance().font.width(label) + 8), FORMAT_BAR_H, Component.literal(label));
+        TextInsertButton(int x, int y, int width, String label, String insertText, int fillColor, Consumer<String> onPress) {
+            super(x, y, width, FORMAT_BAR_H, Component.literal(label));
             this.insertText = insertText == null ? "" : insertText;
+            this.fillColor = fillColor;
             this.onPress = onPress;
         }
 
@@ -4101,20 +4209,38 @@ public final class QuestEditorScreen extends Screen {
 
         @Override
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-            boolean hovered = this.active && this.isMouseOver(mouseX, mouseY);
-            ResourceLocation tex = !this.active ? BTN_TEX_DISABLED : (hovered ? BTN_TEX_HOVER : BTN_TEX);
-            gg.blit(tex, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
+            int bg = this.fillColor;
+            if (!this.active) {
+                bg = 0xFF4A4A4A;
+            } else if (this.isMouseOver(mouseX, mouseY)) {
+                bg = brighten(this.fillColor, 24);
+            }
+            int border = this.active ? 0xFFBEBEBE : 0xFF6E6E6E;
+            gg.fill(getX(), getY(), getX() + this.width, getY() + this.height, bg);
+            gg.fill(getX(), getY(), getX() + this.width, getY() + 1, border);
+            gg.fill(getX(), getY() + this.height - 1, getX() + this.width, getY() + this.height, border);
+            gg.fill(getX(), getY(), getX() + 1, getY() + this.height, border);
+            gg.fill(getX() + this.width - 1, getY(), getX() + this.width, getY() + this.height, border);
 
-            var font = Minecraft.getInstance().font;
-            int textW = font.width(getMessage());
-            int textX = getX() + (this.width - textW) / 2 + 1;
-            int textY = getY() + (this.height - font.lineHeight) / 2 + 1;
-            int color = this.active ? 0xFFFFFF : 0x808080;
-            gg.drawString(font, getMessage(), textX, textY, color, false);
+            if (!getMessage().getString().isBlank()) {
+                var font = Minecraft.getInstance().font;
+                int textColor = this.active ? 0xFFFFFFFF : 0xFF8A8A8A;
+                int textX = getX() + (this.width - font.width(getMessage())) / 2;
+                int textY = getY() + (this.height - font.lineHeight) / 2;
+                gg.drawString(font, getMessage(), textX, textY, textColor, false);
+            }
         }
 
         @Override
         protected void updateWidgetNarration(NarrationElementOutput narration) {
+        }
+
+        private int brighten(int color, int amount) {
+            int a = (color >>> 24) & 0xFF;
+            int r = Math.min(255, ((color >>> 16) & 0xFF) + amount);
+            int g = Math.min(255, ((color >>> 8) & 0xFF) + amount);
+            int b = Math.min(255, (color & 0xFF) + amount);
+            return (a << 24) | (r << 16) | (g << 8) | b;
         }
     }
 
