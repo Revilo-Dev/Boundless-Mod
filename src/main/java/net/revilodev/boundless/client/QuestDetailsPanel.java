@@ -10,6 +10,8 @@ import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.effect.MobEffect;
@@ -212,8 +214,9 @@ public final class QuestDetailsPanel extends AbstractWidget {
                 shown = full.substring(0, cut) + "...";
             }
 
-            gg.drawWordWrap(mc.font, Component.literal(shown), x + 4, curY[0], w - 8, 0xCFCFCF);
-            int wrapHeight = mc.font.wordWrapHeight(shown, w - 8);
+            Component shownComponent = formatColorCodes(shown, 0xCFCFCF);
+            gg.drawWordWrap(mc.font, shownComponent, x + 4, curY[0], w - 8, 0xCFCFCF);
+            int wrapHeight = wrappedHeight(shownComponent, w - 8);
 
             if (needsMore) {
                 int toggleY = curY[0] + wrapHeight + 2;
@@ -602,7 +605,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
                 shown = full.substring(0, cut) + "...";
             }
 
-            int wrapH = mc.font.wordWrapHeight(shown, w - 8);
+            int wrapH = wrappedHeight(formatColorCodes(shown, 0xCFCFCF), w - 8);
             if (needsMore) y += wrapH + mc.font.lineHeight + 6;
             else y += wrapH + 8;
         }
@@ -631,6 +634,62 @@ public final class QuestDetailsPanel extends AbstractWidget {
         }
 
         return y;
+    }
+
+    private int wrappedHeight(Component component, int maxWidth) {
+        if (component == null || maxWidth <= 0) return 0;
+        return mc.font.split(component, maxWidth).size() * mc.font.lineHeight;
+    }
+
+    private Component formatColorCodes(String raw, int defaultColor) {
+        MutableComponent out = Component.empty();
+        String text = raw == null ? "" : raw;
+        int current = defaultColor;
+        int segStart = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (startsWithColorToken(text, i)) {
+                if (i > segStart) {
+                    out.append(Component.literal(text.substring(segStart, i))
+                            .withStyle(Style.EMPTY.withColor(current)));
+                }
+                current = formatColor(text.charAt(i + 1), defaultColor);
+                i += 1;
+                segStart = i + 1;
+            }
+        }
+        if (segStart < text.length()) {
+            out.append(Component.literal(text.substring(segStart))
+                    .withStyle(Style.EMPTY.withColor(current)));
+        }
+        return out;
+    }
+
+    private boolean startsWithColorToken(String text, int index) {
+        return index + 1 < text.length()
+                && text.charAt(index) == '/'
+                && isColorTokenCode(text.charAt(index + 1));
+    }
+
+    private boolean isColorTokenCode(char code) {
+        return switch (Character.toLowerCase(code)) {
+            case 'w', 'r', 'g', 'b', 'y', 'o', 'a', 'p', 'x' -> true;
+            default -> false;
+        };
+    }
+
+    private int formatColor(char code, int fallback) {
+        return switch (Character.toLowerCase(code)) {
+            case 'w' -> 0xFFFFFF;
+            case 'r' -> 0xFF5555;
+            case 'g' -> 0x55FF55;
+            case 'b' -> 0x5555FF;
+            case 'y' -> 0xFFFF55;
+            case 'o' -> 0xFFAA00;
+            case 'a' -> 0xAAAAAA;
+            case 'p' -> 0xAA55FF;
+            case 'x' -> fallback;
+            default -> fallback;
+        };
     }
 
     private List<Item> resolveTagItems(ResourceLocation tagId) {

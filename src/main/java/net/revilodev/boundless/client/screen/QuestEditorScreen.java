@@ -113,22 +113,21 @@ public final class QuestEditorScreen extends Screen {
     private static final int DEFAULT_INPUT_TEXT_COLOR = 0xE0E0E0;
     private static final int INVALID_INPUT_TEXT_COLOR = 0xFF4040;
     private static final String INVALID_ID_TOOLTIP = "Invalid ID";
-    private static final int ID_SUGGESTION_MAX = 6;
+    private static final int ID_SUGGESTION_MAX = 200;
+    private static final int ID_SUGGESTION_VISIBLE_ROWS = 6;
     private static final int ID_SUGGESTION_ROW_H = 12;
     private static final int ID_SUGGESTION_BG_COLOR = 0xFF000000;
     private static final int ID_SUGGESTION_TEXT_COLOR = 0xFFFFFF00;
+    private static final String DEFAULT_COMPLETION_ENTRIES =
+            "collect: minecraft:id 1\n" +
+                    "submit: minecraft:id 1\n" +
+                    "kill: minecraft:zombie 1\n" +
+                    "achieve: minecraft:story/root\n" +
+                    "effect: minecraft:speed";
 
-    private static final String DEFAULT_COMPLETION_JSON =
-            "{ \"collect\": \"minecraft:id\", \"count\": 1 },\n" +
-                    "{ \"submit\": \"minecraft:id\", \"count\": 1 },\n" +
-                    "{ \"kill\": \"minecraft:id\", \"count\": 1 },\n" +
-                    "{ \"achieve\": \"minecraft:id/id\" },\n" +
-                    "{ \"effect\": \"minecraft:id\" }";
-
-    private static final String DEFAULT_REWARD_JSON =
-            "\"items\": [{ \"item\": \"minecraft:id\", \"count\": 1 }],\n" +
-                    "\"commands\": [{ \"command\": \" \", \"icon\": \"minecraft:id\", \"title\": \"\" }],\n" +
-                    "\"exp\": \"points\", \"count\": 1";
+    private static final String DEFAULT_REWARD_ENTRIES =
+            "item: minecraft:id 1\n" +
+                    "xp: points 1";
 
     private static final String ENTRY_CREATE_PACK = "__create_pack__";
     private static final String ENTRY_NEW = "__new__";
@@ -217,6 +216,9 @@ public final class QuestEditorScreen extends Screen {
     private Path editingPath;
     private String loadedQuestType = "";
     private final List<String> itemIdCache = new ArrayList<>();
+    private final List<String> entityIdCache = new ArrayList<>();
+    private final List<String> effectIdCache = new ArrayList<>();
+    private final List<String> advancementIdCache = new ArrayList<>();
     private final Set<String> categoryIdCache = new HashSet<>();
     private final Set<String> subCategoryIdCache = new HashSet<>();
     private final Set<String> questIdCache = new HashSet<>();
@@ -228,6 +230,9 @@ public final class QuestEditorScreen extends Screen {
     private final Set<String> stagedDeletedPackNames = new LinkedHashSet<>();
     private final List<String> activeIdSuggestions = new ArrayList<>();
     private EditBox idSuggestionField;
+    private ScaledMultiLineEditBox idSuggestionMultiLineField;
+    private int idSuggestionScroll = 0;
+    private boolean suppressIdSuggestions = false;
     private boolean suppressIdSanitizer = false;
     private boolean closingEditor = false;
     private String savedEditorState;
@@ -322,13 +327,13 @@ public final class QuestEditorScreen extends Screen {
         questIndexBox = createBox("Quest index", BOX_H);
         questNameBox = createBox("Quest name", BOX_H);
         questIconBox = createBox("Quest icon", BOX_H);
-        questDescriptionBox = createMultiLineBox("Quest description", BOX_H_TALL);
+        questDescriptionBox = createMultiLineBox("Quest description", BOX_H_TALL, true);
         questCategoryBox = createBox("Quest category", BOX_H);
         questSubCategoryBox = createBox("Quest sub-category", BOX_H);
         questDependenciesBox = createBox("Dependencies (comma separated)", BOX_H);
         questOptionalToggle = createToggle(false);
-        questCompletionBox = createMultiLineBox("Completion JSON", BOX_H_TALL);
-        questRewardBox = createMultiLineBox("Reward JSON", BOX_H_TALL);
+        questCompletionBox = createMultiLineBox("Completion entries", BOX_H_TALL, false);
+        questRewardBox = createMultiLineBox("Reward entries", BOX_H_TALL, false);
         initDescriptionFormatterButtons();
 
         attachIdSanitizer(packNamespaceBox, false);
@@ -385,7 +390,11 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private ScaledMultiLineEditBox createMultiLineBox(String hint, int height) {
-        ScaledMultiLineEditBox box = new ScaledMultiLineEditBox(font, 0, 0, pw - 4, height, Component.literal(hint), Component.empty(), INPUT_TEXT_SCALE);
+        return createMultiLineBox(hint, height, false);
+    }
+
+    private ScaledMultiLineEditBox createMultiLineBox(String hint, int height, boolean allowColorFormatting) {
+        ScaledMultiLineEditBox box = new ScaledMultiLineEditBox(font, 0, 0, pw - 4, height, Component.literal(hint), Component.empty(), INPUT_TEXT_SCALE, allowColorFormatting);
         box.setCharacterLimit(4096);
         box.visible = false;
         box.active = false;
@@ -675,16 +684,16 @@ public final class QuestEditorScreen extends Screen {
         questSubCategoryBox.setValue(safe(data.subCategory));
         questDependenciesBox.setValue(safe(data.dependencies));
         questOptionalToggle.setState(parseBool(data.optional, false));
-        questCompletionBox.setValue(safe(data.completionJson));
-        questRewardBox.setValue(safe(data.rewardJson));
+        questCompletionBox.setValue(completionJsonToEntries(safe(data.completionJson)));
+        questRewardBox.setValue(rewardJsonToEntries(safe(data.rewardJson)));
         loadedQuestType = safe(data.type);
 
         if (sourcePath == null) {
             if (questCompletionBox.getValue().isBlank()) {
-                questCompletionBox.setValue(DEFAULT_COMPLETION_JSON);
+                questCompletionBox.setValue(DEFAULT_COMPLETION_ENTRIES);
             }
             if (questRewardBox.getValue().isBlank()) {
-                questRewardBox.setValue(DEFAULT_REWARD_JSON);
+                questRewardBox.setValue(DEFAULT_REWARD_ENTRIES);
             }
         }
         questDescriptionBox.scrollToTop();
@@ -701,8 +710,8 @@ public final class QuestEditorScreen extends Screen {
                 field("Sub-category", questSubCategoryBox),
                 field("Dependencies (comma separated)", questDependenciesBox),
                 field("Optional (true/false)", questOptionalToggle),
-                field("Completion JSON", questCompletionBox),
-                field("Reward JSON", questRewardBox)
+                field("Completion", questCompletionBox),
+                field("Reward", questRewardBox)
         ));
         saveButton.setMessage(Component.literal("Save"));
         saveButton.visible = true;
@@ -868,9 +877,8 @@ public final class QuestEditorScreen extends Screen {
 
         String completionRaw = safe(questCompletionBox.getValue()).trim();
         if (!completionRaw.isBlank()) {
-            JsonElement completion = parseCompletionJson(completionRaw);
+            JsonObject completion = parseCompletionEntries(completionRaw, true);
             if (completion == null) {
-                setError("Invalid JSON");
                 return null;
             }
             obj.add("completion", completion);
@@ -878,9 +886,8 @@ public final class QuestEditorScreen extends Screen {
 
         String rewardRaw = safe(questRewardBox.getValue()).trim();
         if (!rewardRaw.isBlank()) {
-            JsonElement reward = parseRewardJson(rewardRaw);
-            if (reward == null || !reward.isJsonObject()) {
-                setError("Invalid JSON");
+            JsonObject reward = parseRewardEntries(rewardRaw, true);
+            if (reward == null) {
                 return null;
             }
             obj.add("reward", reward);
@@ -1134,15 +1141,6 @@ public final class QuestEditorScreen extends Screen {
         }
     }
 
-    private JsonElement parseJson(String raw) {
-        try {
-            return JsonParser.parseString(raw);
-        } catch (Exception e) {
-            setError("Invalid JSON");
-            return null;
-        }
-    }
-
     private JsonElement parseJsonSilent(String raw) {
         try {
             return JsonParser.parseString(raw);
@@ -1151,26 +1149,309 @@ public final class QuestEditorScreen extends Screen {
         }
     }
 
-    private JsonElement parseCompletionJson(String raw) {
-        JsonElement direct = parseJsonSilent(raw);
-        if (direct != null) return direct;
-        String trimmed = raw == null ? "" : raw.trim();
-        if (trimmed.isBlank()) return null;
-        JsonElement asArray = parseJsonSilent("[" + trimmed + "]");
-        if (asArray != null && asArray.isJsonArray()) {
-            JsonObject wrapper = new JsonObject();
-            wrapper.add("complete", asArray);
-            return wrapper;
+    private JsonObject parseCompletionEntries(String raw, boolean raiseErrors) {
+        List<String> lines = extractEntryLines(raw);
+        com.google.gson.JsonArray targets = new com.google.gson.JsonArray();
+        for (String line : lines) {
+            JsonObject target = parseCompletionEntryLine(line, raiseErrors);
+            if (target == null) return null;
+            targets.add(target);
         }
+        JsonObject wrapper = new JsonObject();
+        wrapper.add("complete", targets);
+        return wrapper;
+    }
+
+    private JsonObject parseCompletionEntryLine(String line, boolean raiseErrors) {
+        ParsedEntry parsed = parseEntry(line);
+        if (parsed == null) {
+            if (raiseErrors) setError("Invalid completion entry: " + safe(line));
+            return null;
+        }
+        String type = parsed.type;
+        String id = parsed.id;
+        int count = parsed.count;
+
+        JsonObject obj = new JsonObject();
+        switch (type) {
+            case "collect", "item" -> {
+                String normalizedId = normalizeNamespacedId(id, false);
+                if (normalizedId.isBlank()) return failCompletion(line, raiseErrors);
+                obj.addProperty("collect", normalizedId);
+                obj.addProperty("count", count);
+            }
+            case "submit" -> {
+                String normalizedId = normalizeNamespacedId(id, false);
+                if (normalizedId.isBlank()) return failCompletion(line, raiseErrors);
+                obj.addProperty("submit", normalizedId);
+                obj.addProperty("count", count);
+            }
+            case "kill", "entity" -> {
+                String normalizedId = normalizeNamespacedId(id, false);
+                if (normalizedId.isBlank()) return failCompletion(line, raiseErrors);
+                obj.addProperty("kill", normalizedId);
+                obj.addProperty("count", count);
+            }
+            case "achieve", "advancement" -> {
+                String normalizedId = normalizeNamespacedId(id, false);
+                if (normalizedId.isBlank()) return failCompletion(line, raiseErrors);
+                obj.addProperty("achieve", normalizedId);
+            }
+            case "effect" -> {
+                String normalizedId = normalizeNamespacedId(id, false);
+                if (normalizedId.isBlank()) return failCompletion(line, raiseErrors);
+                obj.addProperty("effect", normalizedId);
+            }
+            default -> {
+                return failCompletion(line, raiseErrors);
+            }
+        }
+        return obj;
+    }
+
+    private JsonObject failCompletion(String line, boolean raiseErrors) {
+        if (raiseErrors) setError("Invalid completion entry: " + safe(line));
         return null;
     }
 
-    private JsonElement parseRewardJson(String raw) {
-        JsonElement direct = parseJsonSilent(raw);
-        if (direct != null) return direct;
-        String trimmed = raw == null ? "" : raw.trim();
-        if (trimmed.isBlank()) return null;
-        return parseJsonSilent("{" + trimmed + "}");
+    private JsonObject parseRewardEntries(String raw, boolean raiseErrors) {
+        List<String> lines = extractEntryLines(raw);
+        com.google.gson.JsonArray items = new com.google.gson.JsonArray();
+        com.google.gson.JsonArray commands = new com.google.gson.JsonArray();
+        com.google.gson.JsonArray functions = new com.google.gson.JsonArray();
+        String expType = "";
+        int expAmount = 0;
+
+        for (String line : lines) {
+            ParsedEntry parsed = parseEntry(line);
+            if (parsed == null) {
+                if (raiseErrors) setError("Invalid reward entry: " + safe(line));
+                return null;
+            }
+            switch (parsed.type) {
+                case "item", "submit" -> {
+                    String normalizedId = normalizeNamespacedId(parsed.id, false);
+                    if (normalizedId.isBlank()) return failReward(line, raiseErrors);
+                    JsonObject item = new JsonObject();
+                    item.addProperty("item", normalizedId);
+                    item.addProperty("count", parsed.count);
+                    items.add(item);
+                }
+                case "xp", "exp" -> {
+                    String v = parsed.id.toLowerCase(Locale.ROOT);
+                    if (v.isBlank()) v = "points";
+                    if (!v.equals("points") && !v.equals("levels")) return failReward(line, raiseErrors);
+                    expType = v;
+                    expAmount = parsed.count;
+                }
+                case "command" -> {
+                    if (parsed.id.isBlank()) return failReward(line, raiseErrors);
+                    JsonObject cmd = new JsonObject();
+                    cmd.addProperty("command", parsed.id);
+                    commands.add(cmd);
+                }
+                case "function" -> {
+                    String normalizedId = normalizeNamespacedId(parsed.id, false);
+                    if (normalizedId.isBlank()) return failReward(line, raiseErrors);
+                    JsonObject fn = new JsonObject();
+                    fn.addProperty("function", normalizedId);
+                    functions.add(fn);
+                }
+                default -> {
+                    return failReward(line, raiseErrors);
+                }
+            }
+        }
+
+        JsonObject out = new JsonObject();
+        if (!items.isEmpty()) out.add("items", items);
+        if (!commands.isEmpty()) out.add("commands", commands);
+        if (!functions.isEmpty()) out.add("functions", functions);
+        if (!expType.isBlank()) {
+            out.addProperty("exp", expType);
+            out.addProperty("count", expAmount);
+        }
+        return out;
+    }
+
+    private JsonObject failReward(String line, boolean raiseErrors) {
+        if (raiseErrors) setError("Invalid reward entry: " + safe(line));
+        return null;
+    }
+
+    private List<String> extractEntryLines(String raw) {
+        List<String> lines = new ArrayList<>();
+        if (raw == null || raw.isBlank()) return lines;
+        String[] parts = raw.split("\\R");
+        for (String part : parts) {
+            String line = safe(part).trim();
+            if (!line.isBlank()) lines.add(line);
+        }
+        return lines;
+    }
+
+    private String completionJsonToEntries(String json) {
+        JsonElement el = parseJsonSilent(json);
+        if (el == null || el.isJsonNull()) return "";
+        List<String> out = new ArrayList<>();
+        parseCompletionElementToLines(el, out);
+        return String.join("\n", out);
+    }
+
+    private void parseCompletionElementToLines(JsonElement el, List<String> out) {
+        if (el == null || out == null) return;
+        if (el.isJsonObject()) {
+            JsonObject obj = el.getAsJsonObject();
+            if (obj.has("complete") && obj.get("complete").isJsonArray()) {
+                for (JsonElement e : obj.getAsJsonArray("complete")) {
+                    parseCompletionElementToLines(e, out);
+                }
+                return;
+            }
+            if (obj.has("targets") && obj.get("targets").isJsonArray()) {
+                for (JsonElement e : obj.getAsJsonArray("targets")) {
+                    parseCompletionElementToLines(e, out);
+                }
+                return;
+            }
+            if (obj.has("collect")) {
+                JsonElement collect = obj.get("collect");
+                int count = parseIntFlexible(obj, "count", 1);
+                if (collect.isJsonArray()) {
+                    for (JsonElement c : collect.getAsJsonArray()) {
+                        if (c.isJsonPrimitive()) out.add("collect: " + c.getAsString() + " " + count);
+                    }
+                } else if (collect.isJsonPrimitive()) {
+                    out.add("collect: " + collect.getAsString() + " " + count);
+                }
+                return;
+            }
+            if (obj.has("item")) out.add("collect: " + optString(obj, "item", "") + " " + parseIntFlexible(obj, "count", 1));
+            else if (obj.has("submit")) out.add("submit: " + optString(obj, "submit", "") + " " + parseIntFlexible(obj, "count", 1));
+            else if (obj.has("kill")) out.add("kill: " + optString(obj, "kill", "") + " " + parseIntFlexible(obj, "count", 1));
+            else if (obj.has("entity")) out.add("kill: " + optString(obj, "entity", "") + " " + parseIntFlexible(obj, "count", 1));
+            else if (obj.has("achieve")) out.add("achieve: " + optString(obj, "achieve", ""));
+            else if (obj.has("advancement")) out.add("achieve: " + optString(obj, "advancement", ""));
+            else if (obj.has("effect")) out.add("effect: " + optString(obj, "effect", ""));
+            else if (obj.has("stat")) out.add("stat: " + optString(obj, "stat", "") + " " + parseIntFlexible(obj, "count", 1));
+            return;
+        }
+        if (el.isJsonArray()) {
+            for (JsonElement e : el.getAsJsonArray()) {
+                parseCompletionElementToLines(e, out);
+            }
+        }
+    }
+
+    private String rewardJsonToEntries(String json) {
+        JsonElement el = parseJsonSilent(json);
+        if (el == null || !el.isJsonObject()) return "";
+        JsonObject obj = el.getAsJsonObject();
+        List<String> out = new ArrayList<>();
+        if (obj.has("items") && obj.get("items").isJsonArray()) {
+            for (JsonElement e : obj.getAsJsonArray("items")) {
+                if (!e.isJsonObject()) continue;
+                JsonObject item = e.getAsJsonObject();
+                String id = optString(item, "item", "");
+                int count = parseIntFlexible(item, "count", 1);
+                if (!id.isBlank()) out.add("item: " + id + " " + count);
+            }
+        }
+        if (obj.has("commands") && obj.get("commands").isJsonArray()) {
+            for (JsonElement e : obj.getAsJsonArray("commands")) {
+                if (e.isJsonPrimitive()) {
+                    String cmd = e.getAsString();
+                    if (!cmd.isBlank()) out.add("command: " + cmd);
+                    continue;
+                }
+                if (!e.isJsonObject()) continue;
+                String cmd = optString(e.getAsJsonObject(), "command", "");
+                if (!cmd.isBlank()) out.add("command: " + cmd);
+            }
+        }
+        if (obj.has("functions") && obj.get("functions").isJsonArray()) {
+            for (JsonElement e : obj.getAsJsonArray("functions")) {
+                if (e.isJsonPrimitive()) {
+                    String fn = e.getAsString();
+                    if (!fn.isBlank()) out.add("function: " + fn);
+                    continue;
+                }
+                if (!e.isJsonObject()) continue;
+                String fn = optString(e.getAsJsonObject(), "function", "");
+                if (!fn.isBlank()) out.add("function: " + fn);
+            }
+        }
+        String exp = optString(obj, "exp", "");
+        if (!exp.isBlank()) {
+            int count = parseIntFlexible(obj, "count", 0);
+            out.add("xp: " + exp + " " + count);
+        }
+        return String.join("\n", out);
+    }
+
+    private int parseIntFlexible(JsonObject obj, String key, int def) {
+        if (obj == null || !obj.has(key)) return def;
+        JsonElement el = obj.get(key);
+        if (el == null || !el.isJsonPrimitive()) return def;
+        try {
+            return el.getAsInt();
+        } catch (Exception ignored) {
+            return def;
+        }
+    }
+
+    private ParsedEntry parseEntry(String line) {
+        if (line == null) return null;
+        int colon = line.indexOf(':');
+        if (colon <= 0) return null;
+        String type = line.substring(0, colon).trim().toLowerCase(Locale.ROOT);
+        String remainder = line.substring(colon + 1).trim();
+        if (type.isBlank() || remainder.isBlank()) return null;
+
+        if (type.equals("command") || type.equals("function")) {
+            return new ParsedEntry(type, remainder, 1);
+        }
+
+        String[] tokens = remainder.split("\\s+");
+        if (tokens.length == 0) return null;
+        String id = tokens[0].trim();
+        int count = 1;
+        if (tokens.length >= 2) {
+            String last = tokens[tokens.length - 1].trim();
+            try {
+                count = Integer.parseInt(last);
+                if (tokens.length > 2) {
+                    StringBuilder idBuilder = new StringBuilder();
+                    for (int i = 0; i < tokens.length - 1; i++) {
+                        if (i > 0) idBuilder.append(' ');
+                        idBuilder.append(tokens[i]);
+                    }
+                    id = idBuilder.toString();
+                }
+            } catch (NumberFormatException ignored) {
+                if (tokens.length > 1) {
+                    StringBuilder idBuilder = new StringBuilder();
+                    for (int i = 0; i < tokens.length; i++) {
+                        if (i > 0) idBuilder.append(' ');
+                        idBuilder.append(tokens[i]);
+                    }
+                    id = idBuilder.toString();
+                }
+            }
+        }
+        if (count < 1) count = 1;
+        return new ParsedEntry(type, id.trim(), count);
+    }
+
+    private String normalizeNamespacedId(String raw, boolean allowTags) {
+        String id = safe(raw).trim().toLowerCase(Locale.ROOT);
+        if (id.isBlank()) return "";
+        if (allowTags && id.startsWith("#")) {
+            String rest = id.substring(1).trim();
+            if (rest.isBlank()) return "";
+            return rest.contains(":") ? "#" + rest : "#minecraft:" + rest;
+        }
+        return id.contains(":") ? id : "minecraft:" + id;
     }
 
     private boolean applyChanges() {
@@ -2102,6 +2383,8 @@ public final class QuestEditorScreen extends Screen {
                 data.completionJson = state.questCompletion;
                 data.rewardJson = state.questReward;
                 showQuestEditor(data, state.editingPath);
+                if (questCompletionBox != null) questCompletionBox.setValue(safe(state.questCompletion));
+                if (questRewardBox != null) questRewardBox.setValue(safe(state.questReward));
             }
             case NONE -> clearEditor();
         }
@@ -2404,38 +2687,48 @@ public final class QuestEditorScreen extends Screen {
 
     private void renderIdSuggestions(GuiGraphics gg, int mouseX, int mouseY) {
         updateIdSuggestions();
-        if (idSuggestionField == null || activeIdSuggestions.isEmpty()) return;
-        int x = idSuggestionField.getX();
-        int y = idSuggestionField.getY() + idSuggestionField.getHeight() + 1;
-        int w = idSuggestionField.getWidth();
-        for (int i = 0; i < activeIdSuggestions.size(); i++) {
-            int top = y + (i * ID_SUGGESTION_ROW_H);
+        if (activeIdSuggestions.isEmpty()) return;
+        SuggestionBounds bounds = suggestionBounds();
+        if (bounds == null || bounds.w <= 0 || bounds.h <= 0) return;
+        gg.enableScissor(pxRight + 1, py + 1, pxRight + pw - 1, py + ph - 1);
+        int end = Math.min(activeIdSuggestions.size(), idSuggestionScroll + ID_SUGGESTION_VISIBLE_ROWS);
+        for (int i = idSuggestionScroll; i < end; i++) {
+            int row = i - idSuggestionScroll;
+            int top = bounds.y + (row * ID_SUGGESTION_ROW_H);
             int bottom = top + ID_SUGGESTION_ROW_H;
-            gg.fill(x, top, x + w, bottom, ID_SUGGESTION_BG_COLOR);
-            gg.drawString(font, activeIdSuggestions.get(i), x + 4, top + 2, ID_SUGGESTION_TEXT_COLOR, false);
+            gg.fill(bounds.x, top, bounds.x + bounds.w, bottom, ID_SUGGESTION_BG_COLOR);
+            String text = font.plainSubstrByWidth(activeIdSuggestions.get(i), Math.max(4, bounds.w - 8));
+            gg.drawString(font, text, bounds.x + 4, top + 2, ID_SUGGESTION_TEXT_COLOR, false);
         }
+        gg.disableScissor();
     }
 
     private void updateIdSuggestions() {
         EditBox focused = focusedIdSuggestionField();
-        if (focused == null) {
+        ScaledMultiLineEditBox focusedMulti = focusedMultiIdSuggestionField();
+        if (suppressIdSuggestions || (focused == null && focusedMulti == null)) {
             idSuggestionField = null;
+            idSuggestionMultiLineField = null;
             activeIdSuggestions.clear();
             return;
         }
         idSuggestionField = focused;
+        idSuggestionMultiLineField = focusedMulti;
         activeIdSuggestions.clear();
 
-        List<String> all = idSuggestionValuesForField(focused);
+        List<String> all = focused != null ? idSuggestionValuesForField(focused) : idSuggestionValuesForMultiField(focusedMulti);
         if (all.isEmpty()) return;
 
-        String prefix = idSuggestionPrefix(focused).toLowerCase(Locale.ROOT);
+        String prefix = focused != null
+                ? idSuggestionPrefix(focused).toLowerCase(Locale.ROOT)
+                : multiLineSuggestionPrefix(focusedMulti).toLowerCase(Locale.ROOT);
         for (String id : all) {
             if (id == null || id.isBlank()) continue;
-            if (!prefix.isBlank() && !id.toLowerCase(Locale.ROOT).startsWith(prefix)) continue;
+            if (!prefix.isBlank() && !matchesIdPrefix(id, prefix)) continue;
             activeIdSuggestions.add(id);
             if (activeIdSuggestions.size() >= ID_SUGGESTION_MAX) break;
         }
+        idSuggestionScroll = Mth.clamp(idSuggestionScroll, 0, Math.max(0, activeIdSuggestions.size() - ID_SUGGESTION_VISIBLE_ROWS));
     }
 
     private EditBox focusedIdSuggestionField() {
@@ -2444,6 +2737,12 @@ public final class QuestEditorScreen extends Screen {
         if (questCategoryBox != null && questCategoryBox.visible && questCategoryBox.isFocused()) return questCategoryBox;
         if (questSubCategoryBox != null && questSubCategoryBox.visible && questSubCategoryBox.isFocused()) return questSubCategoryBox;
         if (questDependenciesBox != null && questDependenciesBox.visible && questDependenciesBox.isFocused()) return questDependenciesBox;
+        return null;
+    }
+
+    private ScaledMultiLineEditBox focusedMultiIdSuggestionField() {
+        if (questCompletionBox != null && questCompletionBox.visible && questCompletionBox.isFocused()) return questCompletionBox;
+        if (questRewardBox != null && questRewardBox.visible && questRewardBox.isFocused()) return questRewardBox;
         return null;
     }
 
@@ -2474,16 +2773,82 @@ public final class QuestEditorScreen extends Screen {
         return List.of();
     }
 
+    private List<String> idSuggestionValuesForMultiField(ScaledMultiLineEditBox field) {
+        if (field == null) return List.of();
+        MultiLineEntryContext ctx = parseMultiLineEntryContext(field);
+        if (ctx == null) return List.of();
+        if (!ctx.hasTypeSeparator) {
+            return field == questCompletionBox
+                    ? List.of("collect", "submit", "kill", "achieve", "effect")
+                    : List.of("item", "xp", "command", "function");
+        }
+        return switch (ctx.type) {
+            case "collect", "submit", "item" -> itemSuggestions();
+            case "kill", "entity" -> entitySuggestions();
+            case "effect" -> effectSuggestions();
+            case "achieve", "advancement" -> advancementSuggestions();
+            case "xp", "exp" -> List.of("points", "levels");
+            default -> List.of();
+        };
+    }
+
+    private String multiLineSuggestionPrefix(ScaledMultiLineEditBox field) {
+        MultiLineEntryContext ctx = parseMultiLineEntryContext(field);
+        if (ctx == null) return "";
+        return ctx.hasTypeSeparator ? ctx.idPrefix : ctx.typePrefix;
+    }
+
+    private boolean matchesIdPrefix(String suggestion, String prefix) {
+        if (suggestion == null || prefix == null) return false;
+        String lowSuggestion = suggestion.toLowerCase(Locale.ROOT);
+        String lowPrefix = prefix.toLowerCase(Locale.ROOT);
+        if (lowSuggestion.startsWith(lowPrefix)) return true;
+        int colon = lowSuggestion.indexOf(':');
+        return colon >= 0 && colon + 1 < lowSuggestion.length()
+                && lowSuggestion.substring(colon + 1).startsWith(lowPrefix);
+    }
+
     private boolean clickIdSuggestion(double mouseX, double mouseY) {
-        if (idSuggestionField == null || activeIdSuggestions.isEmpty()) return false;
-        int x = idSuggestionField.getX();
-        int y = idSuggestionField.getY() + idSuggestionField.getHeight() + 1;
-        int w = idSuggestionField.getWidth();
-        if (mouseX < x || mouseX > x + w || mouseY < y) return false;
-        int idx = (int) ((mouseY - y) / ID_SUGGESTION_ROW_H);
+        SuggestionBounds bounds = suggestionBounds();
+        if (bounds == null || activeIdSuggestions.isEmpty()) return false;
+        if (mouseX < bounds.x || mouseX > bounds.x + bounds.w || mouseY < bounds.y || mouseY > bounds.y + bounds.h) return false;
+        int idx = (int) ((mouseY - bounds.y) / ID_SUGGESTION_ROW_H) + idSuggestionScroll;
         if (idx < 0 || idx >= activeIdSuggestions.size()) return false;
-        applyIdSuggestion(idSuggestionField, activeIdSuggestions.get(idx));
+        if (idSuggestionField != null) {
+            applyIdSuggestion(idSuggestionField, activeIdSuggestions.get(idx));
+        } else if (idSuggestionMultiLineField != null) {
+            applyMultiLineIdSuggestion(idSuggestionMultiLineField, activeIdSuggestions.get(idx));
+        }
         return true;
+    }
+
+    private boolean scrollIdSuggestions(double mouseX, double mouseY, double scrollY) {
+        SuggestionBounds bounds = suggestionBounds();
+        if (bounds == null || activeIdSuggestions.isEmpty()) return false;
+        if (mouseX < bounds.x || mouseX > bounds.x + bounds.w || mouseY < bounds.y || mouseY > bounds.y + bounds.h) return false;
+        int max = Math.max(0, activeIdSuggestions.size() - ID_SUGGESTION_VISIBLE_ROWS);
+        if (max <= 0) return true;
+        int next = idSuggestionScroll - (int) Math.signum(scrollY);
+        idSuggestionScroll = Mth.clamp(next, 0, max);
+        return true;
+    }
+
+    private SuggestionBounds suggestionBounds() {
+        if ((idSuggestionField == null && idSuggestionMultiLineField == null) || activeIdSuggestions.isEmpty()) return null;
+        int x = idSuggestionField != null ? idSuggestionField.getX() : idSuggestionMultiLineField.getX();
+        int yBase = idSuggestionField != null ? idSuggestionField.getY() + idSuggestionField.getHeight() + 1
+                : idSuggestionMultiLineField.getY() + idSuggestionMultiLineField.getHeight() + 1;
+        int w = idSuggestionField != null ? idSuggestionField.getWidth() : idSuggestionMultiLineField.getWidth();
+        int rows = Math.min(ID_SUGGESTION_VISIBLE_ROWS, activeIdSuggestions.size());
+        int h = rows * ID_SUGGESTION_ROW_H;
+        int panelTop = py + 1;
+        int panelBottom = py + ph - 1;
+        int y = yBase;
+        if (y + h > panelBottom) {
+            int above = (idSuggestionField != null ? idSuggestionField.getY() : idSuggestionMultiLineField.getY()) - h - 1;
+            y = Math.max(panelTop, above);
+        }
+        return new SuggestionBounds(x, y, w, Math.min(h, Math.max(0, panelBottom - y)));
     }
 
     private void applyIdSuggestion(EditBox field, String suggestion) {
@@ -2502,6 +2867,66 @@ public final class QuestEditorScreen extends Screen {
         updateIdSuggestions();
     }
 
+    private void applyMultiLineIdSuggestion(ScaledMultiLineEditBox field, String suggestion) {
+        MultiLineEntryContext ctx = parseMultiLineEntryContext(field);
+        if (field == null || ctx == null || suggestion == null || suggestion.isBlank()) return;
+        String value = safe(field.getValue());
+        String replacement = suggestion;
+        if (ctx.hasTypeSeparator && field != null) {
+            if (field == questCompletionBox || field == questRewardBox) {
+                if (ctx.type.equals("collect") || ctx.type.equals("submit") || ctx.type.equals("item")
+                        || ctx.type.equals("kill") || ctx.type.equals("entity") || ctx.type.equals("effect")
+                        || ctx.type.equals("achieve") || ctx.type.equals("advancement")
+                        || ctx.type.equals("function")) {
+                    replacement = normalizeNamespacedId(suggestion, false);
+                }
+            }
+        }
+        String next;
+        int nextCursor;
+        if (!ctx.hasTypeSeparator) {
+            next = value.substring(0, ctx.typeStart) + replacement + ": " + value.substring(ctx.typeEnd);
+            nextCursor = ctx.typeStart + replacement.length() + 2;
+        } else {
+            next = value.substring(0, ctx.idStart) + replacement + value.substring(ctx.idEnd);
+            nextCursor = ctx.idStart + replacement.length();
+        }
+        field.setValue(next);
+        field.setCursorPosition(nextCursor);
+        field.setFocused(true);
+        updateIdSuggestions();
+    }
+
+    private MultiLineEntryContext parseMultiLineEntryContext(ScaledMultiLineEditBox field) {
+        if (field == null) return null;
+        String value = safe(field.getValue());
+        int cursor = Math.max(0, Math.min(field.getCursorPosition(), value.length()));
+        int lineStart = cursor <= 0 ? 0 : value.lastIndexOf('\n', Math.max(0, cursor - 1));
+        lineStart = lineStart < 0 ? 0 : lineStart + 1;
+        int lineEnd = value.indexOf('\n', cursor);
+        if (lineEnd < 0) lineEnd = value.length();
+        String line = value.substring(lineStart, lineEnd);
+        int localCursor = cursor - lineStart;
+
+        int firstNonWs = 0;
+        while (firstNonWs < line.length() && Character.isWhitespace(line.charAt(firstNonWs))) firstNonWs++;
+        int colon = line.indexOf(':');
+        if (colon < 0 || localCursor <= colon) {
+            int prefixEnd = Math.max(firstNonWs, Math.min(localCursor, line.length()));
+            String typePrefix = line.substring(firstNonWs, prefixEnd).trim().toLowerCase(Locale.ROOT);
+            return new MultiLineEntryContext(false, "", typePrefix, lineStart + firstNonWs, lineStart + prefixEnd, -1, -1, "");
+        }
+
+        String type = line.substring(firstNonWs, colon).trim().toLowerCase(Locale.ROOT);
+        int idStartLocal = colon + 1;
+        while (idStartLocal < line.length() && Character.isWhitespace(line.charAt(idStartLocal))) idStartLocal++;
+        int idEndLocal = idStartLocal;
+        while (idEndLocal < line.length() && !Character.isWhitespace(line.charAt(idEndLocal))) idEndLocal++;
+        int prefixEnd = Math.max(idStartLocal, Math.min(localCursor, idEndLocal));
+        String idPrefix = line.substring(idStartLocal, prefixEnd).trim().toLowerCase(Locale.ROOT);
+        return new MultiLineEntryContext(true, type, "", -1, -1, lineStart + idStartLocal, lineStart + idEndLocal, idPrefix);
+    }
+
     private void renderEditorFields(GuiGraphics gg, int mouseX, int mouseY) {
         updateDynamicFieldSizes();
         updateInvalidFieldStyles();
@@ -2517,13 +2942,14 @@ public final class QuestEditorScreen extends Screen {
             int labelY = yCursor;
             int boxY = labelY + font.lineHeight + FIELD_LABEL_GAP;
             int boxX = pxRight + 2;
+            int widgetWidth = pw - 4;
 
             field.widget.setX(boxX);
             field.widget.setY(boxY);
             if (field.widget instanceof EditBox eb) {
-                eb.setWidth(pw - 4);
+                eb.setWidth(widgetWidth);
             } else if (field.widget instanceof ScaledMultiLineEditBox mb) {
-                mb.setWidth(pw - 4);
+                mb.setWidth(widgetWidth);
             } else if (field.widget instanceof ToggleButton tb) {
                 tb.setSize(TOGGLE_SIZE, TOGGLE_SIZE);
             }
@@ -2566,6 +2992,9 @@ public final class QuestEditorScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (scrollIdSuggestions(mouseX, mouseY, scrollY)) {
+            return true;
+        }
         if (mouseX >= pxRight && mouseX <= pxRight + pw && mouseY >= py && mouseY <= py + ph) {
             int contentHeight = contentHeight();
             if (contentHeight > ph) {
@@ -2574,6 +3003,13 @@ public final class QuestEditorScreen extends Screen {
             }
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    private boolean isInsideSuggestionBox(double mouseX, double mouseY) {
+        SuggestionBounds bounds = suggestionBounds();
+        if (bounds == null) return false;
+        return mouseX >= bounds.x && mouseX <= bounds.x + bounds.w
+                && mouseY >= bounds.y && mouseY <= bounds.y + bounds.h;
     }
 
     private int contentHeight() {
@@ -2611,8 +3047,8 @@ public final class QuestEditorScreen extends Screen {
         setIdFieldColor(questCategoryBox, isInvalidQuestCategory());
         setIdFieldColor(questSubCategoryBox, isInvalidQuestSubCategory());
         setIdFieldColor(questDependenciesBox, isInvalidQuestDependencies());
-        setJsonFieldColor(questCompletionBox, isInvalidCompletionJson());
-        setJsonFieldColor(questRewardBox, isInvalidRewardJson());
+        setJsonFieldColor(questCompletionBox, isInvalidCompletionEntries());
+        setJsonFieldColor(questRewardBox, isInvalidRewardEntries());
     }
 
     private void setIdFieldColor(EditBox box, boolean invalid) {
@@ -2663,17 +3099,16 @@ public final class QuestEditorScreen extends Screen {
         return false;
     }
 
-    private boolean isInvalidCompletionJson() {
+    private boolean isInvalidCompletionEntries() {
         String raw = safe(questCompletionBox == null ? "" : questCompletionBox.getValue()).trim();
         if (raw.isBlank()) return false;
-        return parseCompletionJson(raw) == null;
+        return parseCompletionEntries(raw, false) == null;
     }
 
-    private boolean isInvalidRewardJson() {
+    private boolean isInvalidRewardEntries() {
         String raw = safe(questRewardBox == null ? "" : questRewardBox.getValue()).trim();
         if (raw.isBlank()) return false;
-        JsonElement parsed = parseRewardJson(raw);
-        return parsed == null || !parsed.isJsonObject();
+        return parseRewardEntries(raw, false) == null;
     }
 
     private boolean isMissingCategoryId(String raw) {
@@ -2698,6 +3133,7 @@ public final class QuestEditorScreen extends Screen {
         subCategorySuggestionCache.clear();
         questSuggestionCache.clear();
         subCategoryByCategorySuggestion.clear();
+        advancementIdCache.clear();
 
         if (currentPack != null) {
             for (NamedEntry entry : listCategoryEntries(currentPack)) {
@@ -2863,6 +3299,16 @@ public final class QuestEditorScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == 0) {
+            if (!isInsideSuggestionBox(mouseX, mouseY)) {
+                suppressIdSuggestions = true;
+                activeIdSuggestions.clear();
+                idSuggestionField = null;
+                idSuggestionMultiLineField = null;
+            } else {
+                suppressIdSuggestions = false;
+            }
+        }
         if (button == 0 && deleteConfirmArmed
                 && (deleteQuestButton == null || !deleteQuestButton.visible || !deleteQuestButton.isMouseOver(mouseX, mouseY))) {
             disarmDeleteConfirm();
@@ -2916,7 +3362,17 @@ public final class QuestEditorScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        suppressIdSuggestions = false;
         if (keyCode == GLFW.GLFW_KEY_TAB) {
+            if (!activeIdSuggestions.isEmpty() && (idSuggestionField != null || idSuggestionMultiLineField != null)) {
+                String suggestion = activeIdSuggestions.get(0);
+                if (idSuggestionField != null) {
+                    applyIdSuggestion(idSuggestionField, suggestion);
+                } else if (idSuggestionMultiLineField != null) {
+                    applyMultiLineIdSuggestion(idSuggestionMultiLineField, suggestion);
+                }
+                return true;
+            }
             EditBox focused = focusedEditBox();
             if (focused != null) {
                 String suggestion = computeIconSuggestion(focused.getValue());
@@ -2928,6 +3384,12 @@ public final class QuestEditorScreen extends Screen {
             }
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        suppressIdSuggestions = false;
+        return super.charTyped(codePoint, modifiers);
     }
 
     private boolean isIconBox(EditBox box) {
@@ -2949,23 +3411,96 @@ public final class QuestEditorScreen extends Screen {
         itemIdCache.sort(String::compareTo);
     }
 
+    private void ensureEntityIdCache() {
+        if (!entityIdCache.isEmpty()) return;
+        for (ResourceLocation rl : BuiltInRegistries.ENTITY_TYPE.keySet()) {
+            if (rl != null) entityIdCache.add(rl.toString());
+        }
+        entityIdCache.sort(String::compareTo);
+    }
+
+    private void ensureEffectIdCache() {
+        if (!effectIdCache.isEmpty()) return;
+        for (ResourceLocation rl : BuiltInRegistries.MOB_EFFECT.keySet()) {
+            if (rl != null) effectIdCache.add(rl.toString());
+        }
+        effectIdCache.sort(String::compareTo);
+    }
+
+    private List<String> itemSuggestions() {
+        ensureItemIdCache();
+        return itemIdCache;
+    }
+
+    private List<String> entitySuggestions() {
+        ensureEntityIdCache();
+        return entityIdCache;
+    }
+
+    private List<String> effectSuggestions() {
+        ensureEffectIdCache();
+        return effectIdCache;
+    }
+
+    private void ensureAdvancementIdCache() {
+        if (!advancementIdCache.isEmpty()) return;
+        for (QuestData.Quest q : QuestData.all()) {
+            if (q == null || q.completion == null || q.completion.targets == null) continue;
+            for (QuestData.Target t : q.completion.targets) {
+                if (t != null && t.isAdvancement() && t.id != null && !t.id.isBlank() && !advancementIdCache.contains(t.id)) {
+                    advancementIdCache.add(t.id);
+                }
+            }
+        }
+        if (Minecraft.getInstance().getConnection() != null) {
+            try {
+                Object advancements = Minecraft.getInstance().getConnection().getAdvancements();
+                Object tree = invokeObject(advancements, "getTree", "tree");
+                Object roots = invokeObject(tree, "roots", "getRoots");
+                if (roots instanceof Iterable<?> iterable) {
+                    for (Object node : iterable) {
+                        Object holder = invokeObject(node, "holder", "getHolder", "advancement");
+                        Object id = invokeObject(holder, "id", "getId");
+                        if (id != null) {
+                            String sid = id.toString();
+                            if (!sid.isBlank() && !advancementIdCache.contains(sid)) advancementIdCache.add(sid);
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        advancementIdCache.sort(String::compareTo);
+    }
+
+    private List<String> advancementSuggestions() {
+        ensureAdvancementIdCache();
+        return advancementIdCache;
+    }
+
     private String computeIconSuggestion(String raw) {
         if (raw == null) return "";
         String input = raw.trim().toLowerCase(Locale.ROOT);
         if (input.isBlank()) return "";
         ensureItemIdCache();
-
         String suggestion = findSuggestion(itemIdCache, input);
-        if ((suggestion == null || suggestion.isBlank()) && !input.contains(":")) {
-            suggestion = findSuggestion(itemIdCache, "minecraft:" + input);
-        }
         return suggestion == null ? "" : suggestion;
     }
 
     private String findSuggestion(List<String> cache, String prefix) {
         if (cache == null || cache.isEmpty() || prefix == null || prefix.isBlank()) return "";
+        String p = prefix.toLowerCase(Locale.ROOT);
+        boolean namespaced = p.contains(":");
         for (String id : cache) {
-            if (id.startsWith(prefix)) return id;
+            if (id == null || id.isBlank()) continue;
+            String low = id.toLowerCase(Locale.ROOT);
+            if (low.startsWith(p)) return id;
+            if (!namespaced) {
+                int colon = low.indexOf(':');
+                if (colon >= 0 && colon + 1 < low.length() && low.substring(colon + 1).startsWith(p)) {
+                    return id;
+                }
+            }
         }
         return "";
     }
@@ -3033,17 +3568,19 @@ public final class QuestEditorScreen extends Screen {
         private final ScaledTextField textField;
         private final float textScale;
         private final double lineHeight;
+        private final boolean allowColorFormatting;
         private long focusedTime = Util.getMillis();
         private int textColor = TEXT_COLOR;
 
-        ScaledMultiLineEditBox(Font font, int x, int y, int width, int height, Component placeholder, Component message, float textScale) {
+        ScaledMultiLineEditBox(Font font, int x, int y, int width, int height, Component placeholder, Component message, float textScale, boolean allowColorFormatting) {
             super(x, y, width, height, message);
             this.font = font;
             this.placeholder = placeholder;
             this.textScale = textScale <= 0f ? 1f : textScale;
             this.lineHeight = 9.0 * this.textScale;
+            this.allowColorFormatting = allowColorFormatting;
             int fieldWidth = Math.max(20, Math.round((width - this.totalInnerPadding()) / this.textScale));
-            this.textField = new ScaledTextField(font, fieldWidth);
+            this.textField = new ScaledTextField(font, fieldWidth, allowColorFormatting);
             this.textField.setCursorListener(this::scrollToCursor);
         }
 
@@ -3089,6 +3626,14 @@ public final class QuestEditorScreen extends Screen {
 
         public String getValue() {
             return this.textField.value();
+        }
+
+        public int getCursorPosition() {
+            return this.textField.cursor();
+        }
+
+        public void setCursorPosition(int cursor) {
+            this.textField.seekCursor(Whence.ABSOLUTE, Mth.clamp(cursor, 0, this.textField.value().length()));
         }
 
         public int getLineCount() {
@@ -3289,6 +3834,15 @@ public final class QuestEditorScreen extends Screen {
         }
 
         private FormattedRenderResult drawFormattedString(GuiGraphics guiGraphics, String text, int x, int y, int initialColor) {
+            if (!this.allowColorFormatting) {
+                int drawX = x;
+                if (guiGraphics != null) {
+                    drawX = guiGraphics.drawString(this.font, text, drawX, y, initialColor, false);
+                } else {
+                    drawX += this.font.width(text);
+                }
+                return new FormattedRenderResult(drawX, initialColor);
+            }
             int drawX = x;
             int color = initialColor;
             StringBuilder segment = new StringBuilder();
@@ -3374,6 +3928,7 @@ public final class QuestEditorScreen extends Screen {
         private final Font font;
         private final List<StringView> displayLines = new ArrayList<>();
         private final int width;
+        private final boolean colorTokenAwareDeletion;
         private String value = "";
         private int cursor;
         private int selectCursor;
@@ -3387,9 +3942,10 @@ public final class QuestEditorScreen extends Screen {
         private final Deque<HistoryState> redoHistory = new ArrayDeque<>();
         private boolean restoringHistory = false;
 
-        ScaledTextField(Font font, int width) {
+        ScaledTextField(Font font, int width, boolean colorTokenAwareDeletion) {
             this.font = font;
             this.width = width;
+            this.colorTokenAwareDeletion = colorTokenAwareDeletion;
             this.setValue("");
         }
 
@@ -3445,14 +4001,14 @@ public final class QuestEditorScreen extends Screen {
 
         public void deleteText(int length) {
             if (!this.hasSelection()) {
-                if (length < 0) {
+                if (this.colorTokenAwareDeletion && length < 0) {
                     int tokenStart = this.findColorTokenStartBeforeCursor();
                     if (tokenStart >= 0) {
                         this.selectCursor = tokenStart;
                         this.insertText("");
                         return;
                     }
-                } else if (length > 0) {
+                } else if (this.colorTokenAwareDeletion && length > 0) {
                     int tokenEnd = this.findColorTokenEndAtCursor();
                     if (tokenEnd >= 0) {
                         this.selectCursor = tokenEnd;
@@ -3961,6 +4517,55 @@ public final class QuestEditorScreen extends Screen {
         IndexName(String index, String name) {
             this.index = index == null ? "" : index;
             this.name = name == null ? "" : name;
+        }
+    }
+
+    private static final class ParsedEntry {
+        final String type;
+        final String id;
+        final int count;
+
+        ParsedEntry(String type, String id, int count) {
+            this.type = type == null ? "" : type;
+            this.id = id == null ? "" : id;
+            this.count = count;
+        }
+    }
+
+    private static final class MultiLineEntryContext {
+        final boolean hasTypeSeparator;
+        final String type;
+        final String typePrefix;
+        final int typeStart;
+        final int typeEnd;
+        final int idStart;
+        final int idEnd;
+        final String idPrefix;
+
+        MultiLineEntryContext(boolean hasTypeSeparator, String type, String typePrefix,
+                              int typeStart, int typeEnd, int idStart, int idEnd, String idPrefix) {
+            this.hasTypeSeparator = hasTypeSeparator;
+            this.type = type == null ? "" : type;
+            this.typePrefix = typePrefix == null ? "" : typePrefix;
+            this.typeStart = typeStart;
+            this.typeEnd = typeEnd;
+            this.idStart = idStart;
+            this.idEnd = idEnd;
+            this.idPrefix = idPrefix == null ? "" : idPrefix;
+        }
+    }
+
+    private static final class SuggestionBounds {
+        final int x;
+        final int y;
+        final int w;
+        final int h;
+
+        SuggestionBounds(int x, int y, int w, int h) {
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
         }
     }
 
