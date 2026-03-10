@@ -116,8 +116,12 @@ public final class QuestEditorScreen extends Screen {
     private static final int ID_SUGGESTION_MAX = 200;
     private static final int ID_SUGGESTION_VISIBLE_ROWS = 6;
     private static final int ID_SUGGESTION_ROW_H = 12;
+    private static final float ID_SUGGESTION_TEXT_SCALE = 0.5f;
     private static final int ID_SUGGESTION_BG_COLOR = 0xFF000000;
     private static final int ID_SUGGESTION_TEXT_COLOR = 0xFFFFFF00;
+    private static final int ENTRY_ROW_H = 12;
+    private static final int ENTRY_ROW_GAP = 2;
+    private static final float ENTRY_INPUT_TEXT_SCALE = 0.4f;
     private static final String DEFAULT_COMPLETION_ENTRIES =
             "collect: minecraft:id 1\n" +
                     "submit: minecraft:id 1\n" +
@@ -209,6 +213,10 @@ public final class QuestEditorScreen extends Screen {
     private ToggleButton questOptionalToggle;
     private ScaledMultiLineEditBox questCompletionBox;
     private ScaledMultiLineEditBox questRewardBox;
+    private final List<ScaledMultiLineEditBox> completionEntryBoxes = new ArrayList<>();
+    private final List<ScaledMultiLineEditBox> rewardEntryBoxes = new ArrayList<>();
+    private boolean syncingEntryRows = false;
+    private boolean entryRowsDirty = false;
     private final List<TextInsertButton> descriptionFormatButtons = new ArrayList<>();
     private CompactActionButton descriptionUndoButton;
     private CompactActionButton descriptionRedoButton;
@@ -334,6 +342,7 @@ public final class QuestEditorScreen extends Screen {
         questOptionalToggle = createToggle(false);
         questCompletionBox = createMultiLineBox("Completion entries", BOX_H_TALL, false);
         questRewardBox = createMultiLineBox("Reward entries", BOX_H_TALL, false);
+        initEntryRowBoxes();
         initDescriptionFormatterButtons();
 
         attachIdSanitizer(packNamespaceBox, false);
@@ -351,10 +360,10 @@ public final class QuestEditorScreen extends Screen {
 
     private void initDescriptionFormatterButtons() {
         descriptionFormatButtons.clear();
-        descriptionFormatButtons.add(createDescriptionInsertButton("", "/w", 0xFFFFFFFF, 9));
         descriptionFormatButtons.add(createDescriptionInsertButton("", "/r", 0xFFFF5555, 9));
         descriptionFormatButtons.add(createDescriptionInsertButton("", "/g", 0xFF55FF55, 9));
         descriptionFormatButtons.add(createDescriptionInsertButton("", "/b", 0xFF5555FF, 9));
+        descriptionFormatButtons.add(createDescriptionInsertButton("", "/w", 0xFF55FFFF, 9));
         descriptionFormatButtons.add(createDescriptionInsertButton("", "/y", 0xFFFFFF55, 9));
         descriptionFormatButtons.add(createDescriptionInsertButton("", "/o", 0xFFFFAA00, 9));
         descriptionFormatButtons.add(createDescriptionInsertButton("", "/a", 0xFFAAAAAA, 9));
@@ -684,16 +693,16 @@ public final class QuestEditorScreen extends Screen {
         questSubCategoryBox.setValue(safe(data.subCategory));
         questDependenciesBox.setValue(safe(data.dependencies));
         questOptionalToggle.setState(parseBool(data.optional, false));
-        questCompletionBox.setValue(completionJsonToEntries(safe(data.completionJson)));
-        questRewardBox.setValue(rewardJsonToEntries(safe(data.rewardJson)));
+        setEntryRowsFromRaw(false, completionJsonToEntries(safe(data.completionJson)));
+        setEntryRowsFromRaw(true, rewardJsonToEntries(safe(data.rewardJson)));
         loadedQuestType = safe(data.type);
 
         if (sourcePath == null) {
-            if (questCompletionBox.getValue().isBlank()) {
-                questCompletionBox.setValue(DEFAULT_COMPLETION_ENTRIES);
+            if (entryRowsToRaw(false).isBlank()) {
+                setEntryRowsFromRaw(false, DEFAULT_COMPLETION_ENTRIES);
             }
-            if (questRewardBox.getValue().isBlank()) {
-                questRewardBox.setValue(DEFAULT_REWARD_ENTRIES);
+            if (entryRowsToRaw(true).isBlank()) {
+                setEntryRowsFromRaw(true, DEFAULT_REWARD_ENTRIES);
             }
         }
         questDescriptionBox.scrollToTop();
@@ -1245,9 +1254,20 @@ public final class QuestEditorScreen extends Screen {
                     expAmount = parsed.count;
                 }
                 case "command" -> {
-                    if (parsed.id.isBlank()) return failReward(line, raiseErrors);
+                    CommandReward parsedCommand = parseCommandReward(parsed.id);
+                    if (parsedCommand.command.isBlank()) return failReward(line, raiseErrors);
                     JsonObject cmd = new JsonObject();
-                    cmd.addProperty("command", parsed.id);
+                    String commandValue = parsedCommand.command.startsWith("/")
+                            ? parsedCommand.command.substring(1).trim()
+                            : parsedCommand.command;
+                    if (commandValue.isBlank()) return failReward(line, raiseErrors);
+                    cmd.addProperty("command", commandValue);
+                    if (!parsedCommand.icon.isBlank()) {
+                        String normalizedIcon = normalizeNamespacedId(parsedCommand.icon, false);
+                        if (normalizedIcon.isBlank()) return failReward(line, raiseErrors);
+                        cmd.addProperty("icon", normalizedIcon);
+                    }
+                    cmd.addProperty("title", safe(parsedCommand.title));
                     commands.add(cmd);
                 }
                 case "function" -> {
@@ -1365,8 +1385,15 @@ public final class QuestEditorScreen extends Screen {
                     continue;
                 }
                 if (!e.isJsonObject()) continue;
-                String cmd = optString(e.getAsJsonObject(), "command", "");
-                if (!cmd.isBlank()) out.add("command: " + cmd);
+                JsonObject cmdObj = e.getAsJsonObject();
+                String cmd = optString(cmdObj, "command", "");
+                if (cmd.isBlank()) continue;
+                String icon = optString(cmdObj, "icon", "");
+                String title = optString(cmdObj, "title", "");
+                StringBuilder line = new StringBuilder("command: ").append(cmd);
+                if (!icon.isBlank()) line.append(" | icon: ").append(icon);
+                line.append(" | title: ").append(title);
+                out.add(line.toString());
             }
         }
         if (obj.has("functions") && obj.get("functions").isJsonArray()) {
@@ -1441,6 +1468,31 @@ public final class QuestEditorScreen extends Screen {
         }
         if (count < 1) count = 1;
         return new ParsedEntry(type, id.trim(), count);
+    }
+
+    private CommandReward parseCommandReward(String raw) {
+        String payload = safe(raw).trim();
+        if (payload.isBlank()) return new CommandReward("", "", "");
+
+        String command = "";
+        String icon = "";
+        String title = "";
+        String[] segments = payload.split("\\|");
+        for (int i = 0; i < segments.length; i++) {
+            String segment = safe(segments[i]).trim();
+            if (segment.isBlank()) continue;
+            String lower = segment.toLowerCase(Locale.ROOT);
+            if (lower.startsWith("command:")) {
+                command = segment.substring("command:".length()).trim();
+            } else if (lower.startsWith("icon:")) {
+                icon = segment.substring("icon:".length()).trim();
+            } else if (lower.startsWith("title:")) {
+                title = segment.substring("title:".length()).trim();
+            } else if (i == 0 && command.isBlank()) {
+                command = segment;
+            }
+        }
+        return new CommandReward(command, icon, title);
     }
 
     private String normalizeNamespacedId(String raw, boolean allowTags) {
@@ -1809,6 +1861,14 @@ public final class QuestEditorScreen extends Screen {
             f.widget.visible = false;
             f.widget.active = false;
         }
+        for (ScaledMultiLineEditBox box : completionEntryBoxes) {
+            box.visible = false;
+            box.active = false;
+        }
+        for (ScaledMultiLineEditBox box : rewardEntryBoxes) {
+            box.visible = false;
+            box.active = false;
+        }
         hideDescriptionFormatterButtons();
         activeFields.clear();
         activeFields.addAll(fields);
@@ -1817,6 +1877,7 @@ public final class QuestEditorScreen extends Screen {
             f.widget.visible = true;
             f.widget.active = true;
         }
+        entryRowsDirty = true;
         editorScroll = 0f;
     }
 
@@ -1835,7 +1896,139 @@ public final class QuestEditorScreen extends Screen {
         }
     }
 
-    // removed dynamic entry builder
+    private void initEntryRowBoxes() {
+        resetEntryRows(completionEntryBoxes, List.of(), false);
+        resetEntryRows(rewardEntryBoxes, List.of(), true);
+        syncEntryBackingValues();
+    }
+
+    private ScaledMultiLineEditBox createEntryRowBox(boolean reward) {
+        String hint = reward
+                ? "item: minecraft:item 1"
+                : "collect: minecraft:item 1";
+        ScaledMultiLineEditBox box = new ScaledMultiLineEditBox(font, 0, 0, pw - 4, ENTRY_ROW_H,
+                Component.literal(hint), Component.empty(), ENTRY_INPUT_TEXT_SCALE, false);
+        box.setCharacterLimit(4096);
+        box.setValueListener(v -> {
+            if (syncingEntryRows) return;
+            entryRowsDirty = true;
+            syncEntryBackingValues();
+        });
+        box.visible = false;
+        box.active = false;
+        addRenderableWidget(box);
+        return box;
+    }
+
+    private void resetEntryRows(List<ScaledMultiLineEditBox> target, List<String> lines, boolean reward) {
+        syncingEntryRows = true;
+        try {
+            for (ScaledMultiLineEditBox box : target) {
+                removeWidget(box);
+            }
+            target.clear();
+            List<String> normalized = new ArrayList<>();
+            if (lines != null) {
+                for (String line : lines) {
+                    String v = safe(line).trim();
+                    if (!v.isBlank()) normalized.add(v);
+                }
+            }
+            if (normalized.isEmpty()) normalized.add("");
+            for (String line : normalized) {
+                ScaledMultiLineEditBox box = createEntryRowBox(reward);
+                box.setValue(line);
+                target.add(box);
+            }
+            ensureTrailingEmptyRow(target, reward);
+        } finally {
+            syncingEntryRows = false;
+        }
+    }
+
+    private void normalizeEntryRows(boolean reward) {
+        List<ScaledMultiLineEditBox> rows = reward ? rewardEntryBoxes : completionEntryBoxes;
+        syncingEntryRows = true;
+        try {
+            for (int i = rows.size() - 1; i >= 0; i--) {
+                ScaledMultiLineEditBox box = rows.get(i);
+                boolean blank = safe(box.getValue()).trim().isBlank();
+                if (!blank) continue;
+                boolean isLast = i == rows.size() - 1;
+                if (!isLast && !box.isFocused()) {
+                    removeWidget(box);
+                    rows.remove(i);
+                }
+            }
+            ensureTrailingEmptyRow(rows, reward);
+        } finally {
+            syncingEntryRows = false;
+        }
+    }
+
+    private void ensureTrailingEmptyRow(List<ScaledMultiLineEditBox> rows, boolean reward) {
+        if (rows.isEmpty()) {
+            rows.add(createEntryRowBox(reward));
+            return;
+        }
+        ScaledMultiLineEditBox last = rows.get(rows.size() - 1);
+        if (!safe(last.getValue()).trim().isBlank()) {
+            rows.add(createEntryRowBox(reward));
+        }
+        while (rows.size() > 1) {
+            ScaledMultiLineEditBox prev = rows.get(rows.size() - 2);
+            if (!safe(prev.getValue()).trim().isBlank() || prev.isFocused()) break;
+            removeWidget(prev);
+            rows.remove(rows.size() - 2);
+        }
+    }
+
+    private void setEntryRowsFromRaw(boolean reward, String raw) {
+        resetEntryRows(reward ? rewardEntryBoxes : completionEntryBoxes, extractEntryLines(raw), reward);
+        syncEntryBackingValues();
+    }
+
+    private String entryRowsToRaw(boolean reward) {
+        List<ScaledMultiLineEditBox> rows = reward ? rewardEntryBoxes : completionEntryBoxes;
+        List<String> out = new ArrayList<>();
+        for (ScaledMultiLineEditBox box : rows) {
+            String v = safe(box.getValue()).trim();
+            if (!v.isBlank()) out.add(v);
+        }
+        return String.join("\n", out);
+    }
+
+    private int entryRowsHeight(boolean reward) {
+        int count = Math.max(1, (reward ? rewardEntryBoxes : completionEntryBoxes).size());
+        return (count * ENTRY_ROW_H) + ((count - 1) * ENTRY_ROW_GAP);
+    }
+
+    private int layoutEntryRows(boolean reward, int x, int y, int width, int clipTop, int clipBottom) {
+        List<ScaledMultiLineEditBox> rows = reward ? rewardEntryBoxes : completionEntryBoxes;
+        int cursorY = y;
+        for (ScaledMultiLineEditBox box : rows) {
+            box.setX(x);
+            box.setY(cursorY);
+            box.setWidth(width);
+            box.setHeight(ENTRY_ROW_H);
+            boolean inside = cursorY + ENTRY_ROW_H > clipTop && cursorY < clipBottom;
+            box.visible = inside;
+            box.active = inside;
+            cursorY += ENTRY_ROW_H + ENTRY_ROW_GAP;
+        }
+        return Math.max(ENTRY_ROW_H, cursorY - y - ENTRY_ROW_GAP);
+    }
+
+    private void setEntryRowsColor(boolean reward, boolean invalid) {
+        for (ScaledMultiLineEditBox box : reward ? rewardEntryBoxes : completionEntryBoxes) {
+            box.setTextColor(invalid ? INVALID_INPUT_TEXT_COLOR : DEFAULT_INPUT_TEXT_COLOR);
+        }
+    }
+
+    private void syncEntryBackingValues() {
+        if (questCompletionBox != null) questCompletionBox.setValue(entryRowsToRaw(false));
+        if (questRewardBox != null) questRewardBox.setValue(entryRowsToRaw(true));
+    }
 
     private FormField field(String label, AbstractWidget widget) {
         FormField field = new FormField(label, widget);
@@ -2383,8 +2576,8 @@ public final class QuestEditorScreen extends Screen {
                 data.completionJson = state.questCompletion;
                 data.rewardJson = state.questReward;
                 showQuestEditor(data, state.editingPath);
-                if (questCompletionBox != null) questCompletionBox.setValue(safe(state.questCompletion));
-                if (questRewardBox != null) questRewardBox.setValue(safe(state.questReward));
+                setEntryRowsFromRaw(false, safe(state.questCompletion));
+                setEntryRowsFromRaw(true, safe(state.questReward));
             }
             case NONE -> clearEditor();
         }
@@ -2697,8 +2890,13 @@ public final class QuestEditorScreen extends Screen {
             int top = bounds.y + (row * ID_SUGGESTION_ROW_H);
             int bottom = top + ID_SUGGESTION_ROW_H;
             gg.fill(bounds.x, top, bounds.x + bounds.w, bottom, ID_SUGGESTION_BG_COLOR);
-            String text = font.plainSubstrByWidth(activeIdSuggestions.get(i), Math.max(4, bounds.w - 8));
-            gg.drawString(font, text, bounds.x + 4, top + 2, ID_SUGGESTION_TEXT_COLOR, false);
+            float inv = 1f / ID_SUGGESTION_TEXT_SCALE;
+            int maxWidth = Math.max(4, (int) ((bounds.w - 8) * inv));
+            String text = font.plainSubstrByWidth(activeIdSuggestions.get(i), maxWidth);
+            gg.pose().pushPose();
+            gg.pose().scale(ID_SUGGESTION_TEXT_SCALE, ID_SUGGESTION_TEXT_SCALE, 1f);
+            gg.drawString(font, text, (int) ((bounds.x + 4) * inv), (int) ((top + 2) * inv), ID_SUGGESTION_TEXT_COLOR, false);
+            gg.pose().popPose();
         }
         gg.disableScissor();
     }
@@ -2741,6 +2939,12 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private ScaledMultiLineEditBox focusedMultiIdSuggestionField() {
+        for (ScaledMultiLineEditBox box : completionEntryBoxes) {
+            if (box.visible && box.isFocused()) return box;
+        }
+        for (ScaledMultiLineEditBox box : rewardEntryBoxes) {
+            if (box.visible && box.isFocused()) return box;
+        }
         if (questCompletionBox != null && questCompletionBox.visible && questCompletionBox.isFocused()) return questCompletionBox;
         if (questRewardBox != null && questRewardBox.visible && questRewardBox.isFocused()) return questRewardBox;
         return null;
@@ -2778,7 +2982,7 @@ public final class QuestEditorScreen extends Screen {
         MultiLineEntryContext ctx = parseMultiLineEntryContext(field);
         if (ctx == null) return List.of();
         if (!ctx.hasTypeSeparator) {
-            return field == questCompletionBox
+            return isCompletionEntryField(field)
                     ? List.of("collect", "submit", "kill", "achieve", "effect")
                     : List.of("item", "xp", "command", "function");
         }
@@ -2788,8 +2992,17 @@ public final class QuestEditorScreen extends Screen {
             case "effect" -> effectSuggestions();
             case "achieve", "advancement" -> advancementSuggestions();
             case "xp", "exp" -> List.of("points", "levels");
+            case "icon" -> itemSuggestions();
             default -> List.of();
         };
+    }
+
+    private boolean isCompletionEntryField(ScaledMultiLineEditBox field) {
+        return field == questCompletionBox || completionEntryBoxes.contains(field);
+    }
+
+    private boolean isRewardEntryField(ScaledMultiLineEditBox field) {
+        return field == questRewardBox || rewardEntryBoxes.contains(field);
     }
 
     private String multiLineSuggestionPrefix(ScaledMultiLineEditBox field) {
@@ -2873,11 +3086,11 @@ public final class QuestEditorScreen extends Screen {
         String value = safe(field.getValue());
         String replacement = suggestion;
         if (ctx.hasTypeSeparator && field != null) {
-            if (field == questCompletionBox || field == questRewardBox) {
+            if (isCompletionEntryField(field) || isRewardEntryField(field)) {
                 if (ctx.type.equals("collect") || ctx.type.equals("submit") || ctx.type.equals("item")
                         || ctx.type.equals("kill") || ctx.type.equals("entity") || ctx.type.equals("effect")
                         || ctx.type.equals("achieve") || ctx.type.equals("advancement")
-                        || ctx.type.equals("function")) {
+                        || ctx.type.equals("function") || ctx.type.equals("icon")) {
                     replacement = normalizeNamespacedId(suggestion, false);
                 }
             }
@@ -2894,40 +3107,78 @@ public final class QuestEditorScreen extends Screen {
         field.setValue(next);
         field.setCursorPosition(nextCursor);
         field.setFocused(true);
+        entryRowsDirty = true;
+        syncEntryBackingValues();
         updateIdSuggestions();
     }
 
     private MultiLineEntryContext parseMultiLineEntryContext(ScaledMultiLineEditBox field) {
         if (field == null) return null;
-        String value = safe(field.getValue());
-        int cursor = Math.max(0, Math.min(field.getCursorPosition(), value.length()));
-        int lineStart = cursor <= 0 ? 0 : value.lastIndexOf('\n', Math.max(0, cursor - 1));
-        lineStart = lineStart < 0 ? 0 : lineStart + 1;
-        int lineEnd = value.indexOf('\n', cursor);
-        if (lineEnd < 0) lineEnd = value.length();
-        String line = value.substring(lineStart, lineEnd);
-        int localCursor = cursor - lineStart;
+        try {
+            String value = safe(field.getValue());
+            int cursor = Math.max(0, Math.min(field.getCursorPosition(), value.length()));
+            int lineStart = cursor <= 0 ? 0 : value.lastIndexOf('\n', Math.max(0, cursor - 1));
+            lineStart = lineStart < 0 ? 0 : lineStart + 1;
+            int lineEnd = value.indexOf('\n', cursor);
+            if (lineEnd < 0) lineEnd = value.length();
+            lineStart = Math.max(0, Math.min(lineStart, value.length()));
+            lineEnd = Math.max(lineStart, Math.min(lineEnd, value.length()));
+            String line = value.substring(lineStart, lineEnd);
+            int localCursor = Math.max(0, Math.min(cursor - lineStart, line.length()));
 
-        int firstNonWs = 0;
-        while (firstNonWs < line.length() && Character.isWhitespace(line.charAt(firstNonWs))) firstNonWs++;
-        int colon = line.indexOf(':');
-        if (colon < 0 || localCursor <= colon) {
-            int prefixEnd = Math.max(firstNonWs, Math.min(localCursor, line.length()));
-            String typePrefix = line.substring(firstNonWs, prefixEnd).trim().toLowerCase(Locale.ROOT);
-            return new MultiLineEntryContext(false, "", typePrefix, lineStart + firstNonWs, lineStart + prefixEnd, -1, -1, "");
+            int firstNonWs = 0;
+            while (firstNonWs < line.length() && Character.isWhitespace(line.charAt(firstNonWs))) firstNonWs++;
+            firstNonWs = Math.max(0, Math.min(firstNonWs, line.length()));
+            int colon = line.indexOf(':');
+            if (colon < 0 || localCursor <= colon) {
+                int prefixEnd = Math.max(firstNonWs, Math.min(localCursor, line.length()));
+                String typePrefix = line.substring(firstNonWs, prefixEnd).trim().toLowerCase(Locale.ROOT);
+                return new MultiLineEntryContext(false, "", typePrefix, lineStart + firstNonWs, lineStart + prefixEnd, -1, -1, "");
+            }
+
+            int safeColon = Math.max(0, Math.min(colon, line.length()));
+            int typeStart = Math.min(firstNonWs, safeColon);
+            int typeEnd = Math.max(typeStart, safeColon);
+            String type = line.substring(typeStart, typeEnd).trim().toLowerCase(Locale.ROOT);
+            if (isRewardEntryField(field) && "command".equals(type)) {
+                String lineLower = line.toLowerCase(Locale.ROOT);
+                int iconKey = lineLower.indexOf("icon:");
+                if (iconKey >= 0) {
+                    int iconStart = iconKey + "icon:".length();
+                    while (iconStart < line.length() && Character.isWhitespace(line.charAt(iconStart))) iconStart++;
+                    int iconEnd = iconStart;
+                    while (iconEnd < line.length()) {
+                        char ch = line.charAt(iconEnd);
+                        if (ch == '|' || Character.isWhitespace(ch)) break;
+                        iconEnd++;
+                    }
+                    if (localCursor >= iconStart && localCursor <= iconEnd) {
+                        int prefixEnd = Math.max(iconStart, Math.min(localCursor, iconEnd));
+                        String idPrefix = line.substring(iconStart, prefixEnd).trim().toLowerCase(Locale.ROOT);
+                        return new MultiLineEntryContext(true, "icon", "", -1, -1,
+                                lineStart + iconStart, lineStart + iconEnd, idPrefix);
+                    }
+                }
+            }
+            int idStartLocal = Math.min(line.length(), safeColon + 1);
+            while (idStartLocal < line.length() && Character.isWhitespace(line.charAt(idStartLocal))) idStartLocal++;
+            int idEndLocal = idStartLocal;
+            while (idEndLocal < line.length() && !Character.isWhitespace(line.charAt(idEndLocal))) idEndLocal++;
+            int prefixEnd = Math.max(idStartLocal, Math.min(localCursor, idEndLocal));
+            String idPrefix = line.substring(idStartLocal, prefixEnd).trim().toLowerCase(Locale.ROOT);
+            return new MultiLineEntryContext(true, type, "", -1, -1, lineStart + idStartLocal, lineStart + idEndLocal, idPrefix);
+        } catch (RuntimeException ignored) {
+            return null;
         }
-
-        String type = line.substring(firstNonWs, colon).trim().toLowerCase(Locale.ROOT);
-        int idStartLocal = colon + 1;
-        while (idStartLocal < line.length() && Character.isWhitespace(line.charAt(idStartLocal))) idStartLocal++;
-        int idEndLocal = idStartLocal;
-        while (idEndLocal < line.length() && !Character.isWhitespace(line.charAt(idEndLocal))) idEndLocal++;
-        int prefixEnd = Math.max(idStartLocal, Math.min(localCursor, idEndLocal));
-        String idPrefix = line.substring(idStartLocal, prefixEnd).trim().toLowerCase(Locale.ROOT);
-        return new MultiLineEntryContext(true, type, "", -1, -1, lineStart + idStartLocal, lineStart + idEndLocal, idPrefix);
     }
 
     private void renderEditorFields(GuiGraphics gg, int mouseX, int mouseY) {
+        if (entryRowsDirty) {
+            normalizeEntryRows(false);
+            normalizeEntryRows(true);
+            syncEntryBackingValues();
+            entryRowsDirty = false;
+        }
         updateDynamicFieldSizes();
         updateInvalidFieldStyles();
         int contentHeight = contentHeight();
@@ -2943,20 +3194,32 @@ public final class QuestEditorScreen extends Screen {
             int boxY = labelY + font.lineHeight + FIELD_LABEL_GAP;
             int boxX = pxRight + 2;
             int widgetWidth = pw - 4;
+            boolean completionEntriesField = field.widget == questCompletionBox;
+            boolean rewardEntriesField = field.widget == questRewardBox;
+            int widgetHeight;
 
-            field.widget.setX(boxX);
-            field.widget.setY(boxY);
-            if (field.widget instanceof EditBox eb) {
-                eb.setWidth(widgetWidth);
-            } else if (field.widget instanceof ScaledMultiLineEditBox mb) {
-                mb.setWidth(widgetWidth);
-            } else if (field.widget instanceof ToggleButton tb) {
-                tb.setSize(TOGGLE_SIZE, TOGGLE_SIZE);
+            if (!completionEntriesField && !rewardEntriesField) {
+                field.widget.setX(boxX);
+                field.widget.setY(boxY);
+                if (field.widget instanceof EditBox eb) {
+                    eb.setWidth(widgetWidth);
+                } else if (field.widget instanceof ScaledMultiLineEditBox mb) {
+                    mb.setWidth(widgetWidth);
+                } else if (field.widget instanceof ToggleButton tb) {
+                    tb.setSize(TOGGLE_SIZE, TOGGLE_SIZE);
+                }
             }
 
-            boolean inside = boxY + field.widget.getHeight() > clipTop && boxY < clipBottom;
-            field.widget.visible = inside;
-            field.widget.active = inside;
+            if (completionEntriesField || rewardEntriesField) {
+                field.widget.visible = false;
+                field.widget.active = false;
+                widgetHeight = layoutEntryRows(rewardEntriesField, boxX, boxY, widgetWidth, clipTop, clipBottom);
+            } else {
+                widgetHeight = field.widget.getHeight();
+                boolean inside = boxY + widgetHeight > clipTop && boxY < clipBottom;
+                field.widget.visible = inside;
+                field.widget.active = inside;
+            }
             if (field.widget == questDescriptionBox) {
                 layoutDescriptionFormatterButtons(boxX, boxY + field.widget.getHeight() + FORMAT_BAR_GAP, clipTop, clipBottom);
             }
@@ -2969,13 +3232,13 @@ public final class QuestEditorScreen extends Screen {
                     boolean hoverLabel = mouseX >= pxRight + 2 && mouseX <= pxRight + 2 + labelW
                             && mouseY >= labelY && mouseY <= labelY + font.lineHeight;
                     boolean hoverWidget = mouseX >= boxX && mouseX <= boxX + (pw - 4)
-                            && mouseY >= boxY && mouseY <= boxY + field.widget.getHeight();
+                            && mouseY >= boxY && mouseY <= boxY + widgetHeight;
                     if (hoverLabel || hoverWidget) {
                         gg.renderTooltip(font, Component.literal(tooltip), mouseX, mouseY);
                     }
                 }
             }
-            yCursor += font.lineHeight + FIELD_LABEL_GAP + field.widget.getHeight() + FIELD_ROW_GAP;
+            yCursor += font.lineHeight + FIELD_LABEL_GAP + widgetHeight + FIELD_ROW_GAP;
             if (field.widget == questDescriptionBox) {
                 yCursor += FORMAT_BAR_GAP + FORMAT_BAR_H;
             }
@@ -3022,6 +3285,8 @@ public final class QuestEditorScreen extends Screen {
 
     private int fieldHeight(FormField field) {
         if (field == null || field.widget == null) return 0;
+        if (field.widget == questCompletionBox) return entryRowsHeight(false);
+        if (field.widget == questRewardBox) return entryRowsHeight(true);
         if (field.widget instanceof ScaledMultiLineEditBox mb) {
             int baseHeight = computeMultilineHeight(mb, BOX_H_TALL);
             if (field.widget == questDescriptionBox) {
@@ -3034,6 +3299,7 @@ public final class QuestEditorScreen extends Screen {
 
     private void updateDynamicFieldSizes() {
         for (FormField field : activeFields) {
+            if (field.widget == questCompletionBox || field.widget == questRewardBox) continue;
             if (field.widget instanceof ScaledMultiLineEditBox mb) {
                 mb.setWidth(pw - 4);
                 mb.setHeight(computeMultilineHeight(mb, BOX_H_TALL));
@@ -3047,8 +3313,8 @@ public final class QuestEditorScreen extends Screen {
         setIdFieldColor(questCategoryBox, isInvalidQuestCategory());
         setIdFieldColor(questSubCategoryBox, isInvalidQuestSubCategory());
         setIdFieldColor(questDependenciesBox, isInvalidQuestDependencies());
-        setJsonFieldColor(questCompletionBox, isInvalidCompletionEntries());
-        setJsonFieldColor(questRewardBox, isInvalidRewardEntries());
+        setEntryRowsColor(false, isInvalidCompletionEntries());
+        setEntryRowsColor(true, isInvalidRewardEntries());
     }
 
     private void setIdFieldColor(EditBox box, boolean invalid) {
@@ -3886,7 +4152,7 @@ public final class QuestEditorScreen extends Screen {
 
         private int formatColor(char code, int fallback) {
             return switch (Character.toLowerCase(code)) {
-                case 'w' -> 0xFFFFFF;
+                case 'w' -> 0x55FFFF;
                 case 'r' -> 0xFF5555;
                 case 'g' -> 0x55FF55;
                 case 'b' -> 0x5555FF;
@@ -4529,6 +4795,18 @@ public final class QuestEditorScreen extends Screen {
             this.type = type == null ? "" : type;
             this.id = id == null ? "" : id;
             this.count = count;
+        }
+    }
+
+    private static final class CommandReward {
+        final String command;
+        final String icon;
+        final String title;
+
+        CommandReward(String command, String icon, String title) {
+            this.command = command == null ? "" : command;
+            this.icon = icon == null ? "" : icon;
+            this.title = title == null ? "" : title;
         }
     }
 

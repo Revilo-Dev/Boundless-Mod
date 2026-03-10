@@ -17,7 +17,11 @@ import net.revilodev.boundless.client.QuestListWidget;
 import net.revilodev.boundless.quest.QuestData;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 @OnlyIn(Dist.CLIENT)
 public final class QuestSettingsScreen extends Screen {
@@ -66,6 +70,8 @@ public final class QuestSettingsScreen extends Screen {
     private EditBox disabledCategories;
     private ActionButton saveButton;
     private BackButton backButton;
+    private List<String> availableCategoryIds = List.of();
+    private String pendingCategorySuggestion = "";
 
     private String pinnedHudPos;
     private boolean spawnWithQuestBook;
@@ -126,6 +132,8 @@ public final class QuestSettingsScreen extends Screen {
         int boxY = labelY + font.lineHeight + 2;
         disabledCategories = new EditBox(font, px + 2, boxY, pw - 4, 18, Component.literal("Disabled categories"));
         disabledCategories.setMaxLength(512);
+        disabledCategories.setResponder(v -> updateDisabledCategorySuggestion());
+        disabledCategories.setHint(Component.literal("example: minecraft, nether"));
 
         addRenderableWidget(pinnedRow);
         addRenderableWidget(spawnRow);
@@ -181,7 +189,9 @@ public final class QuestSettingsScreen extends Screen {
         pinnedHudPos = normalizeHudPos(Config.pinnedQuestHudPosition());
         spawnWithQuestBook = Config.spawnWithQuestBook();
         hideQuestBookToggle = Config.hideQuestBookToggle();
+        availableCategoryIds = buildAvailableCategoryIds();
         disabledCategories.setValue(formatDisabledCategories(Config.disabledCategories()));
+        updateDisabledCategorySuggestion();
     }
 
     private void cyclePinnedHudPosition() {
@@ -246,6 +256,96 @@ public final class QuestSettingsScreen extends Screen {
             if (!trimmed.isEmpty()) out.add(trimmed);
         }
         return out;
+    }
+
+    private List<String> buildAvailableCategoryIds() {
+        return QuestData.categoriesOrdered().stream()
+                .map(c -> c == null ? "" : c.id)
+                .filter(id -> id != null && !id.isBlank())
+                .filter(id -> !"all".equalsIgnoreCase(id))
+                .distinct()
+                .sorted(Comparator.comparing(s -> s.toLowerCase(Locale.ROOT)))
+                .toList();
+    }
+
+    private void updateDisabledCategorySuggestion() {
+        pendingCategorySuggestion = "";
+        disabledCategories.setSuggestion("");
+
+        if (disabledCategories == null || availableCategoryIds.isEmpty()) return;
+        String raw = disabledCategories.getValue();
+        if (raw == null) return;
+
+        int cursor = Math.max(0, Math.min(disabledCategories.getCursorPosition(), raw.length()));
+        int tokenStart = raw.lastIndexOf(',', Math.max(0, cursor - 1)) + 1;
+        int nextComma = raw.indexOf(',', cursor);
+        int tokenEnd = nextComma < 0 ? raw.length() : nextComma;
+
+        String left = raw.substring(tokenStart, cursor);
+        String right = raw.substring(cursor, tokenEnd);
+        if (!right.trim().isEmpty()) return;
+
+        String trimmedLeft = left.stripLeading();
+        String typed = trimmedLeft.trim();
+        String typedLower = typed.toLowerCase(Locale.ROOT);
+
+        Set<String> alreadyChosen = parseChosenCategories(raw, tokenStart, tokenEnd);
+        String match = null;
+        for (String id : availableCategoryIds) {
+            String idLower = id.toLowerCase(Locale.ROOT);
+            if (alreadyChosen.contains(idLower)) continue;
+            if (typedLower.isEmpty() || idLower.startsWith(typedLower)) {
+                if (typedLower.equals(idLower)) continue;
+                match = id;
+                break;
+            }
+        }
+        if (match == null) return;
+
+        int spacesBeforeTyped = left.length() - trimmedLeft.length();
+        String prefixForTail = typed.isEmpty() ? "" : left.substring(spacesBeforeTyped);
+        if (!match.toLowerCase(Locale.ROOT).startsWith(prefixForTail.toLowerCase(Locale.ROOT))) {
+            prefixForTail = typed;
+        }
+
+        pendingCategorySuggestion = match.substring(Math.min(prefixForTail.length(), match.length()));
+        disabledCategories.setSuggestion(pendingCategorySuggestion);
+    }
+
+    private Set<String> parseChosenCategories(String raw, int activeStart, int activeEnd) {
+        Set<String> out = new LinkedHashSet<>();
+        if (raw == null || raw.isBlank()) return out;
+        String[] parts = raw.split(",");
+        int offset = 0;
+        for (String part : parts) {
+            int start = offset;
+            int end = start + part.length();
+            offset = end + 1;
+            if (start == activeStart && end == activeEnd) continue;
+
+            String v = part == null ? "" : part.trim();
+            if (!v.isEmpty()) out.add(v.toLowerCase(Locale.ROOT));
+        }
+        return out;
+    }
+
+    private boolean acceptDisabledCategorySuggestion() {
+        if (pendingCategorySuggestion == null || pendingCategorySuggestion.isEmpty()) return false;
+        disabledCategories.insertText(pendingCategorySuggestion);
+        updateDisabledCategorySuggestion();
+        return true;
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (page == Page.CONFIG
+                && disabledCategories != null
+                && disabledCategories.isFocused()
+                && keyCode == 258
+                && acceptDisabledCategorySuggestion()) {
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override

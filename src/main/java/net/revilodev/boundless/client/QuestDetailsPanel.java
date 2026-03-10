@@ -679,7 +679,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
     private int formatColor(char code, int fallback) {
         return switch (Character.toLowerCase(code)) {
-            case 'w' -> 0xFFFFFF;
+            case 'w' -> 0x55FFFF;
             case 'r' -> 0xFF5555;
             case 'g' -> 0x55FF55;
             case 'b' -> 0x5555FF;
