@@ -115,10 +115,14 @@ public final class QuestEditorScreen extends Screen {
     private static final String INVALID_ID_TOOLTIP = "Invalid ID";
     private static final int ID_SUGGESTION_MAX = 200;
     private static final int ID_SUGGESTION_VISIBLE_ROWS = 6;
-    private static final int ID_SUGGESTION_ROW_H = 12;
+    private static final int ID_SUGGESTION_ROW_H = 10;
     private static final float ID_SUGGESTION_TEXT_SCALE = 0.5f;
     private static final int ID_SUGGESTION_BG_COLOR = 0xFF000000;
     private static final int ID_SUGGESTION_TEXT_COLOR = 0xFFFFFF00;
+    private static final int ID_SUGGESTION_BORDER_COLOR = 0xFFFFFFFF;
+    private static final int ID_SUGGESTION_SCROLL_TRACK_COLOR = 0xFF2C2C2C;
+    private static final int ID_SUGGESTION_SCROLL_THUMB_COLOR = 0xFFFFFFFF;
+    private static final int ID_SUGGESTION_SCROLL_W = 3;
     private static final int ENTRY_ROW_H = 12;
     private static final int ENTRY_ROW_GAP = 2;
     private static final float ENTRY_INPUT_TEXT_SCALE = 0.4f;
@@ -1492,7 +1496,18 @@ public final class QuestEditorScreen extends Screen {
                 command = segment;
             }
         }
+        icon = unquotePlaceholder(icon);
+        title = unquotePlaceholder(title);
         return new CommandReward(command, icon, title);
+    }
+
+    private String unquotePlaceholder(String value) {
+        String trimmed = safe(value).trim();
+        if (trimmed.equals("\"\"")) return "";
+        if (trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+            return trimmed.substring(1, trimmed.length() - 1).trim();
+        }
+        return trimmed;
     }
 
     private String normalizeNamespacedId(String raw, boolean allowTags) {
@@ -2026,8 +2041,60 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private void syncEntryBackingValues() {
+        normalizeCommandRewardRows();
         if (questCompletionBox != null) questCompletionBox.setValue(entryRowsToRaw(false));
         if (questRewardBox != null) questRewardBox.setValue(entryRowsToRaw(true));
+    }
+
+    private void normalizeCommandRewardRows() {
+        if (rewardEntryBoxes.isEmpty()) return;
+        boolean wasSyncing = syncingEntryRows;
+        syncingEntryRows = true;
+        try {
+            for (ScaledMultiLineEditBox box : rewardEntryBoxes) {
+                if (box == null) continue;
+                String raw = safe(box.getValue());
+                String normalized = ensureCommandRewardMetadata(raw);
+                if (normalized.equals(raw)) continue;
+                int cursor = box.getCursorPosition();
+                box.setValue(normalized);
+                box.setCursorPosition(Math.min(cursor, normalized.length()));
+            }
+        } finally {
+            syncingEntryRows = wasSyncing;
+        }
+    }
+
+    private String ensureCommandRewardMetadata(String raw) {
+        String line = safe(raw).trim();
+        if (line.isBlank()) return raw;
+        int colon = line.indexOf(':');
+        if (colon <= 0) return raw;
+        String type = line.substring(0, colon).trim().toLowerCase(Locale.ROOT);
+        if (!"command".equals(type)) return raw;
+        String payload = line.substring(colon + 1).trim();
+        CommandReward parsed = parseCommandReward(payload);
+        if (parsed.command.isBlank()) return raw;
+
+        boolean hasTitle = hasCommandRewardKey(payload, "title");
+        boolean hasIcon = hasCommandRewardKey(payload, "icon");
+        if (hasTitle && hasIcon) return raw;
+
+        StringBuilder out = new StringBuilder(line);
+        if (!hasTitle) out.append(" | title: \"\"");
+        if (!hasIcon) out.append(" | icon: \"\"");
+        return out.toString();
+    }
+
+    private boolean hasCommandRewardKey(String payload, String key) {
+        if (payload == null || payload.isBlank() || key == null || key.isBlank()) return false;
+        String keyPrefix = key.toLowerCase(Locale.ROOT) + ":";
+        String[] segments = payload.split("\\|");
+        for (String segment : segments) {
+            String trimmed = safe(segment).trim().toLowerCase(Locale.ROOT);
+            if (trimmed.startsWith(keyPrefix)) return true;
+        }
+        return false;
     }
 
     private FormField field(String label, AbstractWidget widget) {
@@ -2817,7 +2884,6 @@ public final class QuestEditorScreen extends Screen {
         if (deletePackButton != null && deletePackButton.visible) deletePackButton.render(gg, mouseX, mouseY, partialTick);
         if (questSearchBox != null && questSearchBox.visible) questSearchBox.render(gg, mouseX, mouseY, partialTick);
         renderIconOverlays(gg);
-        renderIdSuggestions(gg, mouseX, mouseY);
 
         if (!statusMessage.isBlank()) {
             int msgW = font.width(statusMessage);
@@ -2826,6 +2892,7 @@ public final class QuestEditorScreen extends Screen {
         }
         renderSavedState(gg);
         renderFooter(gg, mouseX, mouseY);
+        renderIdSuggestions(gg, mouseX, mouseY);
     }
 
     private void renderSavedState(GuiGraphics gg) {
@@ -2883,7 +2950,11 @@ public final class QuestEditorScreen extends Screen {
         if (activeIdSuggestions.isEmpty()) return;
         SuggestionBounds bounds = suggestionBounds();
         if (bounds == null || bounds.w <= 0 || bounds.h <= 0) return;
+        gg.pose().pushPose();
+        gg.pose().translate(0, 0, 500);
         gg.enableScissor(pxRight + 1, py + 1, pxRight + pw - 1, py + ph - 1);
+        int scrollArea = activeIdSuggestions.size() > ID_SUGGESTION_VISIBLE_ROWS ? (ID_SUGGESTION_SCROLL_W + 3) : 0;
+        int textRightPadding = 6 + scrollArea;
         int end = Math.min(activeIdSuggestions.size(), idSuggestionScroll + ID_SUGGESTION_VISIBLE_ROWS);
         for (int i = idSuggestionScroll; i < end; i++) {
             int row = i - idSuggestionScroll;
@@ -2891,14 +2962,41 @@ public final class QuestEditorScreen extends Screen {
             int bottom = top + ID_SUGGESTION_ROW_H;
             gg.fill(bounds.x, top, bounds.x + bounds.w, bottom, ID_SUGGESTION_BG_COLOR);
             float inv = 1f / ID_SUGGESTION_TEXT_SCALE;
-            int maxWidth = Math.max(4, (int) ((bounds.w - 8) * inv));
+            int maxWidth = Math.max(4, (int) ((bounds.w - textRightPadding) * inv));
             String text = font.plainSubstrByWidth(activeIdSuggestions.get(i), maxWidth);
             gg.pose().pushPose();
             gg.pose().scale(ID_SUGGESTION_TEXT_SCALE, ID_SUGGESTION_TEXT_SCALE, 1f);
-            gg.drawString(font, text, (int) ((bounds.x + 4) * inv), (int) ((top + 2) * inv), ID_SUGGESTION_TEXT_COLOR, false);
+            gg.drawString(font, text, (int) ((bounds.x + 4) * inv), (int) ((top + 1) * inv), ID_SUGGESTION_TEXT_COLOR, false);
             gg.pose().popPose();
         }
+        if (activeIdSuggestions.size() > ID_SUGGESTION_VISIBLE_ROWS) {
+            int trackX0 = bounds.x + bounds.w - ID_SUGGESTION_SCROLL_W - 2;
+            int trackX1 = bounds.x + bounds.w - 2;
+            int trackY0 = bounds.y + 1;
+            int trackY1 = bounds.y + bounds.h - 1;
+            gg.fill(trackX0, trackY0, trackX1, trackY1, ID_SUGGESTION_SCROLL_TRACK_COLOR);
+            int max = Math.max(1, activeIdSuggestions.size() - ID_SUGGESTION_VISIBLE_ROWS);
+            float ratio = (float) ID_SUGGESTION_VISIBLE_ROWS / (float) activeIdSuggestions.size();
+            int thumbH = Math.max(8, Math.round((trackY1 - trackY0) * ratio));
+            float scrollRatio = (float) idSuggestionScroll / (float) max;
+            int thumbTop = trackY0 + Math.round((trackY1 - trackY0 - thumbH) * scrollRatio);
+            gg.fill(trackX0, thumbTop, trackX1, thumbTop + thumbH, ID_SUGGESTION_SCROLL_THUMB_COLOR);
+        }
+        drawSuggestionBorder(gg, bounds);
         gg.disableScissor();
+        gg.pose().popPose();
+    }
+
+    private void drawSuggestionBorder(GuiGraphics gg, SuggestionBounds bounds) {
+        if (bounds == null || bounds.w <= 1 || bounds.h <= 1) return;
+        int left = bounds.x;
+        int top = bounds.y;
+        int right = bounds.x + bounds.w;
+        int bottom = bounds.y + bounds.h;
+        gg.fill(left, top, right, top + 1, ID_SUGGESTION_BORDER_COLOR);
+        gg.fill(left, bottom - 1, right, bottom, ID_SUGGESTION_BORDER_COLOR);
+        gg.fill(left, top, left + 1, bottom, ID_SUGGESTION_BORDER_COLOR);
+        gg.fill(right - 1, top, right, bottom, ID_SUGGESTION_BORDER_COLOR);
     }
 
     private void updateIdSuggestions() {
@@ -3275,6 +3373,38 @@ public final class QuestEditorScreen extends Screen {
                 && mouseY >= bounds.y && mouseY <= bounds.y + bounds.h;
     }
 
+    private boolean isInsideSuggestionTargetField(double mouseX, double mouseY) {
+        return isInsideBox(catDependencyBox, mouseX, mouseY)
+                || isInsideBox(subCategoryBox, mouseX, mouseY)
+                || isInsideBox(questCategoryBox, mouseX, mouseY)
+                || isInsideBox(questSubCategoryBox, mouseX, mouseY)
+                || isInsideBox(questDependenciesBox, mouseX, mouseY)
+                || isInsideMultiBox(questCompletionBox, mouseX, mouseY)
+                || isInsideMultiBox(questRewardBox, mouseX, mouseY)
+                || anyVisibleMultiBoxContains(completionEntryBoxes, mouseX, mouseY)
+                || anyVisibleMultiBoxContains(rewardEntryBoxes, mouseX, mouseY);
+    }
+
+    private boolean isInsideBox(EditBox box, double mouseX, double mouseY) {
+        return box != null && box.visible
+                && mouseX >= box.getX() && mouseX <= box.getX() + box.getWidth()
+                && mouseY >= box.getY() && mouseY <= box.getY() + box.getHeight();
+    }
+
+    private boolean isInsideMultiBox(ScaledMultiLineEditBox box, double mouseX, double mouseY) {
+        return box != null && box.visible
+                && mouseX >= box.getX() && mouseX <= box.getX() + box.getWidth()
+                && mouseY >= box.getY() && mouseY <= box.getY() + box.getHeight();
+    }
+
+    private boolean anyVisibleMultiBoxContains(List<ScaledMultiLineEditBox> boxes, double mouseX, double mouseY) {
+        if (boxes == null || boxes.isEmpty()) return false;
+        for (ScaledMultiLineEditBox box : boxes) {
+            if (isInsideMultiBox(box, mouseX, mouseY)) return true;
+        }
+        return false;
+    }
+
     private int contentHeight() {
         int total = 0;
         for (FormField field : activeFields) {
@@ -3566,7 +3696,7 @@ public final class QuestEditorScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
-            if (!isInsideSuggestionBox(mouseX, mouseY)) {
+            if (!isInsideSuggestionBox(mouseX, mouseY) && !isInsideSuggestionTargetField(mouseX, mouseY)) {
                 suppressIdSuggestions = true;
                 activeIdSuggestions.clear();
                 idSuggestionField = null;
