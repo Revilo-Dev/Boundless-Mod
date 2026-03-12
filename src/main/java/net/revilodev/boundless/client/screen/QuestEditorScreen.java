@@ -4201,12 +4201,13 @@ public final class QuestEditorScreen extends Screen {
 
         @Override
         public int getInnerHeight() {
-            return (int) Math.ceil(this.lineHeight * this.textField.getLineCount());
+            return Math.max(1, (int) Math.ceil(this.lineHeight * this.textField.getLineCount()));
         }
 
         @Override
         protected boolean scrollbarVisible() {
-            return (double) this.textField.getLineCount() > this.getDisplayableLineCount();
+            return (double) this.textField.getLineCount() > this.getDisplayableLineCount()
+                    && this.getMaxScrollAmount() > 0;
         }
 
         @Override
