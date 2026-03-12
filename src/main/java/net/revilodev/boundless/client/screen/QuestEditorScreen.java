@@ -115,7 +115,8 @@ public final class QuestEditorScreen extends Screen {
     private static final String INVALID_ID_TOOLTIP = "Invalid ID";
     private static final int ID_SUGGESTION_MAX = 200;
     private static final int ID_SUGGESTION_VISIBLE_ROWS = 6;
-    private static final int ID_SUGGESTION_ROW_H = 10;
+    private static final int ID_SUGGESTION_ROW_H = 8;
+    private static final int ID_SUGGESTION_TEXT_TOP_PADDING = 2;
     private static final float ID_SUGGESTION_TEXT_SCALE = 0.5f;
     private static final int ID_SUGGESTION_BG_COLOR = 0xFF000000;
     private static final int ID_SUGGESTION_TEXT_COLOR = 0xFFFFFF00;
@@ -2966,7 +2967,7 @@ public final class QuestEditorScreen extends Screen {
             String text = font.plainSubstrByWidth(activeIdSuggestions.get(i), maxWidth);
             gg.pose().pushPose();
             gg.pose().scale(ID_SUGGESTION_TEXT_SCALE, ID_SUGGESTION_TEXT_SCALE, 1f);
-            gg.drawString(font, text, (int) ((bounds.x + 4) * inv), (int) ((top + 1) * inv), ID_SUGGESTION_TEXT_COLOR, false);
+            gg.drawString(font, text, (int) ((bounds.x + 4) * inv), (int) ((top + ID_SUGGESTION_TEXT_TOP_PADDING) * inv), ID_SUGGESTION_TEXT_COLOR, false);
             gg.pose().popPose();
         }
         if (activeIdSuggestions.size() > ID_SUGGESTION_VISIBLE_ROWS) {
@@ -3028,6 +3029,9 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private EditBox focusedIdSuggestionField() {
+        if (questIconBox != null && questIconBox.visible && questIconBox.isFocused()) return questIconBox;
+        if (catIconBox != null && catIconBox.visible && catIconBox.isFocused()) return catIconBox;
+        if (subIconBox != null && subIconBox.visible && subIconBox.isFocused()) return subIconBox;
         if (catDependencyBox != null && catDependencyBox.visible && catDependencyBox.isFocused()) return catDependencyBox;
         if (subCategoryBox != null && subCategoryBox.visible && subCategoryBox.isFocused()) return subCategoryBox;
         if (questCategoryBox != null && questCategoryBox.visible && questCategoryBox.isFocused()) return questCategoryBox;
@@ -3060,7 +3064,9 @@ public final class QuestEditorScreen extends Screen {
 
     private List<String> idSuggestionValuesForField(EditBox field) {
         if (field == null) return List.of();
-        if (field == catDependencyBox || field == subCategoryBox || field == questCategoryBox) {
+        if (isIconBox(field)) {
+            return itemSuggestions();
+        } else if (field == catDependencyBox || field == subCategoryBox || field == questCategoryBox) {
             return categorySuggestionCache;
         } else if (field == questSubCategoryBox) {
             String cat = safe(questCategoryBox == null ? "" : questCategoryBox.getValue()).trim();
@@ -3374,7 +3380,10 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private boolean isInsideSuggestionTargetField(double mouseX, double mouseY) {
-        return isInsideBox(catDependencyBox, mouseX, mouseY)
+        return isInsideBox(catIconBox, mouseX, mouseY)
+                || isInsideBox(subIconBox, mouseX, mouseY)
+                || isInsideBox(questIconBox, mouseX, mouseY)
+                || isInsideBox(catDependencyBox, mouseX, mouseY)
                 || isInsideBox(subCategoryBox, mouseX, mouseY)
                 || isInsideBox(questCategoryBox, mouseX, mouseY)
                 || isInsideBox(questSubCategoryBox, mouseX, mouseY)
@@ -4211,14 +4220,23 @@ public final class QuestEditorScreen extends Screen {
 
         private void scrollToCursor() {
             if (this.lineHeight <= 0.0) return;
+            if (this.textField.getLineCount() <= 0) {
+                this.setScrollAmount(0.0);
+                return;
+            }
             double scroll = this.scrollAmount();
             ScaledTextField.StringView line = this.textField.getLineView((int) (scroll / this.lineHeight));
+            int cursorLine = this.textField.getLineAtCursor();
+            if (cursorLine < 0) {
+                this.setScrollAmount(0.0);
+                return;
+            }
             if (this.textField.cursor() <= line.beginIndex()) {
-                scroll = (double) this.textField.getLineAtCursor() * this.lineHeight;
+                scroll = (double) cursorLine * this.lineHeight;
             } else {
                 ScaledTextField.StringView lastVisible = this.textField.getLineView((int) ((scroll + (double) this.height) / this.lineHeight) - 1);
                 if (this.textField.cursor() > lastVisible.endIndex()) {
-                    scroll = (double) this.textField.getLineAtCursor() * this.lineHeight - this.height + this.lineHeight + this.totalInnerPadding();
+                    scroll = (double) cursorLine * this.lineHeight - this.height + this.lineHeight + this.totalInnerPadding();
                 }
             }
 
@@ -4465,6 +4483,7 @@ public final class QuestEditorScreen extends Screen {
         }
 
         public StringView getLineView(int lineNumber) {
+            if (this.displayLines.isEmpty()) return StringView.EMPTY;
             return this.displayLines.get(Mth.clamp(lineNumber, 0, this.displayLines.size() - 1));
         }
 
@@ -4494,6 +4513,10 @@ public final class QuestEditorScreen extends Screen {
         }
 
         public void seekCursorToPoint(double x, double y) {
+            if (this.displayLines.isEmpty()) {
+                this.seekCursor(Whence.ABSOLUTE, 0);
+                return;
+            }
             int xi = Mth.floor(x);
             int yi = Mth.floor(y / 9.0);
             StringView line = this.displayLines.get(Mth.clamp(yi, 0, this.displayLines.size() - 1));
@@ -4628,6 +4651,9 @@ public final class QuestEditorScreen extends Screen {
         }
 
         private StringView getCursorLineView(int offset) {
+            if (this.displayLines.isEmpty()) {
+                return StringView.EMPTY;
+            }
             int line = this.getLineAtCursor();
             if (line < 0) {
                 throw new IllegalStateException("Cursor is not within text (cursor = " + this.cursor + ", length = " + this.value.length() + ")");
