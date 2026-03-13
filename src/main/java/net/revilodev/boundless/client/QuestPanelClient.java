@@ -77,8 +77,12 @@ public final class QuestPanelClient {
             if (st.list != null) st.list.setCategory(id);
         });
         st.tabs.setCategories(QuestData.categoriesOrdered());
-        st.tabs.setSelected(st.selectedCategory);
+        st.selectedCategory = st.tabs.selectFirstCategory();
+        if (st.list != null) st.list.setCategory(st.selectedCategory);
         e.addListener(st.tabs);
+
+        st.header = new CategoryHeaderWidget(0, 0, PANEL_W, () -> st.tabs == null ? "" : st.tabs.getSelectedName());
+        e.addListener(st.header);
 
         int filterX = computePanelX(inv) + 10;
         int filterY = inv.getGuiTop() + PANEL_H + 6;
@@ -164,7 +168,7 @@ public final class QuestPanelClient {
             if (st.tabs != null) {
                 st.tabs.setCategories(QuestData.categoriesOrdered());
                 String selected = st.tabs.getSelectedId();
-                st.selectedCategory = (selected == null || selected.isBlank()) ? "all" : selected;
+                st.selectedCategory = (selected == null || selected.isBlank()) ? st.tabs.selectFirstCategory() : selected;
                 if (st.list != null) st.list.setCategory(st.selectedCategory);
             }
             if (st.btn != null) {
@@ -181,6 +185,7 @@ public final class QuestPanelClient {
         if (st.open) {
             if (st.originalLeft == null) st.originalLeft = getLeft(st.inv);
             setLeft(st.inv, computeCenteredLeft(st.inv));
+            selectFirstCategory(st);
         } else if (st.originalLeft != null) {
             setLeft(st.inv, st.originalLeft);
         }
@@ -229,11 +234,12 @@ public final class QuestPanelClient {
         }
 
         if (st.tabs != null) st.tabs.setBounds(computeTabsX(inv), bgy + 4, 26, PANEL_H - 8);
+        if (st.header != null) st.header.setPanelBounds(bgx, bgy, PANEL_W);
 
         if (st.filter != null) {
             int filterX = px;
-            int filterY = bgy + PANEL_H + 6;
-            st.filter.setBounds(filterX, filterY, st.filter.getPreferredWidth(), 20);
+            int filterY = bgy + PANEL_H - st.filter.getPreferredHeight() + 29;
+            st.filter.setBounds(filterX, filterY, st.filter.getPreferredWidth(), st.filter.getPreferredHeight());
         }
     }
 
@@ -356,6 +362,11 @@ public final class QuestPanelClient {
             st.tabs.active = st.open;
         }
 
+        if (st.header != null) {
+            st.header.visible = st.open;
+            st.header.active = false;
+        }
+
         if (st.filter != null) {
             st.filter.visible = st.open;
             st.filter.active = st.open;
@@ -366,6 +377,13 @@ public final class QuestPanelClient {
         var mc = Minecraft.getInstance();
         if (mc.player == null || !mc.player.hasPermissions(2)) return;
         mc.setScreen(new QuestSettingsScreen(inv));
+    }
+
+    private static void selectFirstCategory(State st) {
+        if (st.tabs == null) return;
+        st.selectedCategory = st.tabs.selectFirstCategory();
+        if (st.list != null) st.list.setCategory(st.selectedCategory);
+        st.showingDetails = false;
     }
 
 
@@ -404,6 +422,7 @@ public final class QuestPanelClient {
         QuestListWidget list;
         QuestDetailsPanel details;
         CategoryTabsWidget tabs;
+        CategoryHeaderWidget header;
         QuestFilterBar filter;
         boolean showingDetails;
         boolean open;

@@ -7,6 +7,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.revilodev.boundless.client.CategoryTabsWidget;
+import net.revilodev.boundless.client.CategoryHeaderWidget;
 import net.revilodev.boundless.client.QuestDetailsPanel;
 import net.revilodev.boundless.client.QuestFilterBar;
 import net.revilodev.boundless.client.QuestListWidget;
@@ -26,6 +27,7 @@ public final class StandaloneQuestBookScreen extends Screen {
     private int topY;
 
     private CategoryTabsWidget tabs;
+    private CategoryHeaderWidget header;
     private QuestListWidget list;
     private QuestDetailsPanel details;
     private QuestFilterBar filter;
@@ -57,7 +59,7 @@ public final class StandaloneQuestBookScreen extends Screen {
             updateVisibility();
         });
         tabs.setCategories(QuestData.categoriesOrdered());
-        tabs.setSelected("all");
+        String selectedCategory = tabs.selectFirstCategory();
 
         list = new QuestListWidget(pxLeft, py, pw, ph, q -> {
             details.setQuest(q);
@@ -65,7 +67,7 @@ public final class StandaloneQuestBookScreen extends Screen {
             updateVisibility();
         });
         list.setQuests(QuestData.all());
-        list.setCategory("all");
+        list.setCategory(selectedCategory);
 
         details = new QuestDetailsPanel(pxRight, py, pw, ph, () -> {
             showingDetails = false;
@@ -74,14 +76,18 @@ public final class StandaloneQuestBookScreen extends Screen {
         details.setBounds(pxRight, py, pw, ph);
 
         int filterX = pxLeft;
-        int filterY = topY + panelHeight + 6;
-        filter = new QuestFilterBar(filterX, filterY, () -> {
+        filter = new QuestFilterBar(filterX, 0, () -> {
             if (minecraft == null || minecraft.player == null || !minecraft.player.hasPermissions(2)) return;
             minecraft.setScreen(new QuestSettingsScreen(this));
         });
-        filter.setBounds(filterX, filterY, filter.getPreferredWidth(), 20);
+        int filterY = topY + panelHeight - filter.getPreferredHeight() + 29;
+        filter.setBounds(filterX, filterY, filter.getPreferredWidth(), filter.getPreferredHeight());
+
+        header = new CategoryHeaderWidget(leftX, topY, panelWidth, () -> tabs == null ? "" : tabs.getSelectedName());
+        header.setPanelBounds(leftX, topY, panelWidth);
 
         addRenderableWidget(tabs);
+        addRenderableWidget(header);
         addRenderableWidget(list);
         addRenderableWidget(details);
         addRenderableWidget(details.backButton());
@@ -110,6 +116,9 @@ public final class StandaloneQuestBookScreen extends Screen {
 
         tabs.visible = true;
         tabs.active = true;
+
+        header.visible = true;
+        header.active = false;
 
         filter.visible = true;
         filter.active = true;

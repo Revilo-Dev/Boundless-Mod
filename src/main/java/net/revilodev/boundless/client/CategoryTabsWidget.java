@@ -85,6 +85,25 @@ public final class CategoryTabsWidget extends AbstractWidget {
         return selected;
     }
 
+    public String getSelectedName() {
+        if (selected == null || selected.isBlank()) return "";
+        for (QuestData.Category c : categories) {
+            if (c.id.equalsIgnoreCase(selected)) return c.name;
+        }
+        return "";
+    }
+
+    public String selectFirstCategory() {
+        if (categories.isEmpty()) {
+            selected = "";
+            scrollIndex = 0;
+            return "";
+        }
+        selected = categories.get(0).id;
+        ensureSelectedVisible();
+        return selected;
+    }
+
     /**
      * Call this AFTER the screen finishes rendering (i.e., at the end of Screen#render),
      * so it won't be clipped by any scissor/cutout used while rendering widgets.

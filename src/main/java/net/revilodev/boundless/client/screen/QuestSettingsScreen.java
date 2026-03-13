@@ -133,7 +133,6 @@ public final class QuestSettingsScreen extends Screen {
         disabledCategories = new EditBox(font, px + 2, boxY, pw - 4, 18, Component.literal("Disabled categories"));
         disabledCategories.setMaxLength(512);
         disabledCategories.setResponder(v -> updateDisabledCategorySuggestion());
-        disabledCategories.setHint(Component.literal("example: minecraft, nether"));
 
         addRenderableWidget(pinnedRow);
         addRenderableWidget(spawnRow);
