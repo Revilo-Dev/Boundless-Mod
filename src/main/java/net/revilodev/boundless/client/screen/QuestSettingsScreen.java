@@ -73,6 +73,9 @@ public final class QuestSettingsScreen extends Screen {
 
     private ActionButton saveButton;
     private BackButton backButton;
+    private List<Component> pendingTooltip = List.of();
+    private int pendingTooltipX;
+    private int pendingTooltipY;
 
     private float configScrollY = 0f;
     private int uiHeaderBaseY;
@@ -137,7 +140,7 @@ public final class QuestSettingsScreen extends Screen {
     private void initConfigWidgets() {
         int uiHeaderY = py;
         int uiRow1 = uiHeaderY + 10;
-        int rowGap = 22;
+        int rowGap = 21;
 
         uiHeaderBaseY = uiHeaderY;
         uiPinnedBaseY = uiRow1;
@@ -348,21 +351,60 @@ public final class QuestSettingsScreen extends Screen {
 
     @Override
     public void render(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
+        pendingTooltip = List.of();
         gg.fill(0, 0, this.width, this.height, 0xA0000000);
         gg.blit(PANEL_TEX, leftX, topY, 0, 0, PANEL_W, PANEL_H, PANEL_W, PANEL_H);
 
         if (page == Page.CONFIG) {
+            boolean saveVisible = saveButton != null && saveButton.visible;
+            boolean backVisible = backButton != null && backButton.visible;
+            if (saveButton != null) saveButton.visible = false;
+            if (backButton != null) backButton.visible = false;
+
+            int top = configViewportTop();
+            int bottom = configViewportBottom();
+            gg.enableScissor(px, top, px + pw, bottom);
             renderSectionHeader(gg, "UI", px + 2, scrolledY(uiHeaderBaseY), 0xFFE7C98A);
             renderSectionHeader(gg, "Functionality", px + 2, scrolledY(functionalityHeaderBaseY), 0xFFA8D8FF);
             renderSectionHeader(gg, "Gameplay", px + 2, scrolledY(gameplayHeaderBaseY), 0xFFBEE5A8);
+            super.render(gg, mouseX, mouseY, partialTick);
+            gg.disableScissor();
+
+            if (saveButton != null) saveButton.visible = saveVisible;
+            if (backButton != null) backButton.visible = backVisible;
+            if (backButton != null && backButton.visible) backButton.render(gg, mouseX, mouseY, partialTick);
+            if (saveButton != null && saveButton.visible) saveButton.render(gg, mouseX, mouseY, partialTick);
+
             renderConfigScrollbar(gg);
+            renderPendingTooltipOnTop(gg);
+            return;
         }
 
         super.render(gg, mouseX, mouseY, partialTick);
+        renderPendingTooltipOnTop(gg);
+    }
+
+    private void queueTooltip(List<Component> tooltip, int mouseX, int mouseY) {
+        if (tooltip == null || tooltip.isEmpty()) return;
+        pendingTooltip = tooltip;
+        pendingTooltipX = mouseX;
+        pendingTooltipY = mouseY;
+    }
+
+    private void renderPendingTooltipOnTop(GuiGraphics gg) {
+        if (pendingTooltip == null || pendingTooltip.isEmpty()) return;
+        gg.pose().pushPose();
+        gg.pose().translate(0.0F, 0.0F, 500.0F);
+        gg.renderComponentTooltip(Minecraft.getInstance().font, pendingTooltip, pendingTooltipX, pendingTooltipY);
+        gg.pose().popPose();
+        pendingTooltip = List.of();
     }
 
     private void renderSectionHeader(GuiGraphics gg, String text, int x, int y, int color) {
         if (text == null || text.isBlank()) return;
+        int top = configViewportTop();
+        int bottom = configViewportBottom();
+        if (y < top || y > bottom - 8) return;
         float scale = 0.72f;
         gg.pose().pushPose();
         gg.pose().scale(scale, scale, 1f);
@@ -419,9 +461,9 @@ public final class QuestSettingsScreen extends Screen {
         if (row == null) return;
         int y = scrolledY(baseY);
         row.setY(y);
-        boolean inView = y >= top && (y + row.getHeight()) <= bottom;
-        row.visible = page == Page.CONFIG && inView;
-        row.active = row.visible;
+        boolean inView = (y + row.getHeight()) > top && y < bottom;
+        row.visible = page == Page.CONFIG;
+        row.active = page == Page.CONFIG && inView;
     }
 
     private void renderConfigScrollbar(GuiGraphics gg) {
@@ -473,7 +515,7 @@ public final class QuestSettingsScreen extends Screen {
         CONFIG
     }
 
-    private static final class ConfigRow extends AbstractButton {
+    private final class ConfigRow extends AbstractButton {
         private final String label;
         private final String subtitle;
         private final java.util.function.Supplier<String> value;
@@ -528,7 +570,7 @@ public final class QuestSettingsScreen extends Screen {
                 List<Component> tooltip = new ArrayList<>();
                 tooltip.add(Component.literal(label));
                 if (!subtitle.isBlank()) tooltip.add(Component.literal(subtitle));
-                gg.renderComponentTooltip(Minecraft.getInstance().font, tooltip, mouseX, mouseY);
+                queueTooltip(tooltip, mouseX, mouseY);
             }
         }
 
