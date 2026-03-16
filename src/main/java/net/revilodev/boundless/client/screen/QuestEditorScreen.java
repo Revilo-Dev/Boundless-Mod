@@ -127,16 +127,7 @@ public final class QuestEditorScreen extends Screen {
     private static final int ENTRY_ROW_H = 12;
     private static final int ENTRY_ROW_GAP = 2;
     private static final float ENTRY_INPUT_TEXT_SCALE = 0.4f;
-    private static final String DEFAULT_COMPLETION_ENTRIES =
-            "collect: minecraft:id 1\n" +
-                    "submit: minecraft:id 1\n" +
-                    "kill: minecraft:zombie 1\n" +
-                    "achieve: minecraft:story/root\n" +
-                    "effect: minecraft:speed";
-
-    private static final String DEFAULT_REWARD_ENTRIES =
-            "item: minecraft:id 1\n" +
-                    "xp: points 1";
+    private static final int ENTRY_REMOVE_BTN_W = 10;
 
     private static final String ENTRY_CREATE_PACK = "__create_pack__";
     private static final String ENTRY_NEW = "__new__";
@@ -220,6 +211,8 @@ public final class QuestEditorScreen extends Screen {
     private ScaledMultiLineEditBox questRewardBox;
     private final List<ScaledMultiLineEditBox> completionEntryBoxes = new ArrayList<>();
     private final List<ScaledMultiLineEditBox> rewardEntryBoxes = new ArrayList<>();
+    private final List<EntryRemoveButton> completionEntryRemoveButtons = new ArrayList<>();
+    private final List<EntryRemoveButton> rewardEntryRemoveButtons = new ArrayList<>();
     private boolean syncingEntryRows = false;
     private boolean entryRowsDirty = false;
     private final List<TextInsertButton> descriptionFormatButtons = new ArrayList<>();
@@ -702,14 +695,6 @@ public final class QuestEditorScreen extends Screen {
         setEntryRowsFromRaw(true, rewardJsonToEntries(safe(data.rewardJson)));
         loadedQuestType = safe(data.type);
 
-        if (sourcePath == null) {
-            if (entryRowsToRaw(false).isBlank()) {
-                setEntryRowsFromRaw(false, DEFAULT_COMPLETION_ENTRIES);
-            }
-            if (entryRowsToRaw(true).isBlank()) {
-                setEntryRowsFromRaw(true, DEFAULT_REWARD_ENTRIES);
-            }
-        }
         questDescriptionBox.scrollToTop();
         questCompletionBox.scrollToTop();
         questRewardBox.scrollToTop();
@@ -1232,7 +1217,6 @@ public final class QuestEditorScreen extends Screen {
         List<String> lines = extractEntryLines(raw);
         com.google.gson.JsonArray items = new com.google.gson.JsonArray();
         com.google.gson.JsonArray commands = new com.google.gson.JsonArray();
-        com.google.gson.JsonArray functions = new com.google.gson.JsonArray();
         String expType = "";
         int expAmount = 0;
 
@@ -1275,13 +1259,6 @@ public final class QuestEditorScreen extends Screen {
                     cmd.addProperty("title", safe(parsedCommand.title));
                     commands.add(cmd);
                 }
-                case "function" -> {
-                    String normalizedId = normalizeNamespacedId(parsed.id, false);
-                    if (normalizedId.isBlank()) return failReward(line, raiseErrors);
-                    JsonObject fn = new JsonObject();
-                    fn.addProperty("function", normalizedId);
-                    functions.add(fn);
-                }
                 default -> {
                     return failReward(line, raiseErrors);
                 }
@@ -1291,7 +1268,6 @@ public final class QuestEditorScreen extends Screen {
         JsonObject out = new JsonObject();
         if (!items.isEmpty()) out.add("items", items);
         if (!commands.isEmpty()) out.add("commands", commands);
-        if (!functions.isEmpty()) out.add("functions", functions);
         if (!expType.isBlank()) {
             out.addProperty("exp", expType);
             out.addProperty("count", expAmount);
@@ -1401,18 +1377,6 @@ public final class QuestEditorScreen extends Screen {
                 out.add(line.toString());
             }
         }
-        if (obj.has("functions") && obj.get("functions").isJsonArray()) {
-            for (JsonElement e : obj.getAsJsonArray("functions")) {
-                if (e.isJsonPrimitive()) {
-                    String fn = e.getAsString();
-                    if (!fn.isBlank()) out.add("function: " + fn);
-                    continue;
-                }
-                if (!e.isJsonObject()) continue;
-                String fn = optString(e.getAsJsonObject(), "function", "");
-                if (!fn.isBlank()) out.add("function: " + fn);
-            }
-        }
         String exp = optString(obj, "exp", "");
         if (!exp.isBlank()) {
             int count = parseIntFlexible(obj, "count", 0);
@@ -1440,7 +1404,7 @@ public final class QuestEditorScreen extends Screen {
         String remainder = line.substring(colon + 1).trim();
         if (type.isBlank() || remainder.isBlank()) return null;
 
-        if (type.equals("command") || type.equals("function")) {
+        if (type.equals("command")) {
             return new ParsedEntry(type, remainder, 1);
         }
 
@@ -1885,6 +1849,14 @@ public final class QuestEditorScreen extends Screen {
             box.visible = false;
             box.active = false;
         }
+        for (EntryRemoveButton button : completionEntryRemoveButtons) {
+            button.visible = false;
+            button.active = false;
+        }
+        for (EntryRemoveButton button : rewardEntryRemoveButtons) {
+            button.visible = false;
+            button.active = false;
+        }
         hideDescriptionFormatterButtons();
         activeFields.clear();
         activeFields.addAll(fields);
@@ -1943,6 +1915,11 @@ public final class QuestEditorScreen extends Screen {
                 removeWidget(box);
             }
             target.clear();
+            List<EntryRemoveButton> removeButtons = reward ? rewardEntryRemoveButtons : completionEntryRemoveButtons;
+            for (EntryRemoveButton button : removeButtons) {
+                removeWidget(button);
+            }
+            removeButtons.clear();
             List<String> normalized = new ArrayList<>();
             if (lines != null) {
                 for (String line : lines) {
@@ -1957,6 +1934,7 @@ public final class QuestEditorScreen extends Screen {
                 target.add(box);
             }
             ensureTrailingEmptyRow(target, reward);
+            syncEntryRemoveButtons(reward);
         } finally {
             syncingEntryRows = false;
         }
@@ -1985,6 +1963,7 @@ public final class QuestEditorScreen extends Screen {
     private void ensureTrailingEmptyRow(List<ScaledMultiLineEditBox> rows, boolean reward) {
         if (rows.isEmpty()) {
             rows.add(createEntryRowBox(reward));
+            syncEntryRemoveButtons(reward);
             return;
         }
         ScaledMultiLineEditBox last = rows.get(rows.size() - 1);
@@ -1997,6 +1976,52 @@ public final class QuestEditorScreen extends Screen {
             removeWidget(prev);
             rows.remove(rows.size() - 2);
         }
+        syncEntryRemoveButtons(reward);
+    }
+
+    private void syncEntryRemoveButtons(boolean reward) {
+        List<ScaledMultiLineEditBox> rows = reward ? rewardEntryBoxes : completionEntryBoxes;
+        List<EntryRemoveButton> buttons = reward ? rewardEntryRemoveButtons : completionEntryRemoveButtons;
+        while (buttons.size() < rows.size()) {
+            EntryRemoveButton button = new EntryRemoveButton(reward);
+            button.visible = false;
+            button.active = false;
+            buttons.add(button);
+            addRenderableWidget(button);
+        }
+        while (buttons.size() > rows.size()) {
+            EntryRemoveButton last = buttons.remove(buttons.size() - 1);
+            removeWidget(last);
+        }
+    }
+
+    private void removeEntryRow(boolean reward, EntryRemoveButton button) {
+        List<ScaledMultiLineEditBox> rows = reward ? rewardEntryBoxes : completionEntryBoxes;
+        List<EntryRemoveButton> buttons = reward ? rewardEntryRemoveButtons : completionEntryRemoveButtons;
+        int idx = buttons.indexOf(button);
+        if (idx < 0 || idx >= rows.size()) return;
+
+        if (rows.size() <= 1) {
+            rows.get(0).setValue("");
+            rows.get(0).setCursorPosition(0);
+            rows.get(0).setFocused(true);
+            entryRowsDirty = true;
+            syncEntryBackingValues();
+            return;
+        }
+
+        ScaledMultiLineEditBox removed = rows.remove(idx);
+        removeWidget(removed);
+        EntryRemoveButton removedButton = buttons.remove(idx);
+        removeWidget(removedButton);
+
+        ensureTrailingEmptyRow(rows, reward);
+        if (!rows.isEmpty()) {
+            int next = Math.min(idx, rows.size() - 1);
+            rows.get(next).setFocused(true);
+        }
+        entryRowsDirty = true;
+        syncEntryBackingValues();
     }
 
     private void setEntryRowsFromRaw(boolean reward, String raw) {
@@ -2021,15 +2046,25 @@ public final class QuestEditorScreen extends Screen {
 
     private int layoutEntryRows(boolean reward, int x, int y, int width, int clipTop, int clipBottom) {
         List<ScaledMultiLineEditBox> rows = reward ? rewardEntryBoxes : completionEntryBoxes;
+        List<EntryRemoveButton> removeButtons = reward ? rewardEntryRemoveButtons : completionEntryRemoveButtons;
         int cursorY = y;
-        for (ScaledMultiLineEditBox box : rows) {
+        for (int i = 0; i < rows.size(); i++) {
+            ScaledMultiLineEditBox box = rows.get(i);
+            EntryRemoveButton removeButton = i < removeButtons.size() ? removeButtons.get(i) : null;
             box.setX(x);
             box.setY(cursorY);
-            box.setWidth(width);
+            box.setWidth(Math.max(10, width - ENTRY_REMOVE_BTN_W - 2));
             box.setHeight(ENTRY_ROW_H);
             boolean inside = cursorY + ENTRY_ROW_H > clipTop && cursorY < clipBottom;
             box.visible = inside;
             box.active = inside;
+            if (removeButton != null) {
+                removeButton.setPosition(x + width - ENTRY_REMOVE_BTN_W, cursorY);
+                removeButton.setWidth(ENTRY_REMOVE_BTN_W);
+                removeButton.setHeight(ENTRY_ROW_H);
+                removeButton.visible = inside;
+                removeButton.active = inside;
+            }
             cursorY += ENTRY_ROW_H + ENTRY_ROW_GAP;
         }
         return Math.max(ENTRY_ROW_H, cursorY - y - ENTRY_ROW_GAP);
@@ -3088,7 +3123,7 @@ public final class QuestEditorScreen extends Screen {
         if (!ctx.hasTypeSeparator) {
             return isCompletionEntryField(field)
                     ? List.of("collect", "submit", "kill", "achieve", "effect")
-                    : List.of("item", "xp", "command", "function");
+                    : List.of("item", "xp", "command");
         }
         return switch (ctx.type) {
             case "collect", "submit", "item" -> itemSuggestions();
@@ -3194,7 +3229,7 @@ public final class QuestEditorScreen extends Screen {
                 if (ctx.type.equals("collect") || ctx.type.equals("submit") || ctx.type.equals("item")
                         || ctx.type.equals("kill") || ctx.type.equals("entity") || ctx.type.equals("effect")
                         || ctx.type.equals("achieve") || ctx.type.equals("advancement")
-                        || ctx.type.equals("function") || ctx.type.equals("icon")) {
+                        || ctx.type.equals("icon")) {
                     replacement = normalizeNamespacedId(suggestion, false);
                 }
             }
@@ -5312,6 +5347,32 @@ public final class QuestEditorScreen extends Screen {
             RenderSystem.setShaderColor(1f, 1f, 1f, alpha);
             gg.blit(texture, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
             RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+        }
+
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput narration) {
+        }
+    }
+
+    private final class EntryRemoveButton extends AbstractButton {
+        private final boolean reward;
+
+        EntryRemoveButton(boolean reward) {
+            super(0, 0, ENTRY_REMOVE_BTN_W, ENTRY_ROW_H, Component.literal("X"));
+            this.reward = reward;
+        }
+
+        @Override
+        public void onPress() {
+            QuestEditorScreen.this.removeEntryRow(reward, this);
+        }
+
+        @Override
+        protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
+            int bg = this.active ? (this.isMouseOver(mouseX, mouseY) ? 0xAA5A1A1A : 0xAA3A1212) : 0x553A1212;
+            int fg = this.active ? 0xFFFF5555 : 0xFF804040;
+            gg.fill(getX(), getY(), getX() + this.width, getY() + this.height, bg);
+            gg.drawString(Minecraft.getInstance().font, "X", getX() + 2, getY() + 2, fg, false);
         }
 
         @Override

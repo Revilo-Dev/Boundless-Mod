@@ -12,6 +12,9 @@ public final class Config {
             BUILDER.comment("A list of quest category IDs to completely disable.")
                     .defineListAllowEmpty(List.of("disabledQuestCategories"), List::of, o -> o instanceof String);
 
+    static {
+        BUILDER.push("UI");
+    }
     public static final ModConfigSpec.ConfigValue<String> PINNED_QUEST_HUD_POSITION =
 
             BUILDER.comment("Pin the Quest hud to the: bottom_left, bottom_right, top_left, top_right")
@@ -21,13 +24,41 @@ public final class Config {
                 return s.equals("top_left") || s.equals("top_right") || s.equals("bottom_left") || s.equals("bottom_right");
             });
 
+    public static final ModConfigSpec.ConfigValue<Boolean> HIDE_QUEST_BOOK_IN_INVENTORY =
+            BUILDER.comment("If true, hides the quest book button in the inventory screen.")
+                    .define("hideQuestBookInInventory", false);
+    public static final ModConfigSpec.ConfigValue<Boolean> HIDE_CATEGORY_HEADER =
+            BUILDER.comment("If true, hides the category header bar.")
+                    .define("hideCategoryHeader", false);
+    public static final ModConfigSpec.ConfigValue<Boolean> HIDE_FILTERS =
+            BUILDER.comment("If true, hides quest filter tabs.")
+                    .define("hideFilters", false);
+    public static final ModConfigSpec.ConfigValue<Boolean> DISABLE_CATEGORIES =
+            BUILDER.comment("If true, disables category tabs and category-based filtering.")
+                    .define("disableCategories", false);
+    public static final ModConfigSpec.ConfigValue<Boolean> HIDE_QUEST_WIDGET_ICONS =
+            BUILDER.comment("If true, hides icons in quest list widgets.")
+                    .define("hideQuestWidgetIcons", false);
+    static {
+        BUILDER.pop();
+        BUILDER.push("Functionality");
+    }
+    public static final ModConfigSpec.ConfigValue<Boolean> DISABLE_QUEST_PINNING =
+            BUILDER.comment("If true, quest pinning and pinned HUD are disabled.")
+                    .define("disableQuestPinning", false);
+    static {
+        BUILDER.pop();
+        BUILDER.push("Gameplay");
+    }
+    public static final ModConfigSpec.ConfigValue<Boolean> DISABLE_QUEST_BOOK =
+            BUILDER.comment("If true, quest book opening is disabled.")
+                    .define("disableQuestBook", false);
     public static final ModConfigSpec.ConfigValue<Boolean> SPAWN_WITH_QUEST_BOOK =
             BUILDER.comment("If true, players spawn with the quest book.")
                     .define("spawnWithQuestBook", false);
-
-    public static final ModConfigSpec.ConfigValue<Boolean> HIDE_QUEST_BOOK_TOGGLE =
-            BUILDER.comment("If true, hides the quest book toggle in the inventory.")
-                    .define("hideQuestBookToggle", false);
+    static {
+        BUILDER.pop();
+    }
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 
@@ -46,21 +77,68 @@ public final class Config {
         return SPAWN_WITH_QUEST_BOOK.get();
     }
 
+    public static boolean hideQuestBookInInventory() {
+        return HIDE_QUEST_BOOK_IN_INVENTORY.get();
+    }
+
+    public static boolean hideCategoryHeader() {
+        return HIDE_CATEGORY_HEADER.get();
+    }
+
+    public static boolean hideFilters() {
+        return HIDE_FILTERS.get();
+    }
+
+    public static boolean disableCategories() {
+        return DISABLE_CATEGORIES.get();
+    }
+
+    public static boolean hideQuestWidgetIcons() {
+        return HIDE_QUEST_WIDGET_ICONS.get();
+    }
+
+    public static boolean disableQuestPinning() {
+        return DISABLE_QUEST_PINNING.get();
+    }
+
+    public static boolean disableQuestBook() {
+        return DISABLE_QUEST_BOOK.get();
+    }
+
+    // Backward-compatible accessor used by existing callers.
     public static boolean hideQuestBookToggle() {
-        return HIDE_QUEST_BOOK_TOGGLE.get();
+        return hideQuestBookInInventory();
     }
 
     @SubscribeEvent
     public static void onLoad(ModConfigEvent.Loading e) {
         if (e.getConfig().getSpec() == SPEC)
-            BoundlessMod.LOGGER.info("[Boundless] Config loaded: {}, {}, {}, {}",
-                    disabledCategories(), pinnedQuestHudPosition(), spawnWithQuestBook(), hideQuestBookToggle());
+            BoundlessMod.LOGGER.info("[Boundless] Config loaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, hideFilters={}, disableCategories={}, hideWidgetIcons={}, disablePinning={}, disableBook={}, spawnBook={}",
+                    disabledCategories(),
+                    pinnedQuestHudPosition(),
+                    hideQuestBookInInventory(),
+                    hideCategoryHeader(),
+                    hideFilters(),
+                    disableCategories(),
+                    hideQuestWidgetIcons(),
+                    disableQuestPinning(),
+                    disableQuestBook(),
+                    spawnWithQuestBook());
     }
 
     @SubscribeEvent
     public static void onReload(ModConfigEvent.Reloading e) {
         if (e.getConfig().getSpec() == SPEC)
-            BoundlessMod.LOGGER.info("[Boundless] Config reloaded: {}, {}, {}, {}",
-                    disabledCategories(), pinnedQuestHudPosition(), spawnWithQuestBook(), hideQuestBookToggle());
+            BoundlessMod.LOGGER.info("[Boundless] Config reloaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, hideFilters={}, disableCategories={}, hideWidgetIcons={}, disablePinning={}, disableBook={}, spawnBook={}",
+                    disabledCategories(),
+                    pinnedQuestHudPosition(),
+                    hideQuestBookInInventory(),
+                    hideCategoryHeader(),
+                    hideFilters(),
+                    disableCategories(),
+                    hideQuestWidgetIcons(),
+                    disableQuestPinning(),
+                    disableQuestBook(),
+                    spawnWithQuestBook());
     }
 }

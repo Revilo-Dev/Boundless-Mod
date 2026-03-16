@@ -11,6 +11,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.revilodev.boundless.Config;
+import net.revilodev.boundless.client.CategoryHeaderWidget;
 import net.revilodev.boundless.client.QuestPanelClient;
 import net.revilodev.boundless.client.QuestListWidget;
 import net.revilodev.boundless.quest.QuestData;
@@ -23,7 +24,7 @@ public final class QuestSettingsScreen extends Screen {
     private static final ResourceLocation PANEL_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/quest_panel.png");
     private static final int PANEL_W = 147;
-    private static final int PANEL_H = 228;
+    private static final int PANEL_H = 166;
 
     private static final ResourceLocation ROW_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_widget.png");
@@ -58,11 +59,14 @@ public final class QuestSettingsScreen extends Screen {
     private int ph;
 
     private QuestListWidget menuList;
+    private CategoryHeaderWidget header;
 
     private ConfigRow uiPinnedRow;
     private ConfigRow uiHideInventoryRow;
     private ConfigRow uiHideHeaderRow;
     private ConfigRow uiHideFiltersRow;
+    private ConfigRow uiDisableCategoriesRow;
+    private ConfigRow uiHideQuestWidgetIconsRow;
     private ConfigRow functionalityDisablePinningRow;
     private ConfigRow gameplayDisableQuestBookRow;
     private ConfigRow gameplaySpawnWithBookRow;
@@ -70,10 +74,26 @@ public final class QuestSettingsScreen extends Screen {
     private ActionButton saveButton;
     private BackButton backButton;
 
+    private float configScrollY = 0f;
+    private int uiHeaderBaseY;
+    private int functionalityHeaderBaseY;
+    private int gameplayHeaderBaseY;
+    private int uiPinnedBaseY;
+    private int uiHideInventoryBaseY;
+    private int uiHideHeaderBaseY;
+    private int uiHideFiltersBaseY;
+    private int uiDisableCategoriesBaseY;
+    private int uiHideQuestWidgetIconsBaseY;
+    private int functionalityDisablePinningBaseY;
+    private int gameplayDisableQuestBookBaseY;
+    private int gameplaySpawnWithBookBaseY;
+
     private String pinnedHudPos;
     private boolean hideQuestBookInInventory;
     private boolean hideCategoryHeader;
     private boolean hideFilters;
+    private boolean disableCategories;
+    private boolean hideQuestWidgetIcons;
     private boolean disableQuestPinning;
     private boolean disableQuestBook;
     private boolean spawnWithQuestBook;
@@ -101,6 +121,7 @@ public final class QuestSettingsScreen extends Screen {
         initMenu();
         initConfigWidgets();
         initNavButtons();
+        initHeader();
 
         setPage(Page.MENU);
     }
@@ -118,36 +139,59 @@ public final class QuestSettingsScreen extends Screen {
         int uiRow1 = uiHeaderY + 10;
         int rowGap = 22;
 
-        uiPinnedRow = new ConfigRow(px, uiRow1, pw, "Pinned Quest Position",
+        uiHeaderBaseY = uiHeaderY;
+        uiPinnedBaseY = uiRow1;
+        uiHideInventoryBaseY = uiRow1 + rowGap;
+        uiHideHeaderBaseY = uiRow1 + rowGap * 2;
+        uiHideFiltersBaseY = uiRow1 + rowGap * 3;
+        uiDisableCategoriesBaseY = uiRow1 + rowGap * 4;
+        uiHideQuestWidgetIconsBaseY = uiRow1 + rowGap * 5;
+        functionalityHeaderBaseY = uiRow1 + rowGap * 6 + 4;
+        functionalityDisablePinningBaseY = functionalityHeaderBaseY + 10;
+        gameplayHeaderBaseY = functionalityDisablePinningBaseY + rowGap + 2;
+        gameplayDisableQuestBookBaseY = gameplayHeaderBaseY + 10;
+        gameplaySpawnWithBookBaseY = gameplayDisableQuestBookBaseY + rowGap;
+
+        uiPinnedRow = new ConfigRow(px, uiPinnedBaseY, pw, "Pinned Quest Position",
                 "Set where pinned quest toasts appear.",
                 () -> pinnedHudPos, this::cyclePinnedHudPosition);
-        uiHideInventoryRow = new ConfigRow(px, uiRow1 + rowGap, pw, "Hide Quest Book In Inventory",
+        uiHideInventoryRow = new ConfigRow(px, uiHideInventoryBaseY, pw, "Hide Quest Book In Inventory",
                 "Hide the quest-book button in inventory.",
                 () -> hideQuestBookInInventory ? "On" : "Off",
-                () -> hideQuestBookInInventory = !hideQuestBookInInventory);
-        uiHideHeaderRow = new ConfigRow(px, uiRow1 + rowGap * 2, pw, "Hide Category Header",
+                () -> {
+                    hideQuestBookInInventory = !hideQuestBookInInventory;
+                    if (hideQuestBookInInventory) disableQuestBook = false;
+                });
+        uiHideHeaderRow = new ConfigRow(px, uiHideHeaderBaseY, pw, "Hide Category Header",
                 "Hide the category header above the quest list.",
                 () -> hideCategoryHeader ? "On" : "Off",
                 () -> hideCategoryHeader = !hideCategoryHeader);
-        uiHideFiltersRow = new ConfigRow(px, uiRow1 + rowGap * 3, pw, "Hide Filters",
+        uiHideFiltersRow = new ConfigRow(px, uiHideFiltersBaseY, pw, "Hide Filters",
                 "Hide the quest filter tabs.",
                 () -> hideFilters ? "On" : "Off",
                 () -> hideFilters = !hideFilters);
+        uiDisableCategoriesRow = new ConfigRow(px, uiDisableCategoriesBaseY, pw, "Disable Categories",
+                "Disable category tabs and category-based filtering.",
+                () -> disableCategories ? "On" : "Off",
+                () -> disableCategories = !disableCategories);
+        uiHideQuestWidgetIconsRow = new ConfigRow(px, uiHideQuestWidgetIconsBaseY, pw, "Hide Quest Widget Icons",
+                "Hide icons in quest list widgets.",
+                () -> hideQuestWidgetIcons ? "On" : "Off",
+                () -> hideQuestWidgetIcons = !hideQuestWidgetIcons);
 
-        int functionalityHeaderY = uiRow1 + rowGap * 4 + 4;
-        int functionalityRowY = functionalityHeaderY + 10;
-        functionalityDisablePinningRow = new ConfigRow(px, functionalityRowY, pw, "Disable Quest Pinning",
+        functionalityDisablePinningRow = new ConfigRow(px, functionalityDisablePinningBaseY, pw, "Disable Quest Pinning",
                 "Disable pin buttons and pinned quest HUD.",
                 () -> disableQuestPinning ? "On" : "Off",
                 () -> disableQuestPinning = !disableQuestPinning);
 
-        int gameplayHeaderY = functionalityRowY + rowGap + 2;
-        int gameplayRow1 = gameplayHeaderY + 10;
-        gameplayDisableQuestBookRow = new ConfigRow(px, gameplayRow1, pw, "Disable Quest Book",
+        gameplayDisableQuestBookRow = new ConfigRow(px, gameplayDisableQuestBookBaseY, pw, "Disable Quest Book",
                 "Disable opening the quest book from key/item/network open.",
                 () -> disableQuestBook ? "On" : "Off",
-                () -> disableQuestBook = !disableQuestBook);
-        gameplaySpawnWithBookRow = new ConfigRow(px, gameplayRow1 + rowGap, pw, "Spawn With Quest Book",
+                () -> {
+                    disableQuestBook = !disableQuestBook;
+                    if (disableQuestBook) hideQuestBookInInventory = false;
+                });
+        gameplaySpawnWithBookRow = new ConfigRow(px, gameplaySpawnWithBookBaseY, pw, "Spawn With Quest Book",
                 "Give players a quest book on first join.",
                 () -> spawnWithQuestBook ? "On" : "Off",
                 () -> spawnWithQuestBook = !spawnWithQuestBook);
@@ -156,9 +200,12 @@ public final class QuestSettingsScreen extends Screen {
         addRenderableWidget(uiHideInventoryRow);
         addRenderableWidget(uiHideHeaderRow);
         addRenderableWidget(uiHideFiltersRow);
+        addRenderableWidget(uiDisableCategoriesRow);
+        addRenderableWidget(uiHideQuestWidgetIconsRow);
         addRenderableWidget(functionalityDisablePinningRow);
         addRenderableWidget(gameplayDisableQuestBookRow);
         addRenderableWidget(gameplaySpawnWithBookRow);
+        applyConfigScrollLayout();
     }
 
     private void initNavButtons() {
@@ -168,6 +215,12 @@ public final class QuestSettingsScreen extends Screen {
 
         addRenderableWidget(backButton);
         addRenderableWidget(saveButton);
+    }
+
+    private void initHeader() {
+        header = new CategoryHeaderWidget(leftX, topY, PANEL_W, () -> "Settings");
+        header.setPanelBounds(leftX, topY, PANEL_W);
+        addRenderableWidget(header);
     }
 
     private void handleMenuClick(QuestData.Quest q) {
@@ -195,6 +248,10 @@ public final class QuestSettingsScreen extends Screen {
         uiHideHeaderRow.active = config;
         uiHideFiltersRow.visible = config;
         uiHideFiltersRow.active = config;
+        uiDisableCategoriesRow.visible = config;
+        uiDisableCategoriesRow.active = config;
+        uiHideQuestWidgetIconsRow.visible = config;
+        uiHideQuestWidgetIconsRow.active = config;
         functionalityDisablePinningRow.visible = config;
         functionalityDisablePinningRow.active = config;
         gameplayDisableQuestBookRow.visible = config;
@@ -207,8 +264,15 @@ public final class QuestSettingsScreen extends Screen {
         boolean showBack = page != Page.MENU;
         backButton.visible = showBack;
         backButton.active = showBack;
+        if (header != null) {
+            header.visible = true;
+            header.active = false;
+        }
 
-        if (config) refreshConfigFields();
+        if (config) {
+            refreshConfigFields();
+            applyConfigScrollLayout();
+        }
     }
 
     private void refreshConfigFields() {
@@ -216,6 +280,8 @@ public final class QuestSettingsScreen extends Screen {
         hideQuestBookInInventory = Config.hideQuestBookInInventory();
         hideCategoryHeader = Config.hideCategoryHeader();
         hideFilters = Config.hideFilters();
+        disableCategories = Config.disableCategories();
+        hideQuestWidgetIcons = Config.hideQuestWidgetIcons();
         disableQuestPinning = Config.disableQuestPinning();
         disableQuestBook = Config.disableQuestBook();
         spawnWithQuestBook = Config.spawnWithQuestBook();
@@ -228,15 +294,22 @@ public final class QuestSettingsScreen extends Screen {
     }
 
     private void saveConfig() {
+        if (disableQuestBook && hideQuestBookInInventory) {
+            hideQuestBookInInventory = false;
+        }
+
         Config.PINNED_QUEST_HUD_POSITION.set(pinnedHudPos);
         Config.HIDE_QUEST_BOOK_IN_INVENTORY.set(hideQuestBookInInventory);
         Config.HIDE_CATEGORY_HEADER.set(hideCategoryHeader);
         Config.HIDE_FILTERS.set(hideFilters);
+        Config.DISABLE_CATEGORIES.set(disableCategories);
+        Config.HIDE_QUEST_WIDGET_ICONS.set(hideQuestWidgetIcons);
         Config.DISABLE_QUEST_PINNING.set(disableQuestPinning);
         Config.DISABLE_QUEST_BOOK.set(disableQuestBook);
         Config.SPAWN_WITH_QUEST_BOOK.set(spawnWithQuestBook);
         Config.SPEC.save();
         QuestPanelClient.applyConfigChanges();
+        Minecraft.getInstance().setScreen(parent);
     }
 
     private List<QuestData.Quest> buildMenuQuests() {
@@ -279,9 +352,10 @@ public final class QuestSettingsScreen extends Screen {
         gg.blit(PANEL_TEX, leftX, topY, 0, 0, PANEL_W, PANEL_H, PANEL_W, PANEL_H);
 
         if (page == Page.CONFIG) {
-            renderSectionHeader(gg, "UI", px + 2, py, 0xFFE7C98A);
-            renderSectionHeader(gg, "Functionality", px + 2, py + 102, 0xFFA8D8FF);
-            renderSectionHeader(gg, "Gameplay", px + 2, py + 136, 0xFFBEE5A8);
+            renderSectionHeader(gg, "UI", px + 2, scrolledY(uiHeaderBaseY), 0xFFE7C98A);
+            renderSectionHeader(gg, "Functionality", px + 2, scrolledY(functionalityHeaderBaseY), 0xFFA8D8FF);
+            renderSectionHeader(gg, "Gameplay", px + 2, scrolledY(gameplayHeaderBaseY), 0xFFBEE5A8);
+            renderConfigScrollbar(gg);
         }
 
         super.render(gg, mouseX, mouseY, partialTick);
@@ -295,6 +369,93 @@ public final class QuestSettingsScreen extends Screen {
         float inv = 1f / scale;
         gg.drawString(font, text, (int) (x * inv), (int) (y * inv), color, false);
         gg.pose().popPose();
+    }
+
+    private int configViewportTop() {
+        return py + 2;
+    }
+
+    private int configViewportBottom() {
+        return py + ph - 24;
+    }
+
+    private int configViewportHeight() {
+        return Math.max(0, configViewportBottom() - configViewportTop());
+    }
+
+    private int configContentHeight() {
+        int bottom = gameplaySpawnWithBookBaseY + 20;
+        return Math.max(0, (bottom - uiHeaderBaseY) + 6);
+    }
+
+    private int maxConfigScroll() {
+        return Math.max(0, configContentHeight() - configViewportHeight());
+    }
+
+    private int scrolledY(int baseY) {
+        return baseY - Math.round(configScrollY);
+    }
+
+    private void applyConfigScrollLayout() {
+        int max = maxConfigScroll();
+        if (configScrollY < 0f) configScrollY = 0f;
+        if (configScrollY > max) configScrollY = max;
+
+        int top = configViewportTop();
+        int bottom = configViewportBottom();
+
+        layoutRow(uiPinnedRow, uiPinnedBaseY, top, bottom);
+        layoutRow(uiHideInventoryRow, uiHideInventoryBaseY, top, bottom);
+        layoutRow(uiHideHeaderRow, uiHideHeaderBaseY, top, bottom);
+        layoutRow(uiHideFiltersRow, uiHideFiltersBaseY, top, bottom);
+        layoutRow(uiDisableCategoriesRow, uiDisableCategoriesBaseY, top, bottom);
+        layoutRow(uiHideQuestWidgetIconsRow, uiHideQuestWidgetIconsBaseY, top, bottom);
+        layoutRow(functionalityDisablePinningRow, functionalityDisablePinningBaseY, top, bottom);
+        layoutRow(gameplayDisableQuestBookRow, gameplayDisableQuestBookBaseY, top, bottom);
+        layoutRow(gameplaySpawnWithBookRow, gameplaySpawnWithBookBaseY, top, bottom);
+    }
+
+    private void layoutRow(ConfigRow row, int baseY, int top, int bottom) {
+        if (row == null) return;
+        int y = scrolledY(baseY);
+        row.setY(y);
+        boolean inView = y >= top && (y + row.getHeight()) <= bottom;
+        row.visible = page == Page.CONFIG && inView;
+        row.active = row.visible;
+    }
+
+    private void renderConfigScrollbar(GuiGraphics gg) {
+        int max = maxConfigScroll();
+        if (max <= 0) return;
+        int trackX1 = leftX + PANEL_W - 7;
+        int trackX2 = leftX + PANEL_W - 5;
+        int top = configViewportTop();
+        int vh = configViewportHeight();
+        int content = configContentHeight();
+        if (vh <= 0 || content <= 0) return;
+        int thumbH = Math.max(12, (int) ((vh * (float) vh) / (float) content));
+        float t = max <= 0 ? 0f : configScrollY / (float) max;
+        int thumbY = top + (int) ((vh - thumbH) * t);
+        gg.fill(trackX1, top, trackX2, top + vh, 0x60303030);
+        gg.fill(trackX1, thumbY, trackX2, thumbY + thumbH, 0xFF909090);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (page == Page.CONFIG) {
+            int top = configViewportTop();
+            int bottom = configViewportBottom();
+            if (mouseX < px || mouseX > px + pw || mouseY < top || mouseY > bottom) {
+                return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+            }
+            int max = maxConfigScroll();
+            if (max > 0) {
+                configScrollY = Math.max(0f, Math.min(max, configScrollY - (float) (scrollY * 12)));
+                applyConfigScrollLayout();
+                return true;
+            }
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
     @Override
@@ -348,7 +509,8 @@ public final class QuestSettingsScreen extends Screen {
             if (valueText == null) valueText = "";
 
             int labelX = getX() + 6;
-            int valueW = font.width(valueText);
+            float valueScale = 0.72f;
+            int valueW = (int) (font.width(valueText) * valueScale);
             int valueX = getX() + this.width - valueW - 6;
 
             String labelText = label;
@@ -360,7 +522,7 @@ public final class QuestSettingsScreen extends Screen {
             }
 
             drawScaledString(gg, labelText, 0.82f, labelX, getY() + 5, 0xFFFFFF);
-            gg.drawString(font, valueText, valueX, getY() + 6, 0xA0C8FF, false);
+            drawScaledString(gg, valueText, valueScale, valueX, getY() + 7, 0xA0C8FF);
 
             if (hovered) {
                 List<Component> tooltip = new ArrayList<>();

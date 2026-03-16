@@ -1,6 +1,7 @@
 package net.revilodev.boundless.client.screen;
 
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractButton;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -19,6 +20,10 @@ public final class StandaloneQuestBookScreen extends Screen {
 
     private static final ResourceLocation PANEL_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/quest_panel.png");
+    private static final ResourceLocation BTN_SETTINGS =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/settings_button.png");
+    private static final ResourceLocation BTN_SETTINGS_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/settings_button_hovered.png");
 
     private int panelWidth = 147;
     private int panelHeight = 166;
@@ -32,6 +37,7 @@ public final class StandaloneQuestBookScreen extends Screen {
     private QuestListWidget list;
     private QuestDetailsPanel details;
     private QuestFilterBar filter;
+    private SettingsButton settingsButton;
 
     private boolean showingDetails = false;
 
@@ -60,12 +66,16 @@ public final class StandaloneQuestBookScreen extends Screen {
         int ph = panelHeight - 20;
 
         tabs = new CategoryTabsWidget(leftX - 23, topY + 4, 26, panelHeight - 8, id -> {
+            if (Config.disableCategories()) return;
             list.setCategory(id);
             showingDetails = false;
             updateVisibility();
         });
-        tabs.setCategories(QuestData.categoriesOrdered());
-        String selectedCategory = tabs.selectFirstCategory();
+        String selectedCategory = "all";
+        if (!Config.disableCategories()) {
+            tabs.setCategories(QuestData.categoriesOrdered());
+            selectedCategory = tabs.selectFirstCategory();
+        }
 
         list = new QuestListWidget(pxLeft, py, pw, ph, q -> {
             details.setQuest(q);
@@ -91,6 +101,10 @@ public final class StandaloneQuestBookScreen extends Screen {
 
         header = new CategoryHeaderWidget(leftX, topY, panelWidth, () -> tabs == null ? "" : tabs.getSelectedName());
         header.setPanelBounds(leftX, topY, panelWidth);
+        settingsButton = new SettingsButton(leftX - 22, topY + panelHeight - 20, () -> {
+            if (minecraft == null || minecraft.player == null || !minecraft.player.hasPermissions(2)) return;
+            minecraft.setScreen(new QuestSettingsScreen(this));
+        });
 
         addRenderableWidget(tabs);
         addRenderableWidget(header);
@@ -100,6 +114,7 @@ public final class StandaloneQuestBookScreen extends Screen {
         addRenderableWidget(details.completeButton());
         addRenderableWidget(details.rejectButton());
         addRenderableWidget(filter);
+        addRenderableWidget(settingsButton);
 
         updateVisibility();
     }
@@ -120,14 +135,15 @@ public final class StandaloneQuestBookScreen extends Screen {
         details.rejectButton().visible = showingDetails;
         details.rejectButton().active = showingDetails;
 
-        tabs.visible = true;
-        tabs.active = true;
+        boolean showTabs = !Config.disableCategories();
+        tabs.visible = showTabs;
+        tabs.active = showTabs;
 
         header.visible = true;
         header.active = false;
 
         if (header != null) {
-            boolean showHeader = !Config.hideCategoryHeader();
+            boolean showHeader = !Config.hideCategoryHeader() && !Config.disableCategories();
             header.visible = showHeader;
         }
 
@@ -135,6 +151,12 @@ public final class StandaloneQuestBookScreen extends Screen {
             boolean showFilters = !Config.hideFilters();
             filter.visible = showFilters;
             filter.active = showFilters;
+        }
+        if (settingsButton != null) {
+            boolean canAccessSettings = minecraft != null && minecraft.player != null && minecraft.player.hasPermissions(2);
+            boolean showSettings = Config.hideFilters() && canAccessSettings;
+            settingsButton.visible = showSettings;
+            settingsButton.active = showSettings;
         }
     }
 
@@ -174,5 +196,29 @@ public final class StandaloneQuestBookScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    private static final class SettingsButton extends AbstractButton {
+        private final Runnable onPress;
+
+        SettingsButton(int x, int y, Runnable onPress) {
+            super(x, y, 20, 20, Component.empty());
+            this.onPress = onPress;
+        }
+
+        @Override
+        public void onPress() {
+            if (onPress != null) onPress.run();
+        }
+
+        @Override
+        protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
+            ResourceLocation tex = isMouseOver(mouseX, mouseY) ? BTN_SETTINGS_HOVER : BTN_SETTINGS;
+            gg.blit(tex, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
+        }
+
+        @Override
+        protected void updateWidgetNarration(net.minecraft.client.gui.narration.NarrationElementOutput narration) {
+        }
     }
 }

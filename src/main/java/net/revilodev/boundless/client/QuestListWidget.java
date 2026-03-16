@@ -335,6 +335,7 @@ public final class QuestListWidget extends AbstractWidget {
         int yCursor = yOff;
 
         List<RowEntry> rows = rowsForCurrentState();
+        boolean hideIcons = Config.hideQuestWidgetIcons();
         for (RowEntry row : rows) {
             int h = row.isHeader() ? subHeaderH : rowH;
             int top = yCursor;
@@ -353,18 +354,21 @@ public final class QuestListWidget extends AbstractWidget {
                 int iconSize = (int) (16 * iconScale);
                 int iconX = getX() + 2;
                 int iconY = top + (h - iconSize) / 2;
+                int textIconSize = hideIcons ? 0 : iconSize;
 
-                sc.iconItem().ifPresent(item -> {
-                    gg.pose().pushPose();
-                    gg.pose().translate(iconX, iconY, 0);
-                    gg.pose().scale(iconScale, iconScale, 1f);
-                    gg.renderItem(new ItemStack(item), 0, 0);
-                    gg.pose().popPose();
-                });
+                if (!hideIcons) {
+                    sc.iconItem().ifPresent(item -> {
+                        gg.pose().pushPose();
+                        gg.pose().translate(iconX, iconY, 0);
+                        gg.pose().scale(iconScale, iconScale, 1f);
+                        gg.renderItem(new ItemStack(item), 0, 0);
+                        gg.pose().popPose();
+                    });
+                }
 
                 float textScale = 0.66f;
                 String name = sc.name;
-                int textX = iconX + iconSize + 2;
+                int textX = iconX + textIconSize + 2;
                 int textH = (int) (mc.font.lineHeight * textScale);
                 int textY = top + (h - textH) / 2 + 1;
 
@@ -400,18 +404,21 @@ public final class QuestListWidget extends AbstractWidget {
 
                 gg.blit(tex, getX(), top, 0, 0, 127, 27, 127, 27);
 
-                int indent = 0;
-
-                q.iconItem().ifPresent(item ->
-                        gg.renderItem(new ItemStack(item), getX() + 6 + indent, top + 5)
-                );
+                int textX = getX() + 25;
+                if (!hideIcons) {
+                    q.iconItem().ifPresent(item ->
+                            gg.renderItem(new ItemStack(item), getX() + 6, top + 5)
+                    );
+                } else {
+                    textX = getX() + 8;
+                }
 
                 String name = q.name;
                 if (name.length() > 18) {
                     name = name.substring(0, 18) + "...";
                 }
 
-                gg.drawString(mc.font, name, getX() + 25 + indent, top + 9,
+                gg.drawString(mc.font, name, textX, top + 9,
                         deps ? 0xFFFFFF : 0xA0A0A0, false);
             }
 

@@ -32,6 +32,10 @@ public final class QuestPanelClient {
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_book_toast.png");
     private static final ResourceLocation BTN_TEX_TOAST_HOVER =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_book_toast_highlighted.png");
+    private static final ResourceLocation BTN_SETTINGS =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/settings_button.png");
+    private static final ResourceLocation BTN_SETTINGS_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/settings_button_hovered.png");
     private static final ResourceLocation PANEL_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/quest_panel.png");
     private static final int PANEL_W = 147;
@@ -73,12 +77,18 @@ public final class QuestPanelClient {
         e.addListener(st.details.rejectButton());
 
         st.tabs = new CategoryTabsWidget(0, 0, 26, PANEL_H, id -> {
+            if (Config.disableCategories()) return;
             st.selectedCategory = id;
             if (st.list != null) st.list.setCategory(id);
         });
-        st.tabs.setCategories(QuestData.categoriesOrdered());
-        st.selectedCategory = st.tabs.selectFirstCategory();
-        if (st.list != null) st.list.setCategory(st.selectedCategory);
+        if (!Config.disableCategories()) {
+            st.tabs.setCategories(QuestData.categoriesOrdered());
+            st.selectedCategory = st.tabs.selectFirstCategory();
+            if (st.list != null) st.list.setCategory(st.selectedCategory);
+        } else {
+            st.selectedCategory = "all";
+            if (st.list != null) st.list.setCategory("all");
+        }
         e.addListener(st.tabs);
 
         st.header = new CategoryHeaderWidget(0, 0, PANEL_W, () -> st.tabs == null ? "" : st.tabs.getSelectedName());
@@ -88,6 +98,8 @@ public final class QuestPanelClient {
         int filterY = inv.getGuiTop() + PANEL_H + 6;
         st.filter = new QuestFilterBar(filterX, filterY, () -> openSettings(inv));
         e.addListener(st.filter);
+        st.settingsButton = new SettingsButton(0, 0, () -> openSettings(inv));
+        e.addListener(st.settingsButton);
 
         reposition(inv, st);
 
@@ -167,10 +179,15 @@ public final class QuestPanelClient {
                 st.list.setCategory(st.selectedCategory);
             }
             if (st.tabs != null) {
-                st.tabs.setCategories(QuestData.categoriesOrdered());
-                String selected = st.tabs.getSelectedId();
-                st.selectedCategory = (selected == null || selected.isBlank()) ? st.tabs.selectFirstCategory() : selected;
-                if (st.list != null) st.list.setCategory(st.selectedCategory);
+                if (!Config.disableCategories()) {
+                    st.tabs.setCategories(QuestData.categoriesOrdered());
+                    String selected = st.tabs.getSelectedId();
+                    st.selectedCategory = (selected == null || selected.isBlank()) ? st.tabs.selectFirstCategory() : selected;
+                    if (st.list != null) st.list.setCategory(st.selectedCategory);
+                } else {
+                    st.selectedCategory = "all";
+                    if (st.list != null) st.list.setCategory("all");
+                }
             }
             if (st.btn != null) {
                 boolean show = shouldShowInventoryQuestButton();
@@ -250,6 +267,11 @@ public final class QuestPanelClient {
             int x = inv.getGuiLeft() + 125;
             int y = inv.getGuiTop() + 61;
             st.btn.setPosition(x, y);
+        }
+        if (st.settingsButton != null) {
+            int bgx = computePanelX(inv);
+            int bgy = inv.getGuiTop();
+            st.settingsButton.setPosition(bgx - 22, bgy + PANEL_H - st.settingsButton.getHeight());
         }
         setPanelChildBounds(inv, st);
     }
@@ -365,12 +387,13 @@ public final class QuestPanelClient {
         }
 
         if (st.tabs != null) {
-            st.tabs.visible = st.open;
-            st.tabs.active = st.open;
+            boolean showTabs = st.open && !Config.disableCategories();
+            st.tabs.visible = showTabs;
+            st.tabs.active = showTabs;
         }
 
         if (st.header != null) {
-            boolean showHeader = st.open && !Config.hideCategoryHeader();
+            boolean showHeader = st.open && !Config.hideCategoryHeader() && !Config.disableCategories();
             st.header.visible = showHeader;
             st.header.active = false;
         }
@@ -379,6 +402,13 @@ public final class QuestPanelClient {
             boolean showFilters = st.open && !Config.hideFilters();
             st.filter.visible = showFilters;
             st.filter.active = showFilters;
+        }
+        if (st.settingsButton != null) {
+            boolean canAccessSettings = Minecraft.getInstance().player != null
+                    && Minecraft.getInstance().player.hasPermissions(2);
+            boolean showSettings = st.open && Config.hideFilters() && canAccessSettings;
+            st.settingsButton.visible = showSettings;
+            st.settingsButton.active = showSettings;
         }
     }
 
@@ -398,8 +428,13 @@ public final class QuestPanelClient {
 
     private static void selectFirstCategory(State st) {
         if (st.tabs == null) return;
-        st.selectedCategory = st.tabs.selectFirstCategory();
-        if (st.list != null) st.list.setCategory(st.selectedCategory);
+        if (Config.disableCategories()) {
+            st.selectedCategory = "all";
+            if (st.list != null) st.list.setCategory("all");
+        } else {
+            st.selectedCategory = st.tabs.selectFirstCategory();
+            if (st.list != null) st.list.setCategory(st.selectedCategory);
+        }
         st.showingDetails = false;
     }
 
@@ -435,6 +470,7 @@ public final class QuestPanelClient {
     private static final class State {
         final InventoryScreen inv;
         QuestToggleButton btn;
+        SettingsButton settingsButton;
         PanelBackground bg;
         QuestListWidget list;
         QuestDetailsPanel details;
@@ -448,6 +484,30 @@ public final class QuestPanelClient {
 
         State(InventoryScreen inv) {
             this.inv = inv;
+        }
+    }
+
+    private static final class SettingsButton extends net.minecraft.client.gui.components.AbstractButton {
+        private final Runnable onPress;
+
+        SettingsButton(int x, int y, Runnable onPress) {
+            super(x, y, 20, 20, Component.empty());
+            this.onPress = onPress;
+        }
+
+        @Override
+        public void onPress() {
+            if (onPress != null) onPress.run();
+        }
+
+        @Override
+        protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
+            ResourceLocation tex = this.isMouseOver(mouseX, mouseY) ? BTN_SETTINGS_HOVER : BTN_SETTINGS;
+            gg.blit(tex, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
+        }
+
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput narration) {
         }
     }
 }
