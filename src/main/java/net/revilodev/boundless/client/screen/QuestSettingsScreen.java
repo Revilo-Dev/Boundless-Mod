@@ -4,7 +4,6 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractButton;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -17,18 +16,14 @@ import net.revilodev.boundless.client.QuestListWidget;
 import net.revilodev.boundless.quest.QuestData;
 
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
-import java.util.Set;
 
 @OnlyIn(Dist.CLIENT)
 public final class QuestSettingsScreen extends Screen {
     private static final ResourceLocation PANEL_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/quest_panel.png");
     private static final int PANEL_W = 147;
-    private static final int PANEL_H = 166;
+    private static final int PANEL_H = 228;
 
     private static final ResourceLocation ROW_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_widget.png");
@@ -64,18 +59,24 @@ public final class QuestSettingsScreen extends Screen {
 
     private QuestListWidget menuList;
 
-    private ConfigRow pinnedRow;
-    private ConfigRow spawnRow;
-    private ConfigRow hideToggleRow;
-    private EditBox disabledCategories;
+    private ConfigRow uiPinnedRow;
+    private ConfigRow uiHideInventoryRow;
+    private ConfigRow uiHideHeaderRow;
+    private ConfigRow uiHideFiltersRow;
+    private ConfigRow functionalityDisablePinningRow;
+    private ConfigRow gameplayDisableQuestBookRow;
+    private ConfigRow gameplaySpawnWithBookRow;
+
     private ActionButton saveButton;
     private BackButton backButton;
-    private List<String> availableCategoryIds = List.of();
-    private String pendingCategorySuggestion = "";
 
     private String pinnedHudPos;
+    private boolean hideQuestBookInInventory;
+    private boolean hideCategoryHeader;
+    private boolean hideFilters;
+    private boolean disableQuestPinning;
+    private boolean disableQuestBook;
     private boolean spawnWithQuestBook;
-    private boolean hideQuestBookToggle;
 
     public QuestSettingsScreen(Screen parent) {
         super(Component.literal("Quest Settings"));
@@ -113,31 +114,51 @@ public final class QuestSettingsScreen extends Screen {
     }
 
     private void initConfigWidgets() {
-        int rowGap = 28;
-        int rowY = py;
+        int uiHeaderY = py;
+        int uiRow1 = uiHeaderY + 10;
+        int rowGap = 22;
 
-        pinnedRow = new ConfigRow(px, rowY, pw, "Pinned HUD Position",
-                "Where the pinned quest HUD sits on screen.",
+        uiPinnedRow = new ConfigRow(px, uiRow1, pw, "Pinned Quest Position",
+                "Set where pinned quest toasts appear.",
                 () -> pinnedHudPos, this::cyclePinnedHudPosition);
-        spawnRow = new ConfigRow(px, rowY + rowGap, pw, "Spawn With Quest Book",
+        uiHideInventoryRow = new ConfigRow(px, uiRow1 + rowGap, pw, "Hide Quest Book In Inventory",
+                "Hide the quest-book button in inventory.",
+                () -> hideQuestBookInInventory ? "On" : "Off",
+                () -> hideQuestBookInInventory = !hideQuestBookInInventory);
+        uiHideHeaderRow = new ConfigRow(px, uiRow1 + rowGap * 2, pw, "Hide Category Header",
+                "Hide the category header above the quest list.",
+                () -> hideCategoryHeader ? "On" : "Off",
+                () -> hideCategoryHeader = !hideCategoryHeader);
+        uiHideFiltersRow = new ConfigRow(px, uiRow1 + rowGap * 3, pw, "Hide Filters",
+                "Hide the quest filter tabs.",
+                () -> hideFilters ? "On" : "Off",
+                () -> hideFilters = !hideFilters);
+
+        int functionalityHeaderY = uiRow1 + rowGap * 4 + 4;
+        int functionalityRowY = functionalityHeaderY + 10;
+        functionalityDisablePinningRow = new ConfigRow(px, functionalityRowY, pw, "Disable Quest Pinning",
+                "Disable pin buttons and pinned quest HUD.",
+                () -> disableQuestPinning ? "On" : "Off",
+                () -> disableQuestPinning = !disableQuestPinning);
+
+        int gameplayHeaderY = functionalityRowY + rowGap + 2;
+        int gameplayRow1 = gameplayHeaderY + 10;
+        gameplayDisableQuestBookRow = new ConfigRow(px, gameplayRow1, pw, "Disable Quest Book",
+                "Disable opening the quest book from key/item/network open.",
+                () -> disableQuestBook ? "On" : "Off",
+                () -> disableQuestBook = !disableQuestBook);
+        gameplaySpawnWithBookRow = new ConfigRow(px, gameplayRow1 + rowGap, pw, "Spawn With Quest Book",
                 "Give players a quest book on first join.",
                 () -> spawnWithQuestBook ? "On" : "Off",
                 () -> spawnWithQuestBook = !spawnWithQuestBook);
-        hideToggleRow = new ConfigRow(px, rowY + rowGap * 2, pw, "Hide Quest Book Toggle",
-                "Hide the inventory quest book toggle button.",
-                () -> hideQuestBookToggle ? "On" : "Off",
-                () -> hideQuestBookToggle = !hideQuestBookToggle);
 
-        int labelY = rowY + rowGap * 3 + 2;
-        int boxY = labelY + font.lineHeight + 2;
-        disabledCategories = new EditBox(font, px + 2, boxY, pw - 4, 18, Component.literal("Disabled categories"));
-        disabledCategories.setMaxLength(512);
-        disabledCategories.setResponder(v -> updateDisabledCategorySuggestion());
-
-        addRenderableWidget(pinnedRow);
-        addRenderableWidget(spawnRow);
-        addRenderableWidget(hideToggleRow);
-        addRenderableWidget(disabledCategories);
+        addRenderableWidget(uiPinnedRow);
+        addRenderableWidget(uiHideInventoryRow);
+        addRenderableWidget(uiHideHeaderRow);
+        addRenderableWidget(uiHideFiltersRow);
+        addRenderableWidget(functionalityDisablePinningRow);
+        addRenderableWidget(gameplayDisableQuestBookRow);
+        addRenderableWidget(gameplaySpawnWithBookRow);
     }
 
     private void initNavButtons() {
@@ -166,14 +187,20 @@ public final class QuestSettingsScreen extends Screen {
         menuList.active = menu;
 
         boolean config = page == Page.CONFIG;
-        pinnedRow.visible = config;
-        pinnedRow.active = config;
-        spawnRow.visible = config;
-        spawnRow.active = config;
-        hideToggleRow.visible = config;
-        hideToggleRow.active = config;
-        disabledCategories.visible = config;
-        disabledCategories.active = config;
+        uiPinnedRow.visible = config;
+        uiPinnedRow.active = config;
+        uiHideInventoryRow.visible = config;
+        uiHideInventoryRow.active = config;
+        uiHideHeaderRow.visible = config;
+        uiHideHeaderRow.active = config;
+        uiHideFiltersRow.visible = config;
+        uiHideFiltersRow.active = config;
+        functionalityDisablePinningRow.visible = config;
+        functionalityDisablePinningRow.active = config;
+        gameplayDisableQuestBookRow.visible = config;
+        gameplayDisableQuestBookRow.active = config;
+        gameplaySpawnWithBookRow.visible = config;
+        gameplaySpawnWithBookRow.active = config;
         saveButton.visible = config;
         saveButton.active = config;
 
@@ -186,11 +213,12 @@ public final class QuestSettingsScreen extends Screen {
 
     private void refreshConfigFields() {
         pinnedHudPos = normalizeHudPos(Config.pinnedQuestHudPosition());
+        hideQuestBookInInventory = Config.hideQuestBookInInventory();
+        hideCategoryHeader = Config.hideCategoryHeader();
+        hideFilters = Config.hideFilters();
+        disableQuestPinning = Config.disableQuestPinning();
+        disableQuestBook = Config.disableQuestBook();
         spawnWithQuestBook = Config.spawnWithQuestBook();
-        hideQuestBookToggle = Config.hideQuestBookToggle();
-        availableCategoryIds = buildAvailableCategoryIds();
-        disabledCategories.setValue(formatDisabledCategories(Config.disabledCategories()));
-        updateDisabledCategorySuggestion();
     }
 
     private void cyclePinnedHudPosition() {
@@ -200,12 +228,13 @@ public final class QuestSettingsScreen extends Screen {
     }
 
     private void saveConfig() {
-        List<String> disabled = parseDisabledCategories(disabledCategories.getValue());
-
-        Config.DISABLED_CATEGORIES.set(new ArrayList<>(disabled));
         Config.PINNED_QUEST_HUD_POSITION.set(pinnedHudPos);
+        Config.HIDE_QUEST_BOOK_IN_INVENTORY.set(hideQuestBookInInventory);
+        Config.HIDE_CATEGORY_HEADER.set(hideCategoryHeader);
+        Config.HIDE_FILTERS.set(hideFilters);
+        Config.DISABLE_QUEST_PINNING.set(disableQuestPinning);
+        Config.DISABLE_QUEST_BOOK.set(disableQuestBook);
         Config.SPAWN_WITH_QUEST_BOOK.set(spawnWithQuestBook);
-        Config.HIDE_QUEST_BOOK_TOGGLE.set(hideQuestBookToggle);
         Config.SPEC.save();
         QuestPanelClient.applyConfigChanges();
     }
@@ -240,113 +269,6 @@ public final class QuestSettingsScreen extends Screen {
         return HUD_POSITIONS.contains(lower) ? lower : HUD_POSITIONS.get(0);
     }
 
-    private String formatDisabledCategories(List<? extends String> list) {
-        if (list == null || list.isEmpty()) return "";
-        return String.join(", ", list);
-    }
-
-    private List<String> parseDisabledCategories(String raw) {
-        if (raw == null || raw.isBlank()) return List.of();
-        String[] parts = raw.split(",");
-        List<String> out = new ArrayList<>();
-        for (String part : parts) {
-            if (part == null) continue;
-            String trimmed = part.trim();
-            if (!trimmed.isEmpty()) out.add(trimmed);
-        }
-        return out;
-    }
-
-    private List<String> buildAvailableCategoryIds() {
-        return QuestData.categoriesOrdered().stream()
-                .map(c -> c == null ? "" : c.id)
-                .filter(id -> id != null && !id.isBlank())
-                .filter(id -> !"all".equalsIgnoreCase(id))
-                .distinct()
-                .sorted(Comparator.comparing(s -> s.toLowerCase(Locale.ROOT)))
-                .toList();
-    }
-
-    private void updateDisabledCategorySuggestion() {
-        pendingCategorySuggestion = "";
-        disabledCategories.setSuggestion("");
-
-        if (disabledCategories == null || availableCategoryIds.isEmpty()) return;
-        String raw = disabledCategories.getValue();
-        if (raw == null) return;
-
-        int cursor = Math.max(0, Math.min(disabledCategories.getCursorPosition(), raw.length()));
-        int tokenStart = raw.lastIndexOf(',', Math.max(0, cursor - 1)) + 1;
-        int nextComma = raw.indexOf(',', cursor);
-        int tokenEnd = nextComma < 0 ? raw.length() : nextComma;
-
-        String left = raw.substring(tokenStart, cursor);
-        String right = raw.substring(cursor, tokenEnd);
-        if (!right.trim().isEmpty()) return;
-
-        String trimmedLeft = left.stripLeading();
-        String typed = trimmedLeft.trim();
-        String typedLower = typed.toLowerCase(Locale.ROOT);
-
-        Set<String> alreadyChosen = parseChosenCategories(raw, tokenStart, tokenEnd);
-        String match = null;
-        for (String id : availableCategoryIds) {
-            String idLower = id.toLowerCase(Locale.ROOT);
-            if (alreadyChosen.contains(idLower)) continue;
-            if (typedLower.isEmpty() || idLower.startsWith(typedLower)) {
-                if (typedLower.equals(idLower)) continue;
-                match = id;
-                break;
-            }
-        }
-        if (match == null) return;
-
-        int spacesBeforeTyped = left.length() - trimmedLeft.length();
-        String prefixForTail = typed.isEmpty() ? "" : left.substring(spacesBeforeTyped);
-        if (!match.toLowerCase(Locale.ROOT).startsWith(prefixForTail.toLowerCase(Locale.ROOT))) {
-            prefixForTail = typed;
-        }
-
-        pendingCategorySuggestion = match.substring(Math.min(prefixForTail.length(), match.length()));
-        disabledCategories.setSuggestion(pendingCategorySuggestion);
-    }
-
-    private Set<String> parseChosenCategories(String raw, int activeStart, int activeEnd) {
-        Set<String> out = new LinkedHashSet<>();
-        if (raw == null || raw.isBlank()) return out;
-        String[] parts = raw.split(",");
-        int offset = 0;
-        for (String part : parts) {
-            int start = offset;
-            int end = start + part.length();
-            offset = end + 1;
-            if (start == activeStart && end == activeEnd) continue;
-
-            String v = part == null ? "" : part.trim();
-            if (!v.isEmpty()) out.add(v.toLowerCase(Locale.ROOT));
-        }
-        return out;
-    }
-
-    private boolean acceptDisabledCategorySuggestion() {
-        if (pendingCategorySuggestion == null || pendingCategorySuggestion.isEmpty()) return false;
-        disabledCategories.insertText(pendingCategorySuggestion);
-        updateDisabledCategorySuggestion();
-        return true;
-    }
-
-    @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (page == Page.CONFIG
-                && disabledCategories != null
-                && disabledCategories.isFocused()
-                && keyCode == 258
-                && acceptDisabledCategorySuggestion()) {
-            return true;
-        }
-        return super.keyPressed(keyCode, scanCode, modifiers);
-    }
-
     @Override
     public void renderBackground(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
     }
@@ -357,11 +279,22 @@ public final class QuestSettingsScreen extends Screen {
         gg.blit(PANEL_TEX, leftX, topY, 0, 0, PANEL_W, PANEL_H, PANEL_W, PANEL_H);
 
         if (page == Page.CONFIG) {
-            int labelY = py + 86;
-            gg.drawString(font, "Disabled categories", px + 2, labelY, 0xFFFFFF, false);
+            renderSectionHeader(gg, "UI", px + 2, py, 0xFFE7C98A);
+            renderSectionHeader(gg, "Functionality", px + 2, py + 102, 0xFFA8D8FF);
+            renderSectionHeader(gg, "Gameplay", px + 2, py + 136, 0xFFBEE5A8);
         }
 
         super.render(gg, mouseX, mouseY, partialTick);
+    }
+
+    private void renderSectionHeader(GuiGraphics gg, String text, int x, int y, int color) {
+        if (text == null || text.isBlank()) return;
+        float scale = 0.72f;
+        gg.pose().pushPose();
+        gg.pose().scale(scale, scale, 1f);
+        float inv = 1f / scale;
+        gg.drawString(font, text, (int) (x * inv), (int) (y * inv), color, false);
+        gg.pose().popPose();
     }
 
     @Override
@@ -388,7 +321,7 @@ public final class QuestSettingsScreen extends Screen {
         public ConfigRow(int x, int y, int w, String label, String subtitle,
                          java.util.function.Supplier<String> value,
                          Runnable onPress) {
-            super(x, y, w, 27, Component.empty());
+            super(x, y, w, 20, Component.empty());
             this.label = label == null ? "" : label;
             this.subtitle = subtitle == null ? "" : subtitle;
             this.value = value;
@@ -415,8 +348,6 @@ public final class QuestSettingsScreen extends Screen {
             if (valueText == null) valueText = "";
 
             int labelX = getX() + 6;
-            int labelY = getY() + 5;
-
             int valueW = font.width(valueText);
             int valueX = getX() + this.width - valueW - 6;
 
@@ -428,27 +359,14 @@ public final class QuestSettingsScreen extends Screen {
                 labelText = font.plainSubstrByWidth(labelText, allowed) + "...";
             }
 
-            gg.drawString(font, labelText, labelX, labelY, 0xFFFFFF, false);
-            gg.drawString(font, valueText, valueX, labelY, 0xA0C8FF, false);
-
-            float subScale = 0.65f;
-            int subY = getY() + 15;
-            int maxSubW = this.width - 12;
-            int maxSubUnscaled = maxSubW > 0 ? (int) (maxSubW / subScale) : 0;
-            String subText = subtitle;
-            if (maxSubUnscaled > 0 && font.width(subText) > maxSubUnscaled) {
-                int ellipsisW = font.width("...");
-                int allowed = Math.max(0, maxSubUnscaled - ellipsisW);
-                subText = font.plainSubstrByWidth(subText, allowed) + "...";
-            }
-            if (!subText.isBlank()) {
-                drawScaledString(gg, subText, subScale, labelX, subY, 0xB0B0B0);
-            }
+            drawScaledString(gg, labelText, 0.82f, labelX, getY() + 5, 0xFFFFFF);
+            gg.drawString(font, valueText, valueX, getY() + 6, 0xA0C8FF, false);
 
             if (hovered) {
-                gg.renderTooltip(Minecraft.getInstance().font,
-                        Component.literal(label),
-                        mouseX, mouseY);
+                List<Component> tooltip = new ArrayList<>();
+                tooltip.add(Component.literal(label));
+                if (!subtitle.isBlank()) tooltip.add(Component.literal(subtitle));
+                gg.renderComponentTooltip(Minecraft.getInstance().font, tooltip, mouseX, mouseY);
             }
         }
 

@@ -47,6 +47,9 @@ public final class QuestTracker {
     private static final Map<String, Integer> CLIENT_STATS = new HashMap<>();
     private static final Map<String, Integer> CLIENT_ITEM_PROGRESS = new HashMap<>();
     private static final Map<String, Boolean> CLIENT_EFFECT_PROGRESS = new HashMap<>();
+    private static final Map<String, ResourceLocation> RL_CACHE = new HashMap<>();
+    private static final Map<String, Optional<Item>> ITEM_BY_ID_CACHE = new HashMap<>();
+    private static final Map<String, Holder<MobEffect>> EFFECT_BY_ID_CACHE = new HashMap<>();
 
     private static boolean SERVER_TOASTS_DISABLED = false;
     private static String ACTIVE_KEY = null;
@@ -60,16 +63,7 @@ public final class QuestTracker {
 
     private static boolean isClientMultiplayer() {
         if (FMLEnvironment.dist != Dist.CLIENT) return false;
-        try {
-            Class<?> mcClass = Class.forName("net.minecraft.client.Minecraft");
-            Object mc = mcClass.getMethod("getInstance").invoke(null);
-            if (mc == null) return CLIENT_IN_MULTIPLAYER;
-            Object conn = mcClass.getMethod("getConnection").invoke(mc);
-            if (conn == null) return false;
-            Object hasSp = mcClass.getMethod("hasSingleplayerServer").invoke(mc);
-            return hasSp instanceof Boolean b ? !b : CLIENT_IN_MULTIPLAYER;
-        } catch (Throwable ignored) {}
-        return CLIENT_IN_MULTIPLAYER;
+        return ClientOnly.isClientMultiplayerFlag(CLIENT_IN_MULTIPLAYER);
     }
 
     public static int getPermanentItemProgress(String key, int current, int required) {
@@ -118,7 +112,40 @@ public final class QuestTracker {
     }
 
     private static String sanitize(String s) {
-        return s == null ? "default" : s.replaceAll("[^a-zA-Z0-9._-]", "_");
+        if (s == null || s.isBlank()) return "default";
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if ((ch >= 'a' && ch <= 'z')
+                    || (ch >= 'A' && ch <= 'Z')
+                    || (ch >= '0' && ch <= '9')
+                    || ch == '.'
+                    || ch == '_'
+                    || ch == '-') {
+                out.append(ch);
+            } else {
+                out.append('_');
+            }
+        }
+        return out.isEmpty() ? "default" : out.toString();
+    }
+
+    private static ResourceLocation tryParseCached(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        if (RL_CACHE.containsKey(raw)) return RL_CACHE.get(raw);
+        ResourceLocation rl = ResourceLocation.tryParse(raw);
+        RL_CACHE.put(raw, rl);
+        return rl;
+    }
+
+    private static Item resolveItemById(String itemId) {
+        if (itemId == null || itemId.isBlank()) return null;
+        Optional<Item> cached = ITEM_BY_ID_CACHE.get(itemId);
+        if (cached != null) return cached.orElse(null);
+        ResourceLocation rl = tryParseCached(itemId);
+        Optional<Item> resolved = rl == null ? Optional.empty() : BuiltInRegistries.ITEM.getOptional(rl);
+        ITEM_BY_ID_CACHE.put(itemId, resolved);
+        return resolved.orElse(null);
     }
 
     private static String computeClientKey() {
@@ -223,20 +250,19 @@ public final class QuestTracker {
         return isSubmissionQuestType(q) && t.isItem();
     }
 
+    private static boolean hasItemOrSubmitTargets(QuestData.Quest q) {
+        if (q == null || q.completion == null || q.completion.targets == null) return false;
+        for (QuestData.Target t : q.completion.targets) {
+            if (t != null && (t.isItem() || t.isSubmit())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static boolean isReady(QuestData.Quest q, Player player) {
         if (player == null || q == null || q.completion == null) return false;
         if (getStatus(q, player) == Status.COMPLETED) return true;
-
-        if (q.completion.targets != null && !q.completion.targets.isEmpty()) {
-            boolean hasItemTargets = false;
-            for (QuestData.Target t : q.completion.targets) {
-                if (t != null && (t.isItem() || t.isSubmit())) {
-                    hasItemTargets = true;
-                    break;
-                }
-            }
-            if (hasItemTargets && getStatus(q, player) == Status.COMPLETED) return true;
-        }
 
         if (!dependenciesMet(q, player)) return false;
 
@@ -312,10 +338,10 @@ public final class QuestTracker {
         boolean isTagSyntax = id.startsWith("#");
         String key = isTagSyntax ? id.substring(1) : id;
 
-        ResourceLocation rl;
-        try { rl = ResourceLocation.parse(key); } catch (Exception e) { return 0; }
+        ResourceLocation rl = tryParseCached(key);
+        if (rl == null) return 0;
 
-        Item direct = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+        Item direct = resolveItemById(key);
         int found = 0;
 
         if (isTagSyntax || direct == null) {
@@ -345,17 +371,22 @@ public final class QuestTracker {
     }
 
     public static boolean hasEffect(Player player, String effectId) {
-        ResourceLocation rl;
-        try { rl = ResourceLocation.parse(effectId); } catch (Exception e) { return false; }
-        Holder<MobEffect> opt = BuiltInRegistries.MOB_EFFECT.getHolder(rl).orElse(null);
-        return opt != null && player.hasEffect(opt);
+        if (player == null || effectId == null || effectId.isBlank()) return false;
+        Holder<MobEffect> holder = EFFECT_BY_ID_CACHE.get(effectId);
+        if (!EFFECT_BY_ID_CACHE.containsKey(effectId)) {
+            ResourceLocation rl = tryParseCached(effectId);
+            holder = rl == null ? null : BuiltInRegistries.MOB_EFFECT.getHolder(rl).orElse(null);
+            EFFECT_BY_ID_CACHE.put(effectId, holder);
+        }
+        return holder != null && player.hasEffect(holder);
     }
 
     public static boolean hasAdvancement(Player player, String advId) {
         if (player == null || advId == null || advId.isBlank()) return false;
 
         final ResourceLocation rl;
-        try { rl = ResourceLocation.parse(advId); } catch (Exception e) { return false; }
+        rl = tryParseCached(advId);
+        if (rl == null) return false;
 
         if (player instanceof ServerPlayer sp) return hasAdvancementServer(sp, rl);
 
@@ -510,16 +541,7 @@ public final class QuestTracker {
             if (cur == Status.REDEEMED || cur == Status.REJECTED) continue;
 
             boolean ready = dependenciesMet(q, player) && isReady(q, player);
-
-            boolean hasItemTargets = false;
-            if (q.completion != null && q.completion.targets != null) {
-                for (QuestData.Target t : q.completion.targets) {
-                    if (t != null && (t.isItem() || t.isSubmit())) {
-                        hasItemTargets = true;
-                        break;
-                    }
-                }
-            }
+            boolean hasItemTargets = hasItemOrSubmitTargets(q);
 
             if (ready && cur == Status.INCOMPLETE) {
                 clientSetStatus(q.id, Status.COMPLETED);
@@ -546,16 +568,7 @@ public final class QuestTracker {
             if (cur == Status.REDEEMED || cur == Status.REJECTED) continue;
 
             boolean ready = dependenciesMet(q, sp) && isReady(q, sp);
-
-            boolean hasItemTargets = false;
-            if (q.completion != null && q.completion.targets != null) {
-                for (QuestData.Target t : q.completion.targets) {
-                    if (t != null && (t.isItem() || t.isSubmit())) {
-                        hasItemTargets = true;
-                        break;
-                    }
-                }
-            }
+            boolean hasItemTargets = hasItemOrSubmitTargets(q);
 
             if (ready && cur == Status.INCOMPLETE) {
                 setServerStatus(sp, q.id, Status.COMPLETED);
@@ -582,6 +595,16 @@ public final class QuestTracker {
 
     @OnlyIn(Dist.CLIENT)
     private static final class ClientOnly {
+
+        private static boolean isClientMultiplayerFlag(boolean fallback) {
+            try {
+                var mc = net.minecraft.client.Minecraft.getInstance();
+                if (mc == null) return fallback;
+                if (mc.getConnection() == null) return false;
+                return !mc.hasSingleplayerServer();
+            } catch (Throwable ignored) {}
+            return fallback;
+        }
 
         private static int adjustItemProgress(String key, int current, int required, int prev, int now) {
             try {

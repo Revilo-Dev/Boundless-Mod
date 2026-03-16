@@ -35,8 +35,11 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 @OnlyIn(Dist.CLIENT)
 public final class PinnedQuestHud {
@@ -61,6 +64,7 @@ public final class PinnedQuestHud {
     private static final int LEFT_PAD = 6;
 
     private static final Deque<String> PINS = new ArrayDeque<>();
+    private static final Map<String, ItemStack> ITEM_ICON_CACHE = new HashMap<>();
     private static boolean REGISTERED = false;
 
     private static boolean LOADED = false;
@@ -95,6 +99,7 @@ public final class PinnedQuestHud {
 
     public static void toggle(String questId) {
         if (questId == null || questId.isBlank()) return;
+        if (Config.disableQuestPinning()) return;
         ensureRegistered();
         ensureLoaded();
 
@@ -110,6 +115,7 @@ public final class PinnedQuestHud {
 
     public static boolean isPinned(String questId) {
         if (questId == null || questId.isBlank()) return false;
+        if (Config.disableQuestPinning()) return false;
         ensureRegistered();
         ensureLoaded();
         return PINS.contains(questId);
@@ -156,7 +162,22 @@ public final class PinnedQuestHud {
     }
 
     private static String sanitize(String s) {
-        return s == null ? "default" : s.replaceAll("[^a-zA-Z0-9._-]", "_");
+        if (s == null || s.isBlank()) return "default";
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if ((ch >= 'a' && ch <= 'z')
+                    || (ch >= 'A' && ch <= 'Z')
+                    || (ch >= '0' && ch <= '9')
+                    || ch == '.'
+                    || ch == '_'
+                    || ch == '-') {
+                out.append(ch);
+            } else {
+                out.append('_');
+            }
+        }
+        return out.isEmpty() ? "default" : out.toString();
     }
 
     private static Path savePath() {
@@ -186,6 +207,7 @@ public final class PinnedQuestHud {
             }
         } catch (Throwable ignored) {}
         dedupeClamp();
+        ITEM_ICON_CACHE.clear();
     }
 
     private static void save() {
@@ -220,6 +242,7 @@ public final class PinnedQuestHud {
             }
         } catch (Throwable ignored) {}
         PINS.clear();
+        ITEM_ICON_CACHE.clear();
         LOADED = false;
         ACTIVE_KEY = null;
     }
@@ -229,6 +252,7 @@ public final class PinnedQuestHud {
     }
 
     public static void onRenderGui(RenderGuiEvent.Post e) {
+        if (Config.disableQuestPinning()) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc == null || mc.player == null) return;
         if (mc.screen != null) return;
@@ -239,14 +263,15 @@ public final class PinnedQuestHud {
         Player player = mc.player;
 
         if (!PINS.isEmpty()) {
-            List<String> snapshot = new ArrayList<>(PINS);
             boolean changed = false;
-            for (String qid : snapshot) {
+            Iterator<String> it = PINS.iterator();
+            while (it.hasNext()) {
+                String qid = it.next();
                 QuestData.Quest q = QuestData.byId(qid).orElse(null);
                 if (q == null) continue;
                 QuestTracker.Status st = QuestTracker.getStatus(q, player);
                 if (st == QuestTracker.Status.REDEEMED || st == QuestTracker.Status.REJECTED) {
-                    PINS.remove(qid);
+                    it.remove();
                     changed = true;
                 }
             }
@@ -267,15 +292,13 @@ public final class PinnedQuestHud {
         boolean top = pos != null && pos.startsWith("top");
         boolean right = pos != null && pos.endsWith("right");
 
-        List<String> ids = new ArrayList<>(PINS);
-
         int baseX = right ? (sw - drawW - CORNER_PAD) : CORNER_PAD;
-        int count = Math.min(MAX_PINS, ids.size());
+        int count = Math.min(MAX_PINS, PINS.size());
         int topPad = CORNER_PAD + TOP_EXTRA_DOWN;
         int baseY = top ? topPad : (sh - CORNER_PAD - (count * drawH) - ((count - 1) * gap) - 24);
 
         int idx = 0;
-        for (String qid : ids) {
+        for (String qid : PINS) {
             if (idx >= MAX_PINS) break;
 
             QuestData.Quest q = QuestData.byId(qid).orElse(null);
@@ -434,6 +457,10 @@ public final class PinnedQuestHud {
     }
 
     private static ItemStack resolveItemIcon(String rawId) {
+        ItemStack cached = ITEM_ICON_CACHE.get(rawId);
+        if (cached != null) return cached.copy();
+
+        ItemStack resolved = ItemStack.EMPTY;
         try {
             if (rawId == null || rawId.isBlank()) return ItemStack.EMPTY;
 
@@ -446,18 +473,30 @@ public final class PinnedQuestHud {
             Item direct = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
             boolean treatAsTag = isTagSyntax || direct == null;
 
-            if (!treatAsTag && direct != null) return new ItemStack(direct);
+            if (!treatAsTag && direct != null) {
+                resolved = new ItemStack(direct);
+            } else {
+                var itemTag = net.minecraft.tags.TagKey.create(Registries.ITEM, rl);
+                for (Item it : BuiltInRegistries.ITEM) {
+                    if (it.builtInRegistryHolder().is(itemTag)) {
+                        resolved = new ItemStack(it);
+                        break;
+                    }
+                }
 
-            var itemTag = net.minecraft.tags.TagKey.create(Registries.ITEM, rl);
-            for (Item it : BuiltInRegistries.ITEM) {
-                if (it.builtInRegistryHolder().is(itemTag)) return new ItemStack(it);
-            }
-
-            var blockTag = net.minecraft.tags.TagKey.create(Registries.BLOCK, rl);
-            for (Item it : BuiltInRegistries.ITEM) {
-                if (it instanceof BlockItem bi && bi.getBlock().builtInRegistryHolder().is(blockTag)) return new ItemStack(it);
+                if (resolved.isEmpty()) {
+                    var blockTag = net.minecraft.tags.TagKey.create(Registries.BLOCK, rl);
+                    for (Item it : BuiltInRegistries.ITEM) {
+                        if (it instanceof BlockItem bi && bi.getBlock().builtInRegistryHolder().is(blockTag)) {
+                            resolved = new ItemStack(it);
+                            break;
+                        }
+                    }
+                }
             }
         } catch (Throwable ignored) {}
-        return ItemStack.EMPTY;
+
+        ITEM_ICON_CACHE.put(rawId, resolved.copy());
+        return resolved;
     }
 }

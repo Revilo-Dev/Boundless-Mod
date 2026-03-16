@@ -7,6 +7,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.revilodev.boundless.Config;
 import net.revilodev.boundless.network.BoundlessNetwork;
 
 public class QuestBookItem extends Item {
@@ -17,13 +18,14 @@ public class QuestBookItem extends Item {
 
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
+        if (Config.disableQuestBook()) {
+            return InteractionResultHolder.pass(player.getItemInHand(hand));
+        }
 
-        // SERVER side → tell client to open screen
         if (!level.isClientSide && player instanceof ServerPlayer sp) {
             BoundlessNetwork.sendOpenQuestBook(sp);
         }
 
-        // return normally
         return InteractionResultHolder.sidedSuccess(player.getItemInHand(hand), level.isClientSide);
     }
 }

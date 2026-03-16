@@ -23,6 +23,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
+import net.revilodev.boundless.Config;
 import net.revilodev.boundless.client.toast.QuestUnlockedToast;
 import net.revilodev.boundless.quest.KillCounterState;
 import net.revilodev.boundless.quest.QuestData;
@@ -64,6 +65,7 @@ public final class BoundlessNetwork {
         r.playToServer(Reject.TYPE, Reject.CODEC, BoundlessNetwork::handleReject);
 
         r.playToClient(SyncStatus.TYPE, SyncStatus.CODEC, BoundlessNetwork::handleSyncStatus);
+        r.playToClient(SyncStatuses.TYPE, SyncStatuses.CODEC, BoundlessNetwork::handleSyncStatuses);
         r.playToClient(SyncKills.TYPE, SyncKills.CODEC, BoundlessNetwork::handleSyncKills);
         r.playToClient(SyncClear.TYPE, SyncClear.CODEC, BoundlessNetwork::handleSyncClear);
         r.playToClient(Toast.TYPE, Toast.CODEC, BoundlessNetwork::handleToast);
@@ -102,6 +104,34 @@ public final class BoundlessNetwork {
                 buf -> new SyncStatus(buf.readUtf(), buf.readUtf())
         );
         @Override public Type<SyncStatus> type() { return TYPE; }
+    }
+
+    public record StatusEntry(String questId, String status) {
+        public static final StreamCodec<FriendlyByteBuf, StatusEntry> CODEC = StreamCodec.of(
+                (buf, e) -> {
+                    buf.writeUtf(e.questId);
+                    buf.writeUtf(e.status);
+                },
+                buf -> new StatusEntry(buf.readUtf(), buf.readUtf())
+        );
+    }
+
+    public record SyncStatuses(List<StatusEntry> entries) implements CustomPacketPayload {
+        public static final Type<SyncStatuses> TYPE =
+                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "sync_statuses"));
+        public static final StreamCodec<FriendlyByteBuf, SyncStatuses> CODEC = StreamCodec.of(
+                (buf, p) -> {
+                    buf.writeVarInt(p.entries.size());
+                    for (StatusEntry e : p.entries) StatusEntry.CODEC.encode(buf, e);
+                },
+                buf -> {
+                    int n = buf.readVarInt();
+                    List<StatusEntry> list = new ArrayList<>(n);
+                    for (int i = 0; i < n; i++) list.add(StatusEntry.CODEC.decode(buf));
+                    return new SyncStatuses(list);
+                }
+        );
+        @Override public Type<SyncStatuses> type() { return TYPE; }
     }
 
     public record KillEntry(String entityId, int count) {
@@ -189,15 +219,19 @@ public final class BoundlessNetwork {
         PacketDistributor.sendToPlayer(p, new SyncClear());
         sendQuestData(p);
 
+        List<KillEntry> killEntries = new ArrayList<>();
         KillCounterState.get(p.serverLevel()).snapshotFor(p.getUUID())
-                .forEach((id, ct) -> PacketDistributor.sendToPlayer(
-                        p, new SyncKills(List.of(new KillEntry(id, ct)))
-                ));
+                .forEach((id, ct) -> killEntries.add(new KillEntry(id, ct)));
+        if (!killEntries.isEmpty()) {
+            PacketDistributor.sendToPlayer(p, new SyncKills(killEntries));
+        }
 
+        List<StatusEntry> statuses = new ArrayList<>();
         QuestProgressState.get(p.serverLevel()).snapshotFor(p.getUUID())
-                .forEach((questId, status) -> PacketDistributor.sendToPlayer(
-                        p, new SyncStatus(questId, status)
-                ));
+                .forEach((questId, status) -> statuses.add(new StatusEntry(questId, status)));
+        if (!statuses.isEmpty()) {
+            PacketDistributor.sendToPlayer(p, new SyncStatuses(statuses));
+        }
 
         syncComputedCompletion(p);
     }
@@ -421,6 +455,14 @@ public final class BoundlessNetwork {
         );
     }
 
+    private static void handleSyncStatuses(SyncStatuses p, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            for (StatusEntry e : p.entries()) {
+                QuestTracker.clientSetStatus(e.questId(), QuestTracker.Status.valueOf(e.status()));
+            }
+        });
+    }
+
     private static void handleSyncKills(SyncKills p, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             for (KillEntry e : p.entries())
@@ -442,7 +484,7 @@ public final class BoundlessNetwork {
 
     private static void handleOpenQuestBook(OpenQuestBook p, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
-            if (ctx.player().level().isClientSide()) {
+            if (ctx.player().level().isClientSide() && !Config.disableQuestBook()) {
                 ClientOnly.openQuestBook();
             }
         });
@@ -458,10 +500,15 @@ public final class BoundlessNetwork {
         if ("submission".equalsIgnoreCase(q.type) || "submit".equalsIgnoreCase(q.type)) return true;
 
         for (QuestData.Target t : q.completion.targets) {
-            if (t == null) continue;
-            if ("submit".equalsIgnoreCase(t.kind)) return true;
+            if (isSubmitTarget(q, t)) return true;
         }
         return false;
+    }
+
+    private static boolean isSubmitTarget(QuestData.Quest q, QuestData.Target t) {
+        if (t == null) return false;
+        return "submit".equalsIgnoreCase(t.kind)
+                || (("submission".equalsIgnoreCase(q.type) || "submit".equalsIgnoreCase(q.type)) && t.isItem());
     }
 
     private static boolean consumeSubmitItems(ServerPlayer sp, QuestData.Quest q) {
@@ -475,10 +522,7 @@ public final class BoundlessNetwork {
 
         for (QuestData.Target t : q.completion.targets) {
             if (t == null) continue;
-
-            boolean submitTarget = "submit".equalsIgnoreCase(t.kind)
-                    || (("submission".equalsIgnoreCase(q.type) || "submit".equalsIgnoreCase(q.type)) && t.isItem());
-
+            boolean submitTarget = isSubmitTarget(q, t);
             if (!submitTarget) continue;
 
             String raw = t.id;
@@ -509,10 +553,7 @@ public final class BoundlessNetwork {
 
         for (QuestData.Target t : q.completion.targets) {
             if (t == null) continue;
-
-            boolean submitTarget = "submit".equalsIgnoreCase(t.kind)
-                    || (("submission".equalsIgnoreCase(q.type) || "submit".equalsIgnoreCase(q.type)) && t.isItem());
-
+            boolean submitTarget = isSubmitTarget(q, t);
             if (!submitTarget) continue;
 
             String raw = t.id;

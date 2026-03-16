@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -50,6 +51,14 @@ public final class QuestListWidget extends AbstractWidget {
 
     private String category = "all";
     private boolean bypassFilters = false;
+    private List<RowEntry> cachedRows = List.of();
+    private int cachedContentHeight = 0;
+    private long cachedTick = Long.MIN_VALUE;
+    private String cachedCategory = null;
+    private boolean cachedBypassFilters = false;
+    private boolean cachedAllowCompleted = false;
+    private boolean cachedAllowRejected = false;
+    private boolean cachedAllowLocked = true;
 
     public QuestListWidget(int x, int y, int w, int h, Consumer<QuestData.Quest> onClick) {
         super(x, y, w, h, Component.empty());
@@ -61,15 +70,18 @@ public final class QuestListWidget extends AbstractWidget {
         for (QuestData.Quest q : qs) quests.add(q);
         quests.sort(Comparator.comparing(QuestData.Quest::sourceSortKey));
         scrollY = 0;
+        invalidateRowsCache();
     }
 
     public void setCategory(String cat) {
         category = cat == null ? "all" : cat;
         scrollY = 0;
+        invalidateRowsCache();
     }
 
     public void setBypassFilters(boolean bypass) {
         this.bypassFilters = bypass;
+        invalidateRowsCache();
     }
 
     public void setBounds(int x, int y, int w, int h) {
@@ -115,6 +127,7 @@ public final class QuestListWidget extends AbstractWidget {
         String key = subKey(sc.category, sc.id);
         boolean next = !isSubOpen(sc);
         subOpen.put(key, next);
+        invalidateRowsCache();
     }
 
     private String prettifyId(String raw) {
@@ -258,17 +271,57 @@ public final class QuestListWidget extends AbstractWidget {
         return rows;
     }
 
+    private void invalidateRowsCache() {
+        cachedRows = List.of();
+        cachedContentHeight = 0;
+        cachedTick = Long.MIN_VALUE;
+    }
+
+    private List<RowEntry> rowsForCurrentState() {
+        if (mc.player == null) return List.of();
+
+        long tick = mc.level != null ? mc.level.getGameTime() : Long.MIN_VALUE;
+        boolean allowCompleted = QuestFilterBar.allowCompleted();
+        boolean allowRejected = QuestFilterBar.allowRejected();
+        boolean allowLocked = QuestFilterBar.allowLocked();
+
+        boolean stale = cachedTick != tick
+                || !Objects.equals(cachedCategory, category)
+                || cachedBypassFilters != bypassFilters
+                || cachedAllowCompleted != allowCompleted
+                || cachedAllowRejected != allowRejected
+                || cachedAllowLocked != allowLocked;
+
+        if (stale) {
+            cachedRows = buildRows();
+            cachedContentHeight = contentHeight(cachedRows);
+            cachedTick = tick;
+            cachedCategory = category;
+            cachedBypassFilters = bypassFilters;
+            cachedAllowCompleted = allowCompleted;
+            cachedAllowRejected = allowRejected;
+            cachedAllowLocked = allowLocked;
+        }
+
+        return cachedRows;
+    }
+
     private int rowHeight(RowEntry row) {
         if (row == null) return 0;
         return (row.isHeader() ? subHeaderH : rowH) + pad;
     }
 
-    private int contentHeight() {
+    private int contentHeight(List<RowEntry> rows) {
         int total = 0;
-        for (RowEntry row : buildRows()) {
+        for (RowEntry row : rows) {
             total += rowHeight(row);
         }
         return total;
+    }
+
+    private int contentHeight() {
+        rowsForCurrentState();
+        return cachedContentHeight;
     }
 
     @Override
@@ -281,7 +334,7 @@ public final class QuestListWidget extends AbstractWidget {
         int yOff = getY() - Mth.floor(scrollY);
         int yCursor = yOff;
 
-        List<RowEntry> rows = buildRows();
+        List<RowEntry> rows = rowsForCurrentState();
         for (RowEntry row : rows) {
             int h = row.isHeader() ? subHeaderH : rowH;
             int top = yCursor;
@@ -367,7 +420,7 @@ public final class QuestListWidget extends AbstractWidget {
 
         gg.disableScissor();
 
-        int content = contentHeight();
+        int content = contentHeight(rows);
         if (content > height) {
             float maxScroll = content - height;
             float ratio = (float) height / (float) content;
@@ -391,7 +444,7 @@ public final class QuestListWidget extends AbstractWidget {
         int localY = (int) (my - getY() + scrollY);
         int yCursor = 0;
 
-        List<RowEntry> rows = buildRows();
+        List<RowEntry> rows = rowsForCurrentState();
         for (RowEntry row : rows) {
             int h = rowHeight(row);
             if (localY >= yCursor && localY < yCursor + h) {

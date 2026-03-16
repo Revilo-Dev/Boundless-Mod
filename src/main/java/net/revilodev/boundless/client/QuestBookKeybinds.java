@@ -7,6 +7,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
+import net.revilodev.boundless.Config;
 import org.lwjgl.glfw.GLFW;
 
 @OnlyIn(Dist.CLIENT)
@@ -29,6 +30,7 @@ public final class QuestBookKeybinds {
 
     public static void onClientTick(ClientTickEvent.Post event) {
         if (openQuestBook == null) return;
+        if (Config.disableQuestBook()) return;
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;

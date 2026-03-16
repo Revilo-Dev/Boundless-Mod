@@ -50,7 +50,7 @@ public final class QuestPanelClient {
         State st = new State(inv);
         STATES.put(s, st);
 
-        if (!Config.hideQuestBookToggle()) {
+        if (shouldShowInventoryQuestButton()) {
             int btnX = inv.getGuiLeft() + 125;
             int btnY = inv.getGuiTop() + 61;
             QuestToggleButton btn = new QuestToggleButton(btnX, btnY, BTN_TEX, BTN_TEX_HOVER, () -> toggle(st));
@@ -91,7 +91,7 @@ public final class QuestPanelClient {
 
         reposition(inv, st);
 
-        if (lastQuestOpen) {
+        if (lastQuestOpen && isQuestBookEnabled()) {
             st.open = true;
             st.originalLeft = getLeft(inv);
             setLeft(inv, computeCenteredLeft(inv));
@@ -111,6 +111,10 @@ public final class QuestPanelClient {
         Screen s = e.getScreen();
         State st = STATES.get(s);
         if (st == null || !(s instanceof InventoryScreen inv)) return;
+        if (!isQuestBookEnabled() && st.open) {
+            st.open = false;
+            if (st.originalLeft != null) setLeft(inv, st.originalLeft);
+        }
         if (st.btn != null && Minecraft.getInstance().player != null) {
             if (QuestTracker.hasAnyCompleted(Minecraft.getInstance().player)) {
                 st.btn.setTextures(BTN_TEX_TOAST, BTN_TEX_TOAST_HOVER);
@@ -124,9 +128,6 @@ public final class QuestPanelClient {
         reposition(inv, st);
         updateVisibility(st);
         handleRecipeButtonRules(inv, st);
-    }
-
-    public static void onScreenRenderPost(ScreenEvent.Render.Post e) {
     }
 
     public static void onMouseScrolled(ScreenEvent.MouseScrolled.Pre e) {
@@ -172,7 +173,7 @@ public final class QuestPanelClient {
                 if (st.list != null) st.list.setCategory(st.selectedCategory);
             }
             if (st.btn != null) {
-                boolean show = !Config.hideQuestBookToggle();
+                boolean show = shouldShowInventoryQuestButton();
                 st.btn.visible = show;
                 st.btn.active = show;
             }
@@ -180,6 +181,7 @@ public final class QuestPanelClient {
     }
 
     private static void toggle(State st) {
+        if (!isQuestBookEnabled()) return;
         st.open = !st.open;
         lastQuestOpen = st.open;
         if (st.open) {
@@ -253,6 +255,11 @@ public final class QuestPanelClient {
     }
 
     private static void handleRecipeButtonRules(InventoryScreen inv, State st) {
+        if (!shouldShowInventoryQuestButton()) {
+            if (st.btn != null) st.btn.visible = false;
+            toggleRecipeButtonVisibility(inv, !st.open);
+            return;
+        }
         if (st.open) {
             if (st.btn != null) st.btn.visible = true;
             toggleRecipeButtonVisibility(inv, false);
@@ -363,14 +370,24 @@ public final class QuestPanelClient {
         }
 
         if (st.header != null) {
-            st.header.visible = st.open;
+            boolean showHeader = st.open && !Config.hideCategoryHeader();
+            st.header.visible = showHeader;
             st.header.active = false;
         }
 
         if (st.filter != null) {
-            st.filter.visible = st.open;
-            st.filter.active = st.open;
+            boolean showFilters = st.open && !Config.hideFilters();
+            st.filter.visible = showFilters;
+            st.filter.active = showFilters;
         }
+    }
+
+    private static boolean isQuestBookEnabled() {
+        return !Config.disableQuestBook();
+    }
+
+    private static boolean shouldShowInventoryQuestButton() {
+        return isQuestBookEnabled() && !Config.hideQuestBookInInventory();
     }
 
     private static void openSettings(InventoryScreen inv) {

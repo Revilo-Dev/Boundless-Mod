@@ -66,7 +66,6 @@ public final class BoundlessMod {
     private void clientSetup(final FMLClientSetupEvent event) {
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenInit);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenClosing);
-        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPost);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPre);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseScrolled);
         NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLogin);
@@ -77,7 +76,7 @@ public final class BoundlessMod {
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.TOOLS_AND_UTILITIES) {
-            if (!Config.hideQuestBookToggle()) {
+            if (!Config.disableQuestBook()) {
                 event.accept(ModItems.QUEST_BOOK.get());
             }
         }
@@ -98,7 +97,7 @@ public final class BoundlessMod {
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer sp) {
             BoundlessNetwork.syncPlayer(sp);
-            if (Config.spawnWithQuestBook() && !hasQuestBook(sp)) {
+            if (!Config.disableQuestBook() && Config.spawnWithQuestBook() && !hasQuestBook(sp)) {
                 sp.getInventory().add(new ItemStack(ModItems.QUEST_BOOK.get()));
             }
         }

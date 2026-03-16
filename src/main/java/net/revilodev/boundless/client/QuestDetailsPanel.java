@@ -23,6 +23,7 @@ import net.minecraft.world.item.Items;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.revilodev.boundless.Config;
 import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestTracker;
@@ -34,7 +35,8 @@ import java.util.List;
 public final class QuestDetailsPanel extends AbstractWidget {
 
     private static final int LINE_ITEM_ROW = 22;
-    private static final int BOTTOM_PADDING = 6;
+    private static final int BOTTOM_PADDING = 12;
+    private static final int CONTENT_BOTTOM_MARGIN = 10;
     private static final int HEADER_HEIGHT = 19;
     private static final int DESC_CHAR_LIMIT = 180;
 
@@ -155,7 +157,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
         int w = this.width;
 
         int contentTop = y + HEADER_HEIGHT;
-        int contentBottom = complete.getY() - 3;
+        int contentBottom = complete.getY() - CONTENT_BOTTOM_MARGIN;
         int viewportH = Math.max(0, contentBottom - contentTop);
 
         measuredContentHeight = measureContentHeight(w);
@@ -195,8 +197,9 @@ public final class QuestDetailsPanel extends AbstractWidget {
             gg.drawString(mc.font, title, x + 26, y + 6, 0xFFFFFF, false);
         }
 
-        pin.visible = true;
-        pin.active = true;
+        boolean pinningEnabled = !Config.disableQuestPinning();
+        pin.visible = pinningEnabled;
+        pin.active = pinningEnabled;
         pin.render(gg, mouseX, mouseY, partialTick);
 
         gg.enableScissor(x, contentTop, x + w, contentBottom);
@@ -713,7 +716,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
         if (!this.visible || !this.active) return false;
 
         int contentTop = this.getY() + HEADER_HEIGHT;
-        int contentBottom = complete.getY() - 3;
+        int contentBottom = complete.getY() - CONTENT_BOTTOM_MARGIN;
 
         if (mouseX < this.getX() || mouseX > this.getX() + this.width) return false;
         if (mouseY < contentTop || mouseY > contentBottom) return false;

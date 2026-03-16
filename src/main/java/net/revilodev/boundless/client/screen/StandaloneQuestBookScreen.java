@@ -6,6 +6,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
+import net.revilodev.boundless.Config;
 import net.revilodev.boundless.client.CategoryTabsWidget;
 import net.revilodev.boundless.client.CategoryHeaderWidget;
 import net.revilodev.boundless.client.QuestDetailsPanel;
@@ -40,6 +41,11 @@ public final class StandaloneQuestBookScreen extends Screen {
 
     @Override
     protected void init() {
+        if (Config.disableQuestBook()) {
+            if (minecraft != null) minecraft.setScreen(null);
+            return;
+        }
+
         int cx = this.width / 2;
         int cy = this.height / 2;
 
@@ -120,8 +126,16 @@ public final class StandaloneQuestBookScreen extends Screen {
         header.visible = true;
         header.active = false;
 
-        filter.visible = true;
-        filter.active = true;
+        if (header != null) {
+            boolean showHeader = !Config.hideCategoryHeader();
+            header.visible = showHeader;
+        }
+
+        if (filter != null) {
+            boolean showFilters = !Config.hideFilters();
+            filter.visible = showFilters;
+            filter.active = showFilters;
+        }
     }
 
     @Override
@@ -130,6 +144,10 @@ public final class StandaloneQuestBookScreen extends Screen {
 
     @Override
     public void render(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
+        if (Config.disableQuestBook()) {
+            if (minecraft != null) minecraft.setScreen(null);
+            return;
+        }
         gg.fill(0, 0, this.width, this.height, 0xA0000000);
         gg.blit(PANEL_TEX, leftX, topY, 0, 0, panelWidth, panelHeight, panelWidth, panelHeight);
         gg.blit(PANEL_TEX, rightX, topY, 0, 0, panelWidth, panelHeight, panelWidth, panelHeight);
