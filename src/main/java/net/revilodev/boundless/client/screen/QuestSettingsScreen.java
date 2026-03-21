@@ -67,7 +67,9 @@ public final class QuestSettingsScreen extends Screen {
     private ConfigRow uiHideFiltersRow;
     private ConfigRow uiDisableCategoriesRow;
     private ConfigRow uiHideQuestWidgetIconsRow;
+    private ConfigRow uiEnableSearchBoxRow;
     private ConfigRow functionalityDisablePinningRow;
+    private ConfigRow functionalityAutoClaimRow;
     private ConfigRow gameplayDisableQuestBookRow;
     private ConfigRow gameplaySpawnWithBookRow;
 
@@ -87,7 +89,9 @@ public final class QuestSettingsScreen extends Screen {
     private int uiHideFiltersBaseY;
     private int uiDisableCategoriesBaseY;
     private int uiHideQuestWidgetIconsBaseY;
+    private int uiEnableSearchBoxBaseY;
     private int functionalityDisablePinningBaseY;
+    private int functionalityAutoClaimBaseY;
     private int gameplayDisableQuestBookBaseY;
     private int gameplaySpawnWithBookBaseY;
 
@@ -97,7 +101,9 @@ public final class QuestSettingsScreen extends Screen {
     private boolean hideFilters;
     private boolean disableCategories;
     private boolean hideQuestWidgetIcons;
+    private boolean enableQuestSearchBox;
     private boolean disableQuestPinning;
+    private boolean autoClaimQuestRewards;
     private boolean disableQuestBook;
     private boolean spawnWithQuestBook;
 
@@ -149,9 +155,11 @@ public final class QuestSettingsScreen extends Screen {
         uiHideFiltersBaseY = uiRow1 + rowGap * 3;
         uiDisableCategoriesBaseY = uiRow1 + rowGap * 4;
         uiHideQuestWidgetIconsBaseY = uiRow1 + rowGap * 5;
-        functionalityHeaderBaseY = uiRow1 + rowGap * 6 + 4;
+        uiEnableSearchBoxBaseY = uiRow1 + rowGap * 6;
+        functionalityHeaderBaseY = uiRow1 + rowGap * 7 + 4;
         functionalityDisablePinningBaseY = functionalityHeaderBaseY + 10;
-        gameplayHeaderBaseY = functionalityDisablePinningBaseY + rowGap + 2;
+        functionalityAutoClaimBaseY = functionalityDisablePinningBaseY + rowGap;
+        gameplayHeaderBaseY = functionalityAutoClaimBaseY + rowGap + 2;
         gameplayDisableQuestBookBaseY = gameplayHeaderBaseY + 10;
         gameplaySpawnWithBookBaseY = gameplayDisableQuestBookBaseY + rowGap;
 
@@ -181,11 +189,19 @@ public final class QuestSettingsScreen extends Screen {
                 "Hide icons in quest list widgets.",
                 () -> hideQuestWidgetIcons ? "On" : "Off",
                 () -> hideQuestWidgetIcons = !hideQuestWidgetIcons);
+        uiEnableSearchBoxRow = new ConfigRow(px, uiEnableSearchBoxBaseY, pw, "Enable Quest Search",
+                "Show a search box above the quest list.",
+                () -> enableQuestSearchBox ? "On" : "Off",
+                () -> enableQuestSearchBox = !enableQuestSearchBox);
 
         functionalityDisablePinningRow = new ConfigRow(px, functionalityDisablePinningBaseY, pw, "Disable Quest Pinning",
                 "Disable pin buttons and pinned quest HUD.",
                 () -> disableQuestPinning ? "On" : "Off",
                 () -> disableQuestPinning = !disableQuestPinning);
+        functionalityAutoClaimRow = new ConfigRow(px, functionalityAutoClaimBaseY, pw, "Auto Claim Rewards",
+                "Automatically claim rewards when a quest becomes complete.",
+                () -> autoClaimQuestRewards ? "On" : "Off",
+                () -> autoClaimQuestRewards = !autoClaimQuestRewards);
 
         gameplayDisableQuestBookRow = new ConfigRow(px, gameplayDisableQuestBookBaseY, pw, "Disable Quest Book",
                 "Disable opening the quest book from key/item/network open.",
@@ -205,7 +221,9 @@ public final class QuestSettingsScreen extends Screen {
         addRenderableWidget(uiHideFiltersRow);
         addRenderableWidget(uiDisableCategoriesRow);
         addRenderableWidget(uiHideQuestWidgetIconsRow);
+        addRenderableWidget(uiEnableSearchBoxRow);
         addRenderableWidget(functionalityDisablePinningRow);
+        addRenderableWidget(functionalityAutoClaimRow);
         addRenderableWidget(gameplayDisableQuestBookRow);
         addRenderableWidget(gameplaySpawnWithBookRow);
         applyConfigScrollLayout();
@@ -255,8 +273,12 @@ public final class QuestSettingsScreen extends Screen {
         uiDisableCategoriesRow.active = config;
         uiHideQuestWidgetIconsRow.visible = config;
         uiHideQuestWidgetIconsRow.active = config;
+        uiEnableSearchBoxRow.visible = config;
+        uiEnableSearchBoxRow.active = config;
         functionalityDisablePinningRow.visible = config;
         functionalityDisablePinningRow.active = config;
+        functionalityAutoClaimRow.visible = config;
+        functionalityAutoClaimRow.active = config;
         gameplayDisableQuestBookRow.visible = config;
         gameplayDisableQuestBookRow.active = config;
         gameplaySpawnWithBookRow.visible = config;
@@ -285,7 +307,9 @@ public final class QuestSettingsScreen extends Screen {
         hideFilters = Config.hideFilters();
         disableCategories = Config.disableCategories();
         hideQuestWidgetIcons = Config.hideQuestWidgetIcons();
+        enableQuestSearchBox = Config.enableQuestSearchBox();
         disableQuestPinning = Config.disableQuestPinning();
+        autoClaimQuestRewards = Config.autoClaimQuestRewards();
         disableQuestBook = Config.disableQuestBook();
         spawnWithQuestBook = Config.spawnWithQuestBook();
     }
@@ -307,7 +331,9 @@ public final class QuestSettingsScreen extends Screen {
         Config.HIDE_FILTERS.set(hideFilters);
         Config.DISABLE_CATEGORIES.set(disableCategories);
         Config.HIDE_QUEST_WIDGET_ICONS.set(hideQuestWidgetIcons);
+        Config.ENABLE_QUEST_SEARCH_BOX.set(enableQuestSearchBox);
         Config.DISABLE_QUEST_PINNING.set(disableQuestPinning);
+        Config.AUTO_CLAIM_QUEST_REWARDS.set(autoClaimQuestRewards);
         Config.DISABLE_QUEST_BOOK.set(disableQuestBook);
         Config.SPAWN_WITH_QUEST_BOOK.set(spawnWithQuestBook);
         Config.SPEC.save();
@@ -330,10 +356,12 @@ public final class QuestSettingsScreen extends Screen {
                 "",
                 List.of(),
                 false,
-                null,
-                null,
-                null,
+                false,
+                false,
+                new QuestData.Rewards(List.of(), List.of(), List.of(), List.of(), "", 0),
                 "all",
+                null,
+                "",
                 "",
                 id
         );
@@ -452,7 +480,9 @@ public final class QuestSettingsScreen extends Screen {
         layoutRow(uiHideFiltersRow, uiHideFiltersBaseY, top, bottom);
         layoutRow(uiDisableCategoriesRow, uiDisableCategoriesBaseY, top, bottom);
         layoutRow(uiHideQuestWidgetIconsRow, uiHideQuestWidgetIconsBaseY, top, bottom);
+        layoutRow(uiEnableSearchBoxRow, uiEnableSearchBoxBaseY, top, bottom);
         layoutRow(functionalityDisablePinningRow, functionalityDisablePinningBaseY, top, bottom);
+        layoutRow(functionalityAutoClaimRow, functionalityAutoClaimBaseY, top, bottom);
         layoutRow(gameplayDisableQuestBookRow, gameplayDisableQuestBookBaseY, top, bottom);
         layoutRow(gameplaySpawnWithBookRow, gameplaySpawnWithBookBaseY, top, bottom);
     }

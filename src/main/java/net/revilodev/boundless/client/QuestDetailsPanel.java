@@ -44,6 +44,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/pin.png");
     private static final ResourceLocation TEX_UNPIN =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/unpin.png");
+    private static final ResourceLocation TEX_SCROLL =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/scroll-icon.png");
 
     private final Minecraft mc = Minecraft.getInstance();
     private QuestData.Quest quest;
@@ -52,6 +54,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
     private final CompleteButton complete;
     private final RejectButton reject;
     private final PinButton pin;
+    private final ScrollButton scroll;
     private final Runnable onBack;
 
     private float scrollY = 0f;
@@ -91,7 +94,11 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         this.complete = new CompleteButton(getX(), getY(), () -> {
             if (quest != null && mc.player != null) {
-                PacketDistributor.sendToServer(new BoundlessNetwork.Redeem(quest.id));
+                if (QuestTracker.canRestartRepeatable(quest, mc.player)) {
+                    PacketDistributor.sendToServer(new BoundlessNetwork.RestartRepeatable(quest.id));
+                } else {
+                    PacketDistributor.sendToServer(new BoundlessNetwork.Redeem(quest.id));
+                }
                 if (this.onBack != null) this.onBack.run();
             }
         });
@@ -111,6 +118,14 @@ public final class QuestDetailsPanel extends AbstractWidget {
         this.pin.visible = false;
         this.pin.active = false;
 
+        this.scroll = new ScrollButton(getX(), getY(), () -> {
+            if (quest != null && mc.player != null) {
+                PacketDistributor.sendToServer(new BoundlessNetwork.CreateScroll(quest.id));
+            }
+        });
+        this.scroll.visible = false;
+        this.scroll.active = false;
+
         setBounds(x, y, w, h);
     }
 
@@ -118,6 +133,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
     public AbstractButton completeButton() { return complete; }
     public AbstractButton rejectButton() { return reject; }
     public AbstractButton pinButton() { return pin; }
+    public AbstractButton scrollButton() { return scroll; }
 
     public void setHideBackButton(boolean v) { this.hideBackButton = v; }
 
@@ -134,7 +150,10 @@ public final class QuestDetailsPanel extends AbstractWidget {
         complete.setPosition(cxCenter, cy);
         reject.setPosition(x + w - reject.getWidth() - 2, cy);
 
-        pin.setPosition(x + w - pin.getWidth() - 5, y + 4);
+        int actionX = x + w - pin.getWidth() - 5;
+        int actionY = y + 4;
+        pin.setPosition(actionX, actionY);
+        scroll.setPosition(actionX, actionY);
     }
 
     public void setQuest(QuestData.Quest q) {
@@ -197,10 +216,18 @@ public final class QuestDetailsPanel extends AbstractWidget {
             gg.drawString(mc.font, title, x + 26, y + 6, 0xFFFFFF, false);
         }
 
-        boolean pinningEnabled = !Config.disableQuestPinning();
+        boolean showScrollButton = QuestTracker.canCreateScroll(quest, mc.player);
+        boolean pinningEnabled = !Config.disableQuestPinning() && !showScrollButton;
         pin.visible = pinningEnabled;
         pin.active = pinningEnabled;
-        pin.render(gg, mouseX, mouseY, partialTick);
+        if (pinningEnabled) {
+            pin.render(gg, mouseX, mouseY, partialTick);
+        }
+        scroll.visible = showScrollButton;
+        scroll.active = showScrollButton;
+        if (showScrollButton) {
+            scroll.render(gg, mouseX, mouseY, partialTick);
+        }
 
         gg.enableScissor(x, contentTop, x + w, contentBottom);
 
@@ -291,6 +318,21 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
                 boolean isSubmitTarget = t.isSubmit() || (legacySubmission && t.isItem());
                 boolean isItemLike = t.isItem() || t.isSubmit();
+
+                if (t.isXp()) {
+                    if (!printedSubmitHeader) {
+                        gg.drawString(mc.font, "Submit:", x + 4, curY[0], 0x1d9633, false);
+                        curY[0] += mc.font.lineHeight + 2;
+                        printedSubmitHeader = true;
+                    }
+                    int have = Math.min(QuestTracker.getXpAmount(mc.player, t.id), t.count);
+                    int color = have >= t.count ? 0x55FF55 : 0xFF5555;
+                    String label = "levels".equals(QuestTracker.normalizeXpType(t.id)) ? "Levels" : "XP";
+                    gg.renderItem(new ItemStack(Items.EXPERIENCE_BOTTLE), x + 4, curY[0]);
+                    gg.drawString(mc.font, label + ": " + have + "/" + t.count, x + 24, curY[0] + 4, color, false);
+                    curY[0] += LINE_ITEM_ROW;
+                    continue;
+                }
 
                 if (isItemLike) {
 
@@ -461,9 +503,10 @@ public final class QuestDetailsPanel extends AbstractWidget {
         boolean hasItemRewards = quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty();
         boolean hasCommandRewards = quest.rewards != null && quest.rewards.hasCommands();
         boolean hasFunctionRewards = quest.rewards != null && quest.rewards.hasFunctions();
+        boolean hasLootTableRewards = quest.rewards != null && quest.rewards.hasLootTables();
         boolean hasExpReward = quest.rewards != null && quest.rewards.hasExp();
 
-        boolean hasAnyReward = hasItemRewards || hasCommandRewards || hasFunctionRewards || hasExpReward;
+        boolean hasAnyReward = hasItemRewards || hasCommandRewards || hasFunctionRewards || hasLootTableRewards || hasExpReward;
         if (!hasAnyReward) {
             gg.disableScissor();
             for (Component tip : hoveredTooltips) gg.renderTooltip(mc.font, tip, mouseX, mouseY);
@@ -545,6 +588,31 @@ public final class QuestDetailsPanel extends AbstractWidget {
             }
         }
 
+        if (hasLootTableRewards) {
+            for (QuestData.LootTableReward lr : quest.rewards.lootTables) {
+                int lineY = curY[0];
+
+                ItemStack icon = new ItemStack(Items.CHEST);
+                if (lr.icon != null && !lr.icon.isBlank()) {
+                    try {
+                        Item it = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(lr.icon)).orElse(null);
+                        if (it != null) icon = new ItemStack(it);
+                    } catch (Exception ignored) {}
+                }
+
+                String display = (lr.title != null && !lr.title.isBlank()) ? lr.title : lr.lootTable;
+
+                gg.renderItem(icon, x + 4, lineY);
+                gg.drawWordWrap(mc.font, Component.literal(display), x + 24, lineY + 4, w - 30, 0xA8FFA8);
+
+                if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
+                    hoveredTooltips.add(Component.literal(lr.lootTable));
+                }
+
+                curY[0] += LINE_ITEM_ROW;
+            }
+        }
+
         if (hasExpReward) {
             int lineY = curY[0];
             gg.renderItem(new ItemStack(Items.EXPERIENCE_BOTTLE), x + 4, lineY);
@@ -572,6 +640,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         boolean depsMet = QuestTracker.dependenciesMet(quest, mc.player);
         QuestTracker.Status status = QuestTracker.getStatus(quest, mc.player);
+        boolean canRepeat = QuestTracker.canRestartRepeatable(quest, mc.player);
 
         boolean red = status == QuestTracker.Status.REDEEMED;
         boolean rej = status == QuestTracker.Status.REJECTED;
@@ -579,12 +648,13 @@ public final class QuestDetailsPanel extends AbstractWidget {
         boolean ready = depsMet && !done
                 && (status == QuestTracker.Status.COMPLETED || QuestTracker.isReady(quest, mc.player));
 
-        complete.active = ready;
-        complete.visible = !done;
+        complete.setMessage(Component.literal(canRepeat ? "Repeat" : "Complete"));
+        complete.active = canRepeat || ready;
+        complete.visible = !rej && (canRepeat || !red);
 
         reject.setOptionalAllowed(quest.optional);
-        reject.active = !done && quest.optional;
-        reject.visible = !done;
+        reject.active = !done && !canRepeat && quest.optional;
+        reject.visible = !done && !canRepeat;
         if (!reject.active || !reject.visible) reject.resetConfirmState();
 
         back.visible = !hideBackButton;
@@ -625,13 +695,15 @@ public final class QuestDetailsPanel extends AbstractWidget {
         boolean hasItemRewards = quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty();
         boolean hasCommandRewards = quest.rewards != null && quest.rewards.hasCommands();
         boolean hasFunctionRewards = quest.rewards != null && quest.rewards.hasFunctions();
+        boolean hasLootTableRewards = quest.rewards != null && quest.rewards.hasLootTables();
         boolean hasExpReward = quest.rewards != null && quest.rewards.hasExp();
 
-        if (hasItemRewards || hasCommandRewards || hasFunctionRewards || hasExpReward) {
+        if (hasItemRewards || hasCommandRewards || hasFunctionRewards || hasLootTableRewards || hasExpReward) {
             y += mc.font.wordWrapHeight("Reward:", w - 8) + 4;
             if (hasItemRewards) y += quest.rewards.items.size() * LINE_ITEM_ROW;
             if (hasCommandRewards) y += quest.rewards.commands.size() * LINE_ITEM_ROW;
             if (hasFunctionRewards) y += quest.rewards.functions.size() * LINE_ITEM_ROW;
+            if (hasLootTableRewards) y += quest.rewards.lootTables.size() * LINE_ITEM_ROW;
             if (hasExpReward) y += LINE_ITEM_ROW;
             y += 2;
         }
@@ -741,6 +813,11 @@ public final class QuestDetailsPanel extends AbstractWidget {
             return true;
         }
 
+        if (scroll.visible && scroll.active && scroll.isMouseOver(mouseX, mouseY)) {
+            scroll.onPress();
+            return true;
+        }
+
         for (DepClickRegion r : depRegions) {
             if (r.contains(mouseX, mouseY)) {
                 if ("__desc_toggle__".equals(r.questId)) {
@@ -782,6 +859,35 @@ public final class QuestDetailsPanel extends AbstractWidget {
             gg.pose().scale(0.5f, 0.5f, 1.0f);
             gg.blit(tex, 0, 0, 0, 0, 20, 20, 20, 20);
             gg.pose().popPose();
+        }
+
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput narration) {}
+    }
+
+    private static final class ScrollButton extends AbstractButton {
+        private final Runnable onPress;
+
+        private ScrollButton(int x, int y, Runnable onPress) {
+            super(x, y, 10, 10, Component.empty());
+            this.onPress = onPress;
+        }
+
+        @Override
+        public void onPress() {
+            if (onPress != null) onPress.run();
+        }
+
+        @Override
+        protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
+            gg.pose().pushPose();
+            gg.pose().translate(getX(), getY(), 0);
+            gg.pose().scale(0.5f, 0.5f, 1.0f);
+            gg.blit(TEX_SCROLL, 0, 0, 0, 0, 20, 20, 20, 20);
+            gg.pose().popPose();
+            if (this.isMouseOver(mouseX, mouseY)) {
+                gg.renderTooltip(Minecraft.getInstance().font, Component.literal("Create quest scroll"), mouseX, mouseY);
+            }
         }
 
         @Override

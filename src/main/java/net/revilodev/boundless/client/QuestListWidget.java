@@ -59,6 +59,8 @@ public final class QuestListWidget extends AbstractWidget {
     private boolean cachedAllowCompleted = false;
     private boolean cachedAllowRejected = false;
     private boolean cachedAllowLocked = true;
+    private String searchQuery = "";
+    private int topInset = 0;
 
     public QuestListWidget(int x, int y, int w, int h, Consumer<QuestData.Quest> onClick) {
         super(x, y, w, h, Component.empty());
@@ -89,6 +91,18 @@ public final class QuestListWidget extends AbstractWidget {
         this.setY(y);
         this.width = w;
         this.height = h;
+    }
+
+    public void setSearchQuery(String searchQuery) {
+        String next = searchQuery == null ? "" : searchQuery.trim().toLowerCase(java.util.Locale.ROOT);
+        if (Objects.equals(this.searchQuery, next)) return;
+        this.searchQuery = next;
+        scrollY = 0;
+        invalidateRowsCache();
+    }
+
+    public void setTopInset(int topInset) {
+        this.topInset = Math.max(0, topInset);
     }
 
     private static final class RowEntry {
@@ -204,6 +218,12 @@ public final class QuestListWidget extends AbstractWidget {
         return true;
     }
 
+    private boolean matchesSearch(QuestData.Quest q) {
+        if (q == null) return false;
+        if (searchQuery == null || searchQuery.isBlank()) return true;
+        return q.name != null && q.name.toLowerCase(java.util.Locale.ROOT).contains(searchQuery);
+    }
+
     private List<RowEntry> buildRows() {
         List<RowEntry> rows = new ArrayList<>();
         if (mc.player == null) return rows;
@@ -215,6 +235,7 @@ public final class QuestListWidget extends AbstractWidget {
             if (!matchesCategory(q)) continue;
             if (!isActuallyVisible(q)) continue;
             if (!passesFilters(q)) continue;
+            if (!matchesSearch(q)) continue;
 
             if (q.subCategory == null || q.subCategory.isBlank()) {
                 ungrouped.add(q);
@@ -329,9 +350,11 @@ public final class QuestListWidget extends AbstractWidget {
         if (!visible || mc.player == null) return;
 
         RenderSystem.enableBlend();
-        gg.enableScissor(getX(), getY(), getX() + width, getY() + height);
+        int contentTop = getY() + topInset;
+        int viewportHeight = Math.max(0, height - topInset);
+        gg.enableScissor(getX(), contentTop, getX() + width, contentTop + viewportHeight);
 
-        int yOff = getY() - Mth.floor(scrollY);
+        int yOff = contentTop - Mth.floor(scrollY);
         int yCursor = yOff;
 
         List<RowEntry> rows = rowsForCurrentState();
@@ -340,8 +363,8 @@ public final class QuestListWidget extends AbstractWidget {
             int h = row.isHeader() ? subHeaderH : rowH;
             int top = yCursor;
 
-            if (top > getY() + height) break;
-            if (top + h < getY()) {
+            if (top > contentTop + viewportHeight) break;
+            if (top + h < contentTop) {
                 yCursor += rowHeight(row);
                 continue;
             }
@@ -428,12 +451,12 @@ public final class QuestListWidget extends AbstractWidget {
         gg.disableScissor();
 
         int content = contentHeight(rows);
-        if (content > height) {
-            float maxScroll = content - height;
-            float ratio = (float) height / (float) content;
-            int barH = Math.max(12, (int) (height * ratio));
+        if (content > viewportHeight) {
+            float maxScroll = content - viewportHeight;
+            float ratio = (float) viewportHeight / (float) content;
+            int barH = Math.max(12, (int) (viewportHeight * ratio));
             float scrollRatio = maxScroll <= 0 ? 0f : scrollY / maxScroll;
-            int barY = getY() + (int) ((height - barH) * scrollRatio);
+            int barY = contentTop + (int) ((viewportHeight - barH) * scrollRatio);
             gg.fill(getX() + width + 4, barY, getX() + width + 6, barY + barH, 0xFF808080);
         }
     }
@@ -447,8 +470,9 @@ public final class QuestListWidget extends AbstractWidget {
 
         if (!isMouseOver(mx, my)) return false;
         if (mc.player == null) return false;
+        if (my < getY() + topInset) return false;
 
-        int localY = (int) (my - getY() + scrollY);
+        int localY = (int) (my - (getY() + topInset) + scrollY);
         int yCursor = 0;
 
         List<RowEntry> rows = rowsForCurrentState();
@@ -474,9 +498,10 @@ public final class QuestListWidget extends AbstractWidget {
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
         if (!visible || !active) return false;
         int content = contentHeight();
-        if (content <= height) return false;
+        int viewportHeight = Math.max(0, height - topInset);
+        if (content <= viewportHeight) return false;
 
-        float max = content - height;
+        float max = content - viewportHeight;
         scrollY = Mth.clamp(scrollY - (float) (delta * 12), 0f, max);
         return true;
     }

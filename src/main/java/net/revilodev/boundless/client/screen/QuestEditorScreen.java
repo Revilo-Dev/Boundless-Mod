@@ -8,6 +8,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.Util;
+import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -113,7 +114,7 @@ public final class QuestEditorScreen extends Screen {
     private static final int DEFAULT_INPUT_TEXT_COLOR = 0xE0E0E0;
     private static final int INVALID_INPUT_TEXT_COLOR = 0xFF4040;
     private static final String INVALID_ID_TOOLTIP = "Invalid ID";
-    private static final int ID_SUGGESTION_MAX = 200;
+    private static final int ID_SUGGESTION_MAX = 5000;
     private static final int ID_SUGGESTION_VISIBLE_ROWS = 6;
     private static final int ID_SUGGESTION_ROW_H = 8;
     private static final int ID_SUGGESTION_TEXT_TOP_PADDING = 2;
@@ -207,6 +208,8 @@ public final class QuestEditorScreen extends Screen {
     private EditBox questSubCategoryBox;
     private EditBox questDependenciesBox;
     private ToggleButton questOptionalToggle;
+    private ToggleButton questRepeatableToggle;
+    private ToggleButton questHiddenUnderDependencyToggle;
     private ScaledMultiLineEditBox questCompletionBox;
     private ScaledMultiLineEditBox questRewardBox;
     private final List<ScaledMultiLineEditBox> completionEntryBoxes = new ArrayList<>();
@@ -225,6 +228,7 @@ public final class QuestEditorScreen extends Screen {
     private final List<String> entityIdCache = new ArrayList<>();
     private final List<String> effectIdCache = new ArrayList<>();
     private final List<String> advancementIdCache = new ArrayList<>();
+    private final List<String> lootTableIdCache = new ArrayList<>();
     private final Set<String> categoryIdCache = new HashSet<>();
     private final Set<String> subCategoryIdCache = new HashSet<>();
     private final Set<String> questIdCache = new HashSet<>();
@@ -338,6 +342,8 @@ public final class QuestEditorScreen extends Screen {
         questSubCategoryBox = createBox("Quest sub-category", BOX_H);
         questDependenciesBox = createBox("Dependencies (comma separated)", BOX_H);
         questOptionalToggle = createToggle(false);
+        questRepeatableToggle = createToggle(false);
+        questHiddenUnderDependencyToggle = createToggle(false);
         questCompletionBox = createMultiLineBox("Completion entries", BOX_H_TALL, false);
         questRewardBox = createMultiLineBox("Reward entries", BOX_H_TALL, false);
         initEntryRowBoxes();
@@ -691,6 +697,8 @@ public final class QuestEditorScreen extends Screen {
         questSubCategoryBox.setValue(safe(data.subCategory));
         questDependenciesBox.setValue(safe(data.dependencies));
         questOptionalToggle.setState(parseBool(data.optional, false));
+        questRepeatableToggle.setState(parseBool(data.repeatable, false));
+        questHiddenUnderDependencyToggle.setState(parseBool(data.hiddenUnderDependency, false));
         setEntryRowsFromRaw(false, completionJsonToEntries(safe(data.completionJson)));
         setEntryRowsFromRaw(true, rewardJsonToEntries(safe(data.rewardJson)));
         loadedQuestType = safe(data.type);
@@ -709,6 +717,8 @@ public final class QuestEditorScreen extends Screen {
                 field("Sub-category", questSubCategoryBox),
                 field("Dependencies (comma separated)", questDependenciesBox),
                 field("Optional (true/false)", questOptionalToggle),
+                field("Repeatable (true/false)", questRepeatableToggle),
+                field("Hidden Under Dependency (true/false)", questHiddenUnderDependencyToggle),
                 field("Completion", questCompletionBox),
                 field("Reward", questRewardBox)
         ));
@@ -853,6 +863,8 @@ public final class QuestEditorScreen extends Screen {
         addOptional(obj, "category", questCategoryBox.getValue());
         addOptional(obj, "sub-category", questSubCategoryBox.getValue());
         obj.addProperty("optional", questOptionalToggle.isOn());
+        obj.addProperty("repeatable", questRepeatableToggle.isOn());
+        obj.addProperty("hiddenUnderDependency", questHiddenUnderDependencyToggle.isOn());
         if (loadedQuestType != null && !loadedQuestType.isBlank()) {
             obj.addProperty("type", loadedQuestType);
         }
@@ -1201,6 +1213,12 @@ public final class QuestEditorScreen extends Screen {
                 if (normalizedId.isBlank()) return failCompletion(line, raiseErrors);
                 obj.addProperty("effect", normalizedId);
             }
+            case "xp" -> {
+                String mode = safe(id).trim().toLowerCase(Locale.ROOT);
+                if (!mode.equals("points") && !mode.equals("levels")) return failCompletion(line, raiseErrors);
+                obj.addProperty("xp", mode);
+                obj.addProperty("count", count);
+            }
             default -> {
                 return failCompletion(line, raiseErrors);
             }
@@ -1257,6 +1275,22 @@ public final class QuestEditorScreen extends Screen {
                         cmd.addProperty("icon", normalizedIcon);
                     }
                     cmd.addProperty("title", safe(parsedCommand.title));
+                    commands.add(cmd);
+                }
+                case "loot", "loottable" -> {
+                    CommandReward parsedLoot = parseCommandReward(parsed.id);
+                    String lootTableId = normalizeNamespacedId(parsedLoot.command, false);
+                    if (lootTableId.isBlank()) return failReward(line, raiseErrors);
+                    JsonObject cmd = new JsonObject();
+                    cmd.addProperty("command", "loot give @s loot " + lootTableId);
+                    if (!parsedLoot.icon.isBlank()) {
+                        String normalizedIcon = normalizeNamespacedId(parsedLoot.icon, false);
+                        if (normalizedIcon.isBlank()) return failReward(line, raiseErrors);
+                        cmd.addProperty("icon", normalizedIcon);
+                    } else {
+                        cmd.addProperty("icon", "minecraft:chest");
+                    }
+                    cmd.addProperty("title", safe(parsedLoot.title).isBlank() ? lootTableId : safe(parsedLoot.title));
                     commands.add(cmd);
                 }
                 default -> {
@@ -1335,6 +1369,7 @@ public final class QuestEditorScreen extends Screen {
             else if (obj.has("advancement")) out.add("achieve: " + optString(obj, "advancement", ""));
             else if (obj.has("effect")) out.add("effect: " + optString(obj, "effect", ""));
             else if (obj.has("stat")) out.add("stat: " + optString(obj, "stat", "") + " " + parseIntFlexible(obj, "count", 1));
+            else if (obj.has("xp")) out.add("xp: " + optString(obj, "xp", "points") + " " + parseIntFlexible(obj, "count", 1));
             return;
         }
         if (el.isJsonArray()) {
@@ -1371,7 +1406,29 @@ public final class QuestEditorScreen extends Screen {
                 if (cmd.isBlank()) continue;
                 String icon = optString(cmdObj, "icon", "");
                 String title = optString(cmdObj, "title", "");
-                StringBuilder line = new StringBuilder("command: ").append(cmd);
+                String lootPrefix = "loot give @s loot ";
+                if (cmd.startsWith(lootPrefix)) {
+                    StringBuilder line = new StringBuilder("loot: ").append(cmd.substring(lootPrefix.length()).trim());
+                    if (!icon.isBlank() && !"minecraft:chest".equals(icon)) line.append(" | icon: ").append(icon);
+                    if (!title.isBlank() && !title.equals(cmd.substring(lootPrefix.length()).trim())) line.append(" | title: ").append(title);
+                    out.add(line.toString());
+                } else {
+                    StringBuilder line = new StringBuilder("command: ").append(cmd);
+                    if (!icon.isBlank()) line.append(" | icon: ").append(icon);
+                    line.append(" | title: ").append(title);
+                    out.add(line.toString());
+                }
+            }
+        }
+        if (obj.has("lootTables") && obj.get("lootTables").isJsonArray()) {
+            for (JsonElement e : obj.getAsJsonArray("lootTables")) {
+                if (!e.isJsonObject()) continue;
+                JsonObject lootObj = e.getAsJsonObject();
+                String lootTable = optString(lootObj, "lootTable", "");
+                if (lootTable.isBlank()) continue;
+                String icon = optString(lootObj, "icon", "");
+                String title = optString(lootObj, "title", "");
+                StringBuilder line = new StringBuilder("loot: ").append(lootTable);
                 if (!icon.isBlank()) line.append(" | icon: ").append(icon);
                 line.append(" | title: ").append(title);
                 out.add(line.toString());
@@ -2227,6 +2284,8 @@ public final class QuestEditorScreen extends Screen {
                     + "|" + safe(questSubCategoryBox == null ? "" : questSubCategoryBox.getValue())
                     + "|" + safe(questDependenciesBox == null ? "" : questDependenciesBox.getValue())
                     + "|" + (questOptionalToggle != null && questOptionalToggle.isOn())
+                    + "|" + (questRepeatableToggle != null && questRepeatableToggle.isOn())
+                    + "|" + (questHiddenUnderDependencyToggle != null && questHiddenUnderDependencyToggle.isOn())
                     + "|" + safe(questCompletionBox == null ? "" : questCompletionBox.getValue())
                     + "|" + safe(questRewardBox == null ? "" : questRewardBox.getValue())
                     + "|" + safe(loadedQuestType);
@@ -2606,6 +2665,8 @@ public final class QuestEditorScreen extends Screen {
         state.questSubCategory = safe(questSubCategoryBox == null ? "" : questSubCategoryBox.getValue());
         state.questDependencies = safe(questDependenciesBox == null ? "" : questDependenciesBox.getValue());
         state.questOptional = questOptionalToggle != null && questOptionalToggle.isOn();
+        state.questRepeatable = questRepeatableToggle != null && questRepeatableToggle.isOn();
+        state.questHiddenUnderDependency = questHiddenUnderDependencyToggle != null && questHiddenUnderDependencyToggle.isOn();
         state.questCompletion = safe(questCompletionBox == null ? "" : questCompletionBox.getValue());
         state.questReward = safe(questRewardBox == null ? "" : questRewardBox.getValue());
         return state;
@@ -2675,6 +2736,8 @@ public final class QuestEditorScreen extends Screen {
                 data.subCategory = state.questSubCategory;
                 data.dependencies = state.questDependencies;
                 data.optional = state.questOptional ? "true" : "false";
+                data.repeatable = state.questRepeatable ? "true" : "false";
+                data.hiddenUnderDependency = state.questHiddenUnderDependency ? "true" : "false";
                 data.type = state.loadedQuestType;
                 data.completionJson = state.questCompletion;
                 data.rewardJson = state.questReward;
@@ -2804,6 +2867,9 @@ public final class QuestEditorScreen extends Screen {
         data.subCategory = optString(obj, "sub-category", optString(obj, "subCategory", ""));
         data.dependencies = formatDependencies(obj.get("dependencies"));
         data.optional = optStringFlexible(obj, "optional", "");
+        data.repeatable = optStringFlexible(obj, "repeatable", "");
+        data.hiddenUnderDependency = optStringFlexible(obj, "hiddenUnderDependency",
+                optStringFlexible(obj, "hidden_under_dependency", ""));
         data.type = optString(obj, "type", "");
         data.completionJson = obj.has("completion") ? gson.toJson(obj.get("completion")) : "";
         data.rewardJson = obj.has("reward") ? gson.toJson(obj.get("reward")) : "";
@@ -3122,14 +3188,15 @@ public final class QuestEditorScreen extends Screen {
         if (ctx == null) return List.of();
         if (!ctx.hasTypeSeparator) {
             return isCompletionEntryField(field)
-                    ? List.of("collect", "submit", "kill", "achieve", "effect")
-                    : List.of("item", "xp", "command");
+                    ? List.of("collect", "submit", "kill", "achieve", "effect", "xp")
+                    : List.of("item", "xp", "command", "loot");
         }
         return switch (ctx.type) {
             case "collect", "submit", "item" -> itemSuggestions();
             case "kill", "entity" -> entitySuggestions();
             case "effect" -> effectSuggestions();
             case "achieve", "advancement" -> advancementSuggestions();
+            case "loot", "loottable" -> lootTableSuggestions();
             case "xp", "exp" -> List.of("points", "levels");
             case "icon" -> itemSuggestions();
             default -> List.of();
@@ -3574,6 +3641,7 @@ public final class QuestEditorScreen extends Screen {
         questSuggestionCache.clear();
         subCategoryByCategorySuggestion.clear();
         advancementIdCache.clear();
+        lootTableIdCache.clear();
 
         if (currentPack != null) {
             for (NamedEntry entry : listCategoryEntries(currentPack)) {
@@ -3916,6 +3984,133 @@ public final class QuestEditorScreen extends Screen {
     private List<String> advancementSuggestions() {
         ensureAdvancementIdCache();
         return advancementIdCache;
+    }
+
+    private void ensureLootTableIdCache() {
+        if (!lootTableIdCache.isEmpty()) return;
+        Set<String> found = new LinkedHashSet<>();
+
+        try {
+            Minecraft.getInstance().getResourceManager()
+                    .listResources("loot_tables", path -> path != null && path.getPath().endsWith(".json"))
+                    .keySet()
+                    .forEach(rl -> addLootTableResourceLocation(rl, found));
+            Minecraft.getInstance().getResourceManager()
+                    .listResources("loot_table", path -> path != null && path.getPath().endsWith(".json"))
+                    .keySet()
+                    .forEach(rl -> addLootTableResourceLocation(rl, found));
+        } catch (Exception ignored) {
+        }
+
+        collectLootTablesFromVersionJar(found);
+
+        if (currentPack != null && currentPack.root != null) {
+            collectLootTablesFromDirectory(currentPack.root, found);
+        }
+
+        Path rpRoot = resourcePacksRoot();
+        if (Files.isDirectory(rpRoot)) {
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(rpRoot)) {
+                for (Path entry : stream) {
+                    if (entry == null || !Files.exists(entry)) continue;
+                    if (Files.isDirectory(entry)) {
+                        collectLootTablesFromDirectory(entry, found);
+                    } else if (entry.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".zip")) {
+                        collectLootTablesFromZip(entry, found);
+                    }
+                }
+            } catch (IOException ignored) {
+            }
+        }
+
+        lootTableIdCache.addAll(found);
+        lootTableIdCache.sort(String::compareTo);
+    }
+
+    private void collectLootTablesFromDirectory(Path root, Set<String> out) {
+        if (root == null || out == null || !Files.isDirectory(root)) return;
+        try (var walk = Files.walk(root)) {
+            walk.filter(Files::isRegularFile)
+                    .forEach(path -> addLootTablePath(root.relativize(path).toString().replace('\\', '/'), out));
+        } catch (IOException ignored) {
+        }
+    }
+
+    private void collectLootTablesFromZip(Path zipPath, Set<String> out) {
+        if (zipPath == null || out == null || !Files.exists(zipPath)) return;
+        try (ZipFile zip = new ZipFile(zipPath.toFile())) {
+            zip.stream()
+                    .map(ZipEntry::getName)
+                    .filter(Objects::nonNull)
+                    .map(name -> name.replace('\\', '/'))
+                    .forEach(name -> addLootTablePath(name, out));
+        } catch (IOException ignored) {
+        }
+    }
+
+    private void collectLootTablesFromVersionJar(Set<String> out) {
+        if (out == null) return;
+        String version;
+        try {
+            version = SharedConstants.getCurrentVersion().getName();
+        } catch (Exception ignored) {
+            version = "1.21.1";
+        }
+        if (version == null || version.isBlank()) version = "1.21.1";
+        Path versionsRoot = Minecraft.getInstance().gameDirectory.toPath().resolve("versions");
+        Path jarPath = versionsRoot.resolve(version).resolve(version + ".jar");
+        if (!Files.exists(jarPath)) return;
+        collectLootTablesFromZip(jarPath, out);
+    }
+
+    private void addLootTablePath(String path, Set<String> out) {
+        if (path == null || out == null) return;
+        String clean = path.replace('\\', '/');
+        if (!clean.endsWith(".json") || !clean.startsWith("data/")) return;
+
+        String marker;
+        if (clean.contains("/loot_tables/")) marker = "/loot_tables/";
+        else if (clean.contains("/loot_table/")) marker = "/loot_table/";
+        else return;
+
+        int namespaceStart = "data/".length();
+        int markerIndex = clean.indexOf(marker, namespaceStart);
+        if (markerIndex <= namespaceStart) return;
+
+        String namespace = clean.substring(namespaceStart, markerIndex);
+        String idPath = clean.substring(markerIndex + marker.length(), clean.length() - ".json".length());
+        if (namespace.isBlank() || idPath.isBlank()) return;
+        addLootTableId(namespace, idPath, out);
+    }
+
+    private void addLootTableResourceLocation(ResourceLocation rl, Set<String> out) {
+        if (rl == null || out == null) return;
+        String path = rl.getPath();
+        if (path == null || path.isBlank()) return;
+
+        String marker;
+        if (path.startsWith("loot_tables/")) marker = "loot_tables/";
+        else if (path.startsWith("loot_table/")) marker = "loot_table/";
+        else return;
+
+        String idPath = path.substring(marker.length());
+        if (idPath.endsWith(".json")) {
+            idPath = idPath.substring(0, idPath.length() - ".json".length());
+        }
+        addLootTableId(rl.getNamespace(), idPath, out);
+    }
+
+    private void addLootTableId(String namespace, String idPath, Set<String> out) {
+        if (namespace == null || namespace.isBlank() || idPath == null || idPath.isBlank() || out == null) return;
+        String normalizedPath = idPath.replace('\\', '/');
+        if (!(normalizedPath.startsWith("chests/") || normalizedPath.startsWith("entities/"))) return;
+        if ("minecraft".equals(namespace)) out.add(normalizedPath);
+        else out.add(namespace + ":" + normalizedPath);
+    }
+
+    private List<String> lootTableSuggestions() {
+        ensureLootTableIdCache();
+        return lootTableIdCache;
     }
 
     private String computeIconSuggestion(String raw) {
@@ -4916,6 +5111,8 @@ public final class QuestEditorScreen extends Screen {
         String subCategory = "";
         String dependencies = "";
         String optional = "";
+        String repeatable = "";
+        String hiddenUnderDependency = "";
         String type = "";
         String completionJson = "";
         String rewardJson = "";
@@ -4964,6 +5161,8 @@ public final class QuestEditorScreen extends Screen {
         String questSubCategory = "";
         String questDependencies = "";
         boolean questOptional = false;
+        boolean questRepeatable = false;
+        boolean questHiddenUnderDependency = false;
         String questCompletion = "";
         String questReward = "";
     }

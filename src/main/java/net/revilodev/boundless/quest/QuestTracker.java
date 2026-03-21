@@ -1,16 +1,17 @@
-// src/main/java/net/revilodev/boundless/quest/QuestTracker.java
 package net.revilodev.boundless.quest;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.AdvancementProgress;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.Holder;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.stats.Stats;
 import net.minecraft.world.effect.MobEffect;
@@ -18,6 +19,10 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.storage.loot.LootParams;
+import net.minecraft.world.level.storage.loot.LootTable;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.fml.loading.FMLEnvironment;
@@ -47,6 +52,9 @@ public final class QuestTracker {
     private static final Map<String, Integer> CLIENT_STATS = new HashMap<>();
     private static final Map<String, Integer> CLIENT_ITEM_PROGRESS = new HashMap<>();
     private static final Map<String, Boolean> CLIENT_EFFECT_PROGRESS = new HashMap<>();
+    private static final Map<String, Integer> CLIENT_CLAIM_COUNTS = new HashMap<>();
+    private static final Map<String, Boolean> CLIENT_SCROLL_REDEEMED = new HashMap<>();
+    private static final Map<String, Boolean> CLIENT_SCROLL_CREATED = new HashMap<>();
     private static final Map<String, ResourceLocation> RL_CACHE = new HashMap<>();
     private static final Map<String, Optional<Item>> ITEM_BY_ID_CACHE = new HashMap<>();
     private static final Map<String, Holder<MobEffect>> EFFECT_BY_ID_CACHE = new HashMap<>();
@@ -208,12 +216,47 @@ public final class QuestTracker {
         return activeStateMap().getOrDefault(questId, Status.INCOMPLETE);
     }
 
+    public static int getClaimCount(String questId, Player player) {
+        if (questId == null || questId.isBlank()) return 0;
+        if (player instanceof ServerPlayer sp) {
+            return QuestProgressState.get(sp.serverLevel()).getClaimCount(sp.getUUID(), questId);
+        }
+        if (player != null && player.level().isClientSide) ensureClientStateLoaded(player);
+        return Math.max(0, CLIENT_CLAIM_COUNTS.getOrDefault(questId, 0));
+    }
+
+    public static boolean hasEverClaimed(QuestData.Quest q, Player player) {
+        return q != null && hasEverClaimed(q.id, player);
+    }
+
+    public static boolean hasEverClaimed(String questId, Player player) {
+        return getClaimCount(questId, player) > 0 || getStatus(questId, player) == Status.REDEEMED;
+    }
+
+    public static boolean hasRedeemedScroll(String questId, Player player) {
+        if (questId == null || questId.isBlank()) return false;
+        if (player instanceof ServerPlayer sp) {
+            return QuestProgressState.get(sp.serverLevel()).hasRedeemedScroll(sp.getUUID(), questId);
+        }
+        if (player != null && player.level().isClientSide) ensureClientStateLoaded(player);
+        return Boolean.TRUE.equals(CLIENT_SCROLL_REDEEMED.get(questId));
+    }
+
+    public static boolean hasCreatedScroll(String questId, Player player) {
+        if (questId == null || questId.isBlank()) return false;
+        if (player instanceof ServerPlayer sp) {
+            return QuestProgressState.get(sp.serverLevel()).hasCreatedScroll(sp.getUUID(), questId);
+        }
+        if (player != null && player.level().isClientSide) ensureClientStateLoaded(player);
+        return Boolean.TRUE.equals(CLIENT_SCROLL_CREATED.get(questId));
+    }
+
     public static boolean dependenciesMet(QuestData.Quest q, Player player) {
         if (q == null || q.dependencies.isEmpty()) return true;
         for (String depId : q.dependencies) {
             QuestData.Quest dep = QuestData.byId(depId).orElse(null);
             if (dep == null) return false;
-            if (getStatus(dep, player) != Status.REDEEMED) return false;
+            if (!hasEverClaimed(dep, player)) return false;
         }
         return true;
     }
@@ -221,8 +264,11 @@ public final class QuestTracker {
     public static boolean isVisible(QuestData.Quest q, Player player) {
         if (q == null || player == null) return false;
         if (Config.disabledCategories().contains(q.category)) return false;
+        if (q.hiddenUnderDependency && !q.dependencies.isEmpty() && !dependenciesMet(q, player)) return false;
         Status st = getStatus(q, player);
-        return st != Status.REDEEMED && st != Status.REJECTED;
+        if (st == Status.REJECTED) return false;
+        if (st == Status.REDEEMED && !q.repeatable) return false;
+        return true;
     }
 
     public static boolean hasAnyCompleted(Player player) {
@@ -236,7 +282,7 @@ public final class QuestTracker {
     }
 
     public static boolean hasCompleted(Player player, String questId) {
-        return getStatus(questId, player) == Status.REDEEMED;
+        return hasEverClaimed(questId, player);
     }
 
     private static boolean isSubmissionQuestType(QuestData.Quest q) {
@@ -253,7 +299,7 @@ public final class QuestTracker {
     private static boolean hasItemOrSubmitTargets(QuestData.Quest q) {
         if (q == null || q.completion == null || q.completion.targets == null) return false;
         for (QuestData.Target t : q.completion.targets) {
-            if (t != null && (t.isItem() || t.isSubmit())) {
+            if (t != null && (t.isItem() || t.isSubmit() || t.isXp())) {
                 return true;
             }
         }
@@ -295,9 +341,24 @@ public final class QuestTracker {
 
             if (t.isAdvancement() && !hasAdvancement(player, t.id)) return false;
             if (t.isStat() && getStatCount(player, t.id) < t.count) return false;
+            if (t.isXp() && getXpAmount(player, t.id) < t.count) return false;
         }
 
         return true;
+    }
+
+    public static int getXpAmount(Player player, String xpType) {
+        if (player == null) return 0;
+        String mode = normalizeXpType(xpType);
+        if ("levels".equals(mode)) {
+            return Math.max(0, player.experienceLevel);
+        }
+        return Math.max(0, player.totalExperience);
+    }
+
+    public static String normalizeXpType(String xpType) {
+        String mode = xpType == null ? "" : xpType.trim().toLowerCase(Locale.ROOT);
+        return "levels".equals(mode) ? "levels" : "points";
     }
 
     public static int getStatCount(Player player, String statId) {
@@ -420,6 +481,91 @@ public final class QuestTracker {
         return done;
     }
 
+    public static boolean canCreateScroll(QuestData.Quest q, Player player) {
+        return q != null && player != null && hasEverClaimed(q, player) && !hasCreatedScroll(q.id, player);
+    }
+
+    public static boolean canRestartRepeatable(QuestData.Quest q, Player player) {
+        return q != null && q.repeatable && player != null && getStatus(q, player) == Status.REDEEMED;
+    }
+
+    public static boolean consumeXpTarget(ServerPlayer player, QuestData.Target target) {
+        if (player == null || target == null || !target.isXp()) return false;
+        int amount = Math.max(0, target.count);
+        if (amount <= 0) return true;
+        String mode = normalizeXpType(target.id);
+        if ("levels".equals(mode)) {
+            if (player.experienceLevel < amount) return false;
+            player.giveExperienceLevels(-amount);
+            return true;
+        }
+
+        int current = Math.max(0, player.totalExperience);
+        if (current < amount) return false;
+        setTotalExperience(player, current - amount);
+        return true;
+    }
+
+    private static void setTotalExperience(ServerPlayer player, int totalExperience) {
+        int clamped = Math.max(0, totalExperience);
+        player.totalExperience = 0;
+        player.experienceLevel = 0;
+        player.experienceProgress = 0.0F;
+        if (clamped > 0) {
+            player.giveExperiencePoints(clamped);
+        }
+    }
+
+    private static void giveExpReward(ServerPlayer player, QuestData.Rewards rewards) {
+        if (player == null || rewards == null || !rewards.hasExp()) return;
+        int amount = Math.max(0, rewards.expAmount);
+        if (amount <= 0) return;
+        if ("levels".equalsIgnoreCase(rewards.expType)) {
+            player.giveExperienceLevels(amount);
+        } else {
+            player.giveExperiencePoints(amount);
+        }
+    }
+
+    private static void giveLootRewards(ServerPlayer player, QuestData.Rewards rewards) {
+        if (player == null || rewards == null || !rewards.hasLootTables()) return;
+        for (QuestData.LootTableReward reward : rewards.lootTables) {
+            if (reward == null || reward.lootTable == null || reward.lootTable.isBlank()) continue;
+            ResourceLocation rl = ResourceLocation.tryParse(reward.lootTable);
+            if (rl == null) continue;
+            LootTable table;
+            try {
+                table = player.server.reloadableRegistries()
+                        .getLootTable(ResourceKey.create(Registries.LOOT_TABLE, rl));
+            } catch (Throwable ignored) {
+                table = null;
+            }
+            if (table == null || table == LootTable.EMPTY) continue;
+
+            LootParams params = new LootParams.Builder(player.serverLevel())
+                    .withParameter(LootContextParams.ORIGIN, player.position())
+                    .withParameter(LootContextParams.THIS_ENTITY, player)
+                    .create(LootContextParamSets.GIFT);
+            ObjectArrayList<ItemStack> generated = table.getRandomItems(params, player.getRandom());
+            for (ItemStack stack : generated) {
+                if (stack == null || stack.isEmpty()) continue;
+                ItemStack copy = stack.copy();
+                if (!player.getInventory().add(copy) && !copy.isEmpty()) {
+                    player.drop(copy, false);
+                }
+            }
+        }
+    }
+
+    private static void clearQuestCycle(ServerPlayer player, QuestData.Quest q) {
+        if (player == null || q == null) return;
+        QuestObjectiveState.get(player.serverLevel()).clearQuest(player.getUUID(), q.id);
+    }
+
+    public static void markQuestClaimed(ServerPlayer player, QuestData.Quest q) {
+        if (player == null || q == null) return;
+        QuestProgressState.get(player.serverLevel()).incrementClaimCount(player.getUUID(), q.id);
+    }
 
     public static boolean serverRedeem(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return false;
@@ -432,7 +578,12 @@ public final class QuestTracker {
                 if (r == null || r.item == null || r.item.isBlank()) continue;
                 ResourceLocation rl = ResourceLocation.parse(r.item);
                 Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-                if (item != null) player.getInventory().add(new ItemStack(item, Math.max(1, r.count)));
+                if (item != null) {
+                    ItemStack stack = new ItemStack(item, Math.max(1, r.count));
+                    if (!player.getInventory().add(stack) && !stack.isEmpty()) {
+                        player.drop(stack, false);
+                    }
+                }
             }
         }
 
@@ -469,17 +620,28 @@ public final class QuestTracker {
             }
         }
 
-        setServerStatus(player, q.id, Status.COMPLETED);
+        giveLootRewards(player, q.rewards);
+        giveExpReward(player, q.rewards);
+        markQuestClaimed(player, q);
+        clearQuestCycle(player, q);
         setServerStatus(player, q.id, Status.REDEEMED);
         return true;
     }
 
     public static void forceCompleteWithoutRewards(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return;
-        setServerStatus(player, q.id, Status.COMPLETED);
-        BoundlessNetwork.sendStatus(player, q.id, Status.COMPLETED.name());
+        markQuestClaimed(player, q);
+        clearQuestCycle(player, q);
         setServerStatus(player, q.id, Status.REDEEMED);
         BoundlessNetwork.sendStatus(player, q.id, Status.REDEEMED.name());
+    }
+
+    public static boolean restartRepeatable(QuestData.Quest q, ServerPlayer player) {
+        if (q == null || player == null || !q.repeatable) return false;
+        if (getServerStatus(player, q.id) != Status.REDEEMED) return false;
+        clearQuestCycle(player, q);
+        setServerStatus(player, q.id, Status.INCOMPLETE);
+        return true;
     }
 
     public static boolean serverReject(QuestData.Quest q, ServerPlayer player) {
@@ -506,8 +668,31 @@ public final class QuestTracker {
         if (FMLEnvironment.dist == Dist.CLIENT) {
             try { ensureClientStateLoaded(null); } catch (Throwable ignored) {}
         }
-        activeStateMap().put(questId, st);
+        if (st == Status.INCOMPLETE) {
+            activeStateMap().remove(questId);
+        } else {
+            activeStateMap().put(questId, st);
+        }
         if (FMLEnvironment.dist == Dist.CLIENT && ACTIVE_KEY != null) ClientOnly.saveClientState(ACTIVE_KEY);
+    }
+
+    public static void clientSetClaimCount(String questId, int count) {
+        if (questId == null || questId.isBlank()) return;
+        int sanitized = Math.max(0, count);
+        if (sanitized <= 0) CLIENT_CLAIM_COUNTS.remove(questId);
+        else CLIENT_CLAIM_COUNTS.put(questId, sanitized);
+    }
+
+    public static void clientSetScrollRedeemed(String questId, boolean redeemed) {
+        if (questId == null || questId.isBlank()) return;
+        if (redeemed) CLIENT_SCROLL_REDEEMED.put(questId, true);
+        else CLIENT_SCROLL_REDEEMED.remove(questId);
+    }
+
+    public static void clientSetScrollCreated(String questId, boolean created) {
+        if (questId == null || questId.isBlank()) return;
+        if (created) CLIENT_SCROLL_CREATED.put(questId, true);
+        else CLIENT_SCROLL_CREATED.remove(questId);
     }
 
     public static void clientSetKill(String entityId, int count) {
@@ -520,6 +705,9 @@ public final class QuestTracker {
         CLIENT_STATS.clear();
         CLIENT_ITEM_PROGRESS.clear();
         CLIENT_EFFECT_PROGRESS.clear();
+        CLIENT_CLAIM_COUNTS.clear();
+        CLIENT_SCROLL_REDEEMED.clear();
+        CLIENT_SCROLL_CREATED.clear();
         if (FMLEnvironment.dist == Dist.CLIENT) {
             try { ensureClientStateLoaded(null); } catch (Throwable ignored) {}
             activeStateMap().clear();
@@ -571,8 +759,12 @@ public final class QuestTracker {
             boolean hasItemTargets = hasItemOrSubmitTargets(q);
 
             if (ready && cur == Status.INCOMPLETE) {
-                setServerStatus(sp, q.id, Status.COMPLETED);
-                BoundlessNetwork.sendStatus(sp, q.id, Status.COMPLETED.name());
+                if (Config.autoClaimQuestRewards()) {
+                    BoundlessNetwork.claimQuest(sp, q);
+                } else {
+                    setServerStatus(sp, q.id, Status.COMPLETED);
+                    BoundlessNetwork.sendStatus(sp, q.id, Status.COMPLETED.name());
+                }
                 continue;
             }
 

@@ -39,6 +39,9 @@ public final class Config {
     public static final ModConfigSpec.ConfigValue<Boolean> HIDE_QUEST_WIDGET_ICONS =
             BUILDER.comment("If true, hides icons in quest list widgets.")
                     .define("hideQuestWidgetIcons", false);
+    public static final ModConfigSpec.ConfigValue<Boolean> ENABLE_QUEST_SEARCH_BOX =
+            BUILDER.comment("If true, shows the quest search box above the quest list.")
+                    .define("enableQuestSearchBox", true);
     static {
         BUILDER.pop();
         BUILDER.push("Functionality");
@@ -46,6 +49,9 @@ public final class Config {
     public static final ModConfigSpec.ConfigValue<Boolean> DISABLE_QUEST_PINNING =
             BUILDER.comment("If true, quest pinning and pinned HUD are disabled.")
                     .define("disableQuestPinning", false);
+    public static final ModConfigSpec.ConfigValue<Boolean> AUTO_CLAIM_QUEST_REWARDS =
+            BUILDER.comment("If true, quest rewards are automatically claimed when a quest becomes complete.")
+                    .define("autoClaimQuestRewards", false);
     static {
         BUILDER.pop();
         BUILDER.push("Gameplay");
@@ -97,8 +103,16 @@ public final class Config {
         return HIDE_QUEST_WIDGET_ICONS.get();
     }
 
+    public static boolean enableQuestSearchBox() {
+        return ENABLE_QUEST_SEARCH_BOX.get();
+    }
+
     public static boolean disableQuestPinning() {
         return DISABLE_QUEST_PINNING.get();
+    }
+
+    public static boolean autoClaimQuestRewards() {
+        return AUTO_CLAIM_QUEST_REWARDS.get();
     }
 
     public static boolean disableQuestBook() {
@@ -113,7 +127,7 @@ public final class Config {
     @SubscribeEvent
     public static void onLoad(ModConfigEvent.Loading e) {
         if (e.getConfig().getSpec() == SPEC)
-            BoundlessMod.LOGGER.info("[Boundless] Config loaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, hideFilters={}, disableCategories={}, hideWidgetIcons={}, disablePinning={}, disableBook={}, spawnBook={}",
+            BoundlessMod.LOGGER.info("[Boundless] Config loaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, hideFilters={}, disableCategories={}, hideWidgetIcons={}, searchBox={}, disablePinning={}, autoClaim={}, disableBook={}, spawnBook={}",
                     disabledCategories(),
                     pinnedQuestHudPosition(),
                     hideQuestBookInInventory(),
@@ -121,7 +135,9 @@ public final class Config {
                     hideFilters(),
                     disableCategories(),
                     hideQuestWidgetIcons(),
+                    enableQuestSearchBox(),
                     disableQuestPinning(),
+                    autoClaimQuestRewards(),
                     disableQuestBook(),
                     spawnWithQuestBook());
     }
@@ -129,7 +145,7 @@ public final class Config {
     @SubscribeEvent
     public static void onReload(ModConfigEvent.Reloading e) {
         if (e.getConfig().getSpec() == SPEC)
-            BoundlessMod.LOGGER.info("[Boundless] Config reloaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, hideFilters={}, disableCategories={}, hideWidgetIcons={}, disablePinning={}, disableBook={}, spawnBook={}",
+            BoundlessMod.LOGGER.info("[Boundless] Config reloaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, hideFilters={}, disableCategories={}, hideWidgetIcons={}, searchBox={}, disablePinning={}, autoClaim={}, disableBook={}, spawnBook={}",
                     disabledCategories(),
                     pinnedQuestHudPosition(),
                     hideQuestBookInInventory(),
@@ -137,7 +153,9 @@ public final class Config {
                     hideFilters(),
                     disableCategories(),
                     hideQuestWidgetIcons(),
+                    enableQuestSearchBox(),
                     disableQuestPinning(),
+                    autoClaimQuestRewards(),
                     disableQuestBook(),
                     spawnWithQuestBook());
     }

@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.ImageButton;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
@@ -70,11 +71,23 @@ public final class QuestPanelClient {
         st.list.setCategory(st.selectedCategory);
         e.addListener(st.list);
 
+        st.searchBox = new EditBox(Minecraft.getInstance().font, 0, 0, 127, 16, Component.literal("Search quests"));
+        st.searchBox.setHint(Component.literal("Search"));
+        st.searchBox.setMaxLength(64);
+        st.searchBox.setValue(st.searchQuery);
+        st.searchBox.setResponder(value -> {
+            st.searchQuery = value == null ? "" : value;
+            if (st.list != null) st.list.setSearchQuery(st.searchQuery);
+        });
+        st.list.setSearchQuery(st.searchQuery);
+
         st.details = new QuestDetailsPanel(0, 0, 127, PANEL_H - 20, () -> closeDetails(st));
         e.addListener(st.details);
         e.addListener(st.details.backButton());
         e.addListener(st.details.completeButton());
         e.addListener(st.details.rejectButton());
+        e.addListener(st.details.scrollButton());
+        e.addListener(st.searchBox);
 
         st.tabs = new CategoryTabsWidget(0, 0, 26, PANEL_H, id -> {
             if (Config.disableCategories()) return;
@@ -155,9 +168,12 @@ public final class QuestPanelClient {
         double mx = e.getMouseX();
         double my = e.getMouseY();
         boolean used = false;
+        boolean overSearch = st.searchBox != null && st.searchBox.visible
+                && mx >= st.searchBox.getX() && mx <= st.searchBox.getX() + st.searchBox.getWidth()
+                && my >= st.searchBox.getY() && my <= st.searchBox.getY() + st.searchBox.getHeight();
 
         if (st.list != null && st.list.visible) {
-            if (mx >= px && mx <= px + pw && my >= py && my <= py + ph) {
+            if (!overSearch && mx >= px && mx <= px + pw && my >= py && my <= py + ph) {
                 double dY = e.getScrollDeltaY();
                 used = st.list.mouseScrolled(mx, my, dY) || st.list.mouseScrolled(mx, my, 0.0, dY);
             }
@@ -177,6 +193,7 @@ public final class QuestPanelClient {
             if (st.list != null) {
                 st.list.setQuests(QuestData.all());
                 st.list.setCategory(st.selectedCategory);
+                st.list.setSearchQuery(st.searchQuery);
             }
             if (st.tabs != null) {
                 if (!Config.disableCategories()) {
@@ -237,7 +254,16 @@ public final class QuestPanelClient {
 
         if (st.bg != null) st.bg.setBounds(bgx, bgy, PANEL_W, PANEL_H);
 
-        if (st.list != null) st.list.setBounds(px, py, pw, ph);
+        if (st.searchBox != null) {
+            st.searchBox.setPosition(px, py);
+            st.searchBox.setWidth(pw);
+            st.searchBox.setHeight(16);
+        }
+
+        if (st.list != null) {
+            st.list.setBounds(px, py, pw, ph);
+            st.list.setTopInset(0);
+        }
         if (st.details != null) {
             st.details.setBounds(px, py, pw, ph);
 
@@ -366,6 +392,12 @@ public final class QuestPanelClient {
             st.list.active = listVisible;
         }
 
+        if (st.searchBox != null) {
+            boolean showSearch = listVisible && Config.enableQuestSearchBox();
+            st.searchBox.visible = showSearch;
+            st.searchBox.active = showSearch;
+        }
+
         if (st.details != null) {
             st.details.visible = detailsVisible;
             st.details.active = detailsVisible;
@@ -383,6 +415,10 @@ public final class QuestPanelClient {
             if (st.details.rejectButton() != null) {
                 st.details.rejectButton().visible = detailsVisible;
                 st.details.rejectButton().active = detailsVisible;
+            }
+            if (st.details.scrollButton() != null) {
+                st.details.scrollButton().visible = detailsVisible;
+                st.details.scrollButton().active = detailsVisible;
             }
         }
 
@@ -477,10 +513,12 @@ public final class QuestPanelClient {
         CategoryTabsWidget tabs;
         CategoryHeaderWidget header;
         QuestFilterBar filter;
+        EditBox searchBox;
         boolean showingDetails;
         boolean open;
         Integer originalLeft;
         String selectedCategory = "all";
+        String searchQuery = "";
 
         State(InventoryScreen inv) {
             this.inv = inv;

@@ -2,6 +2,7 @@ package net.revilodev.boundless.client.screen;
 
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractButton;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -38,8 +39,10 @@ public final class StandaloneQuestBookScreen extends Screen {
     private QuestDetailsPanel details;
     private QuestFilterBar filter;
     private SettingsButton settingsButton;
+    private EditBox searchBox;
 
     private boolean showingDetails = false;
+    private String searchQuery = "";
 
     public StandaloneQuestBookScreen() {
         super(Component.literal("Quests"));
@@ -77,13 +80,24 @@ public final class StandaloneQuestBookScreen extends Screen {
             selectedCategory = tabs.selectFirstCategory();
         }
 
+        searchBox = new EditBox(font, pxLeft, py, pw, 16, Component.literal("Search quests"));
+        searchBox.setHint(Component.literal("Search"));
+        searchBox.setMaxLength(64);
+        searchBox.setValue(searchQuery);
+        searchBox.setResponder(value -> {
+            searchQuery = value == null ? "" : value;
+            if (list != null) list.setSearchQuery(searchQuery);
+        });
+
         list = new QuestListWidget(pxLeft, py, pw, ph, q -> {
             details.setQuest(q);
             showingDetails = true;
             updateVisibility();
         });
+        list.setTopInset(0);
         list.setQuests(QuestData.all());
         list.setCategory(selectedCategory);
+        list.setSearchQuery(searchQuery);
 
         details = new QuestDetailsPanel(pxRight, py, pw, ph, () -> {
             showingDetails = false;
@@ -113,6 +127,8 @@ public final class StandaloneQuestBookScreen extends Screen {
         addRenderableWidget(details.backButton());
         addRenderableWidget(details.completeButton());
         addRenderableWidget(details.rejectButton());
+        addRenderableWidget(details.scrollButton());
+        addRenderableWidget(searchBox);
         addRenderableWidget(filter);
         addRenderableWidget(settingsButton);
 
@@ -122,6 +138,12 @@ public final class StandaloneQuestBookScreen extends Screen {
     private void updateVisibility() {
         list.visible = true;
         list.active = true;
+
+        if (searchBox != null) {
+            boolean showSearch = !showingDetails && Config.enableQuestSearchBox();
+            searchBox.visible = showSearch;
+            searchBox.active = showSearch;
+        }
 
         details.visible = showingDetails;
         details.active = showingDetails;
@@ -134,6 +156,9 @@ public final class StandaloneQuestBookScreen extends Screen {
 
         details.rejectButton().visible = showingDetails;
         details.rejectButton().active = showingDetails;
+
+        details.scrollButton().visible = showingDetails;
+        details.scrollButton().active = showingDetails;
 
         boolean showTabs = !Config.disableCategories();
         tabs.visible = showTabs;
@@ -178,8 +203,11 @@ public final class StandaloneQuestBookScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        boolean overSearch = searchBox != null && searchBox.visible
+                && mouseX >= searchBox.getX() && mouseX <= searchBox.getX() + searchBox.getWidth()
+                && mouseY >= searchBox.getY() && mouseY <= searchBox.getY() + searchBox.getHeight();
         if (list.visible && list.active) {
-            if (mouseX >= list.getX() && mouseX <= list.getX() + list.getWidth()
+            if (!overSearch && mouseX >= list.getX() && mouseX <= list.getX() + list.getWidth()
                     && mouseY >= list.getY() && mouseY <= list.getY() + list.getHeight()) {
                 if (list.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) return true;
             }

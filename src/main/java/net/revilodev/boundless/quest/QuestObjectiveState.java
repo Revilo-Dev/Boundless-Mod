@@ -1,4 +1,3 @@
-// src/main/java/net/revilodev/boundless/quest/QuestObjectiveState.java
 package net.revilodev.boundless.quest;
 
 import net.minecraft.core.HolderLookup;
@@ -126,6 +125,25 @@ public final class QuestObjectiveState extends SavedData {
         String p = player.toString();
         itemProgressByPlayer.remove(p);
         effectProgressByPlayer.remove(p);
+        setDirty();
+    }
+
+    public void clearQuest(UUID player, String questId) {
+        String p = player.toString();
+        if (questId == null || questId.isBlank()) return;
+
+        Map<String, Integer> items = itemProgressByPlayer.get(p);
+        if (items != null) {
+            items.entrySet().removeIf(entry -> entry.getKey() != null && entry.getKey().startsWith(questId + ":"));
+            if (items.isEmpty()) itemProgressByPlayer.remove(p);
+        }
+
+        Map<String, Boolean> effects = effectProgressByPlayer.get(p);
+        if (effects != null) {
+            effects.entrySet().removeIf(entry -> entry.getKey() != null && entry.getKey().startsWith(questId + ":"));
+            if (effects.isEmpty()) effectProgressByPlayer.remove(p);
+        }
+
         setDirty();
     }
 }

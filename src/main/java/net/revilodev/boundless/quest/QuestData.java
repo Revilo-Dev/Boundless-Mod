@@ -50,6 +50,8 @@ public final class QuestData {
         public final String description;
         public final List<String> dependencies;
         public final boolean optional;
+        public final boolean repeatable;
+        public final boolean hiddenUnderDependency;
         public final Rewards rewards;
         public final String type;
         public final Completion completion;
@@ -58,7 +60,8 @@ public final class QuestData {
         public final String sourcePath;
 
         public Quest(String id, String name, String icon, String description,
-                     List<String> dependencies, boolean optional, Rewards rewards,
+                     List<String> dependencies, boolean optional, boolean repeatable,
+                     boolean hiddenUnderDependency, Rewards rewards,
                      String type, Completion completion, String category,
                      String subCategory, String sourcePath) {
 
@@ -68,6 +71,8 @@ public final class QuestData {
             this.description = description == null ? "" : description;
             this.dependencies = dependencies == null ? List.of() : List.copyOf(dependencies);
             this.optional = optional;
+            this.repeatable = repeatable;
+            this.hiddenUnderDependency = hiddenUnderDependency;
             this.rewards = rewards;
             this.type = type == null ? "collection" : type;
             this.completion = completion;
@@ -103,17 +108,20 @@ public final class QuestData {
         public final List<RewardEntry> items;
         public final List<CommandReward> commands;
         public final List<FunctionReward> functions;
+        public final List<LootTableReward> lootTables;
         public final String expType;
         public final int expAmount;
 
         public Rewards(List<RewardEntry> items,
                        List<CommandReward> commands,
                        List<FunctionReward> functions,
+                       List<LootTableReward> lootTables,
                        String expType,
                        int expAmount) {
             this.items = items == null ? List.of() : List.copyOf(items);
             this.commands = commands == null ? List.of() : List.copyOf(commands);
             this.functions = functions == null ? List.of() : List.copyOf(functions);
+            this.lootTables = lootTables == null ? List.of() : List.copyOf(lootTables);
             this.expType = expType == null ? "" : expType;
             this.expAmount = Math.max(0, expAmount);
         }
@@ -121,8 +129,9 @@ public final class QuestData {
         public boolean hasExp() { return !expType.isBlank() && expAmount > 0; }
         public boolean hasCommands() { return commands != null && !commands.isEmpty(); }
         public boolean hasFunctions() { return functions != null && !functions.isEmpty(); }
+        public boolean hasLootTables() { return lootTables != null && !lootTables.isEmpty(); }
         public boolean hasAny() {
-            return (items != null && !items.isEmpty()) || hasCommands() || hasFunctions() || hasExp();
+            return (items != null && !items.isEmpty()) || hasCommands() || hasFunctions() || hasLootTables() || hasExp();
         }
     }
 
@@ -185,6 +194,7 @@ public final class QuestData {
         public boolean isEffect() { return "effect".equals(kind); }
         public boolean isAdvancement() { return "advancement".equals(kind); }
         public boolean isStat() { return "stat".equals(kind); }
+        public boolean isXp() { return "xp".equals(kind); }
     }
 
     public static final class Category {
@@ -212,6 +222,18 @@ public final class QuestData {
             } catch (Exception ignored) {
                 return Optional.empty();
             }
+        }
+    }
+
+    public static final class LootTableReward {
+        public final String lootTable;
+        public final String icon;
+        public final String title;
+
+        public LootTableReward(String lootTable, String icon, String title) {
+            this.lootTable = lootTable == null ? "" : lootTable;
+            this.icon = icon == null ? "" : icon;
+            this.title = title == null ? "" : title;
         }
     }
 
@@ -743,6 +765,9 @@ public final class QuestData {
 
         List<String> deps = parseDependencies(obj);
         boolean optional = parseBoolFlexible(obj, "optional", false);
+        boolean repeatable = parseBoolFlexible(obj, "repeatable", false);
+        boolean hiddenUnderDependency = parseBoolFlexible(obj, "hiddenUnderDependency",
+                parseBoolFlexible(obj, "hidden_under_dependency", false));
 
         JsonElement rewardEl = obj.has("reward") ? obj.get("reward") : null;
         Rewards rewards = parseRewards(rewardEl);
@@ -757,7 +782,8 @@ public final class QuestData {
 
         String sourcePath = src == null ? "" : src.getPath();
 
-        return new Quest(id, name, icon, description, deps, optional, rewards, type, completion,
+        return new Quest(id, name, icon, description, deps, optional, repeatable, hiddenUnderDependency,
+                rewards, type, completion,
                 category, subCategory, sourcePath);
     }
 
@@ -784,19 +810,20 @@ public final class QuestData {
 
     private static Rewards parseRewards(JsonElement el) {
         if (el == null || el.isJsonNull()) {
-            return new Rewards(List.of(), List.of(), List.of(), "", 0);
+            return new Rewards(List.of(), List.of(), List.of(), List.of(), "", 0);
         }
 
         List<RewardEntry> items = new ArrayList<>();
         List<CommandReward> commands = new ArrayList<>();
         List<FunctionReward> functions = new ArrayList<>();
+        List<LootTableReward> lootTables = new ArrayList<>();
         String expType = "";
         int expAmount = 0;
 
         if (el.isJsonPrimitive()) {
             String cmd = el.getAsString();
             if (cmd != null && !cmd.isBlank()) commands.add(new CommandReward(cmd, "", ""));
-            return new Rewards(items, commands, functions, expType, expAmount);
+            return new Rewards(items, commands, functions, lootTables, expType, expAmount);
         }
 
         if (el.isJsonArray()) {
@@ -808,11 +835,11 @@ public final class QuestData {
                         ? r.getAsJsonPrimitive("count").getAsInt() : 1;
                 if (item != null && !item.isBlank()) items.add(new RewardEntry(item, count));
             }
-            return new Rewards(items, commands, functions, expType, expAmount);
+            return new Rewards(items, commands, functions, lootTables, expType, expAmount);
         }
 
         if (!el.isJsonObject()) {
-            return new Rewards(items, commands, functions, expType, expAmount);
+            return new Rewards(items, commands, functions, lootTables, expType, expAmount);
         }
 
         JsonObject obj = el.getAsJsonObject();
@@ -872,6 +899,34 @@ public final class QuestData {
             }
         }
 
+        if (obj.has("lootTable") && obj.get("lootTable").isJsonPrimitive()) {
+            String lootTable = obj.get("lootTable").getAsString();
+            if (lootTable != null && !lootTable.isBlank()) {
+                lootTables.add(new LootTableReward(lootTable, "", ""));
+            }
+        }
+
+        if (obj.has("lootTables") && obj.get("lootTables").isJsonArray()) {
+            for (JsonElement le : obj.getAsJsonArray("lootTables")) {
+                if (le == null) continue;
+                if (le.isJsonPrimitive()) {
+                    String lootTable = le.getAsString();
+                    if (lootTable != null && !lootTable.isBlank()) {
+                        lootTables.add(new LootTableReward(lootTable, "", ""));
+                    }
+                    continue;
+                }
+                if (!le.isJsonObject()) continue;
+                JsonObject lo = le.getAsJsonObject();
+                String lootTable = optString(lo, "lootTable");
+                String icon = optString(lo, "icon");
+                String title = optString(lo, "title");
+                if (lootTable != null && !lootTable.isBlank()) {
+                    lootTables.add(new LootTableReward(lootTable, icon, title));
+                }
+            }
+        }
+
         if (obj.has("exp") && obj.get("exp").isJsonPrimitive()) {
             expType = obj.get("exp").getAsString();
         }
@@ -879,7 +934,7 @@ public final class QuestData {
             expAmount = obj.getAsJsonPrimitive("count").getAsInt();
         }
 
-        return new Rewards(items, commands, functions, expType, expAmount);
+        return new Rewards(items, commands, functions, lootTables, expType, expAmount);
     }
 
     private static Completion parseCompletion(JsonElement el, String type) {
@@ -962,6 +1017,12 @@ public final class QuestData {
                                 ? obj.getAsJsonPrimitive("count").getAsInt() : 1));
                 return new Completion(out);
             }
+            if (obj.has("xp")) {
+                out.add(new Target("xp", optString(obj, "xp"),
+                        obj.has("count") && obj.get("count").isJsonPrimitive() && obj.getAsJsonPrimitive("count").isNumber()
+                                ? obj.getAsJsonPrimitive("count").getAsInt() : 1));
+                return new Completion(out);
+            }
         }
 
         return new Completion(List.of());
@@ -1005,6 +1066,13 @@ public final class QuestData {
             String st = o.get("stat").getAsString();
             int count = o.has("count") ? o.get("count").getAsInt() : 1;
             out.add(new Target("stat", st, count));
+            return;
+        }
+
+        if (o.has("xp")) {
+            String xpType = o.get("xp").getAsString();
+            int count = o.has("count") ? o.get("count").getAsInt() : 1;
+            out.add(new Target("xp", xpType, count));
         }
     }
 
@@ -1046,6 +1114,13 @@ public final class QuestData {
             String stat = optString(o, "stat");
             int count = o.has("count") ? o.get("count").getAsInt() : 1;
             if (stat != null && !stat.isBlank()) out.add(new Target("stat", stat, count));
+            return;
+        }
+
+        if (o.has("xp")) {
+            String xpType = optString(o, "xp");
+            int count = o.has("count") ? o.get("count").getAsInt() : 1;
+            if (xpType != null && !xpType.isBlank()) out.add(new Target("xp", xpType, count));
         }
     }
 
@@ -1135,8 +1210,10 @@ public final class QuestData {
                     }
 
                     boolean optional = parseBoolFlexible(o, "optional", false);
+                    boolean repeatable = parseBoolFlexible(o, "repeatable", false);
+                    boolean hiddenUnderDependency = parseBoolFlexible(o, "hiddenUnderDependency", false);
 
-                    Rewards rewards = new Rewards(List.of(), List.of(), List.of(), "", 0);
+                    Rewards rewards = new Rewards(List.of(), List.of(), List.of(), List.of(), "", 0);
                     if (o.has("rewards") && o.get("rewards").isJsonObject()) {
                         JsonObject ro = o.getAsJsonObject("rewards");
 
@@ -1191,11 +1268,25 @@ public final class QuestData {
                             }
                         }
 
+                        List<LootTableReward> lootTables = new ArrayList<>();
+                        if (ro.has("lootTables") && ro.get("lootTables").isJsonArray()) {
+                            for (JsonElement le : ro.getAsJsonArray("lootTables")) {
+                                if (!le.isJsonObject()) continue;
+                                JsonObject lo = le.getAsJsonObject();
+                                String lootTable = optString(lo, "lootTable");
+                                String ic = optString(lo, "icon");
+                                String ti = optString(lo, "title");
+                                if (lootTable != null && !lootTable.isBlank()) {
+                                    lootTables.add(new LootTableReward(lootTable, ic, ti));
+                                }
+                            }
+                        }
+
                         String expType = optString(ro, "expType");
                         int expAmount = ro.has("expAmount") && ro.get("expAmount").isJsonPrimitive() && ro.getAsJsonPrimitive("expAmount").isNumber()
                                 ? ro.getAsJsonPrimitive("expAmount").getAsInt() : 0;
 
-                        rewards = new Rewards(rItems, cmds, fns, expType, expAmount);
+                        rewards = new Rewards(rItems, cmds, fns, lootTables, expType, expAmount);
                     }
 
                     String type = optString(o, "type");
@@ -1223,7 +1314,8 @@ public final class QuestData {
                     String subCategory = optString(o, "subCategory");
                     String sourcePath = optString(o, "sourcePath");
 
-                    Quest q = new Quest(id, name, icon, description, deps, optional, rewards, type, completion,
+                    Quest q = new Quest(id, name, icon, description, deps, optional, repeatable, hiddenUnderDependency,
+                            rewards, type, completion,
                             category, subCategory, sourcePath);
                     if (!isQuestDisabled(q)) QUESTS.put(q.id, q);
                 }

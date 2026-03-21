@@ -1,4 +1,3 @@
-// src/main/java/net/revilodev/boundless/network/BoundlessNetwork.java
 package net.revilodev.boundless.network;
 
 import com.google.gson.Gson;
@@ -25,6 +24,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import net.revilodev.boundless.Config;
 import net.revilodev.boundless.client.toast.QuestUnlockedToast;
+import net.revilodev.boundless.item.ModItems;
 import net.revilodev.boundless.quest.KillCounterState;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestProgressState;
@@ -63,9 +63,12 @@ public final class BoundlessNetwork {
 
         r.playToServer(Redeem.TYPE, Redeem.CODEC, BoundlessNetwork::handleRedeem);
         r.playToServer(Reject.TYPE, Reject.CODEC, BoundlessNetwork::handleReject);
+        r.playToServer(CreateScroll.TYPE, CreateScroll.CODEC, BoundlessNetwork::handleCreateScroll);
+        r.playToServer(RestartRepeatable.TYPE, RestartRepeatable.CODEC, BoundlessNetwork::handleRestartRepeatable);
 
         r.playToClient(SyncStatus.TYPE, SyncStatus.CODEC, BoundlessNetwork::handleSyncStatus);
         r.playToClient(SyncStatuses.TYPE, SyncStatuses.CODEC, BoundlessNetwork::handleSyncStatuses);
+        r.playToClient(SyncProgressMeta.TYPE, SyncProgressMeta.CODEC, BoundlessNetwork::handleSyncProgressMeta);
         r.playToClient(SyncKills.TYPE, SyncKills.CODEC, BoundlessNetwork::handleSyncKills);
         r.playToClient(SyncClear.TYPE, SyncClear.CODEC, BoundlessNetwork::handleSyncClear);
         r.playToClient(Toast.TYPE, Toast.CODEC, BoundlessNetwork::handleToast);
@@ -91,6 +94,26 @@ public final class BoundlessNetwork {
                 buf -> new Reject(buf.readUtf())
         );
         @Override public Type<Reject> type() { return TYPE; }
+    }
+
+    public record CreateScroll(String questId) implements CustomPacketPayload {
+        public static final Type<CreateScroll> TYPE =
+                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "create_scroll"));
+        public static final StreamCodec<FriendlyByteBuf, CreateScroll> CODEC = StreamCodec.of(
+                (buf, p) -> buf.writeUtf(p.questId),
+                buf -> new CreateScroll(buf.readUtf())
+        );
+        @Override public Type<CreateScroll> type() { return TYPE; }
+    }
+
+    public record RestartRepeatable(String questId) implements CustomPacketPayload {
+        public static final Type<RestartRepeatable> TYPE =
+                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "restart_repeatable"));
+        public static final StreamCodec<FriendlyByteBuf, RestartRepeatable> CODEC = StreamCodec.of(
+                (buf, p) -> buf.writeUtf(p.questId),
+                buf -> new RestartRepeatable(buf.readUtf())
+        );
+        @Override public Type<RestartRepeatable> type() { return TYPE; }
     }
 
     public record SyncStatus(String questId, String status) implements CustomPacketPayload {
@@ -132,6 +155,36 @@ public final class BoundlessNetwork {
                 }
         );
         @Override public Type<SyncStatuses> type() { return TYPE; }
+    }
+
+    public record ProgressMetaEntry(String questId, int claimCount, boolean scrollRedeemed, boolean scrollCreated) {
+        public static final StreamCodec<FriendlyByteBuf, ProgressMetaEntry> CODEC = StreamCodec.of(
+                (buf, e) -> {
+                    buf.writeUtf(e.questId);
+                    buf.writeVarInt(e.claimCount);
+                    buf.writeBoolean(e.scrollRedeemed);
+                    buf.writeBoolean(e.scrollCreated);
+                },
+                buf -> new ProgressMetaEntry(buf.readUtf(), buf.readVarInt(), buf.readBoolean(), buf.readBoolean())
+        );
+    }
+
+    public record SyncProgressMeta(List<ProgressMetaEntry> entries) implements CustomPacketPayload {
+        public static final Type<SyncProgressMeta> TYPE =
+                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "sync_progress_meta"));
+        public static final StreamCodec<FriendlyByteBuf, SyncProgressMeta> CODEC = StreamCodec.of(
+                (buf, p) -> {
+                    buf.writeVarInt(p.entries.size());
+                    for (ProgressMetaEntry e : p.entries) ProgressMetaEntry.CODEC.encode(buf, e);
+                },
+                buf -> {
+                    int n = buf.readVarInt();
+                    List<ProgressMetaEntry> list = new ArrayList<>(n);
+                    for (int i = 0; i < n; i++) list.add(ProgressMetaEntry.CODEC.decode(buf));
+                    return new SyncProgressMeta(list);
+                }
+        );
+        @Override public Type<SyncProgressMeta> type() { return TYPE; }
     }
 
     public record KillEntry(String entityId, int count) {
@@ -233,7 +286,27 @@ public final class BoundlessNetwork {
             PacketDistributor.sendToPlayer(p, new SyncStatuses(statuses));
         }
 
+        List<ProgressMetaEntry> metaEntries = new ArrayList<>();
+        QuestProgressState.get(p.serverLevel()).progressSnapshotFor(p.getUUID())
+                .forEach((questId, progress) -> metaEntries.add(new ProgressMetaEntry(
+                        questId,
+                        progress == null ? 0 : progress.claimCount(),
+                        progress != null && progress.scrollRedeemed(),
+                        progress != null && progress.scrollCreated()
+                )));
+        if (!metaEntries.isEmpty()) {
+            PacketDistributor.sendToPlayer(p, new SyncProgressMeta(metaEntries));
+        }
+
         syncComputedCompletion(p);
+    }
+
+    public static void sendProgressMeta(ServerPlayer player, String questId) {
+        if (player == null || questId == null || questId.isBlank()) return;
+        var progress = QuestProgressState.get(player.serverLevel()).progress(player.getUUID(), questId);
+        PacketDistributor.sendToPlayer(player, new SyncProgressMeta(List.of(
+                new ProgressMetaEntry(questId, progress.claimCount(), progress.scrollRedeemed(), progress.scrollCreated())
+        )));
     }
 
     private static void syncComputedCompletion(ServerPlayer p) {
@@ -242,8 +315,12 @@ public final class BoundlessNetwork {
             QuestTracker.Status st = QuestTracker.getStatus(q, p);
             if (st == QuestTracker.Status.REDEEMED || st == QuestTracker.Status.REJECTED) continue;
             if (QuestTracker.isReady(q, p) && st == QuestTracker.Status.INCOMPLETE) {
-                QuestTracker.setServerStatus(p, q.id, QuestTracker.Status.COMPLETED);
-                sendStatus(p, q.id, QuestTracker.Status.COMPLETED.name());
+                if (Config.autoClaimQuestRewards()) {
+                    claimQuest(p, q);
+                } else {
+                    QuestTracker.setServerStatus(p, q.id, QuestTracker.Status.COMPLETED);
+                    sendStatus(p, q.id, QuestTracker.Status.COMPLETED.name());
+                }
             }
         }
     }
@@ -303,6 +380,8 @@ public final class BoundlessNetwork {
             o.add("dependencies", deps);
 
             o.addProperty("optional", q.optional);
+            o.addProperty("repeatable", q.repeatable);
+            o.addProperty("hiddenUnderDependency", q.hiddenUnderDependency);
 
             if (q.rewards != null) {
                 JsonObject ro = new JsonObject();
@@ -335,6 +414,16 @@ public final class BoundlessNetwork {
                     fns.add(fo);
                 }
                 ro.add("functions", fns);
+
+                JsonArray lootTables = new JsonArray();
+                for (QuestData.LootTableReward lr : q.rewards.lootTables) {
+                    JsonObject lo = new JsonObject();
+                    lo.addProperty("lootTable", lr.lootTable);
+                    lo.addProperty("icon", lr.icon);
+                    lo.addProperty("title", lr.title);
+                    lootTables.add(lo);
+                }
+                ro.add("lootTables", lootTables);
 
                 ro.addProperty("expType", q.rewards.expType);
                 ro.addProperty("expAmount", q.rewards.expAmount);
@@ -414,26 +503,10 @@ public final class BoundlessNetwork {
     private static void handleRedeem(Redeem p, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             ServerPlayer sp = (ServerPlayer) ctx.player();
-            final String lockKey = sp.getUUID() + ":" + p.questId();
-
-            if (!REDEEM_IN_FLIGHT.add(lockKey)) return;
-
-            try {
-                QuestData.byIdServer(sp.server, p.questId()).ifPresent(q -> {
-                    if (!QuestTracker.isReady(q, sp)) return;
-
-                    if (questHasSubmit(q)) {
-                        if (!consumeSubmitItems(sp, q)) return;
-                    }
-
-                    boolean ok = QuestTracker.serverRedeem(q, sp);
-                    if (ok) {
-                        sendStatus(sp, q.id, QuestTracker.Status.REDEEMED.name());
-                    }
-                });
-            } finally {
-                REDEEM_IN_FLIGHT.remove(lockKey);
-            }
+            QuestData.byIdServer(sp.server, p.questId()).ifPresent(q -> {
+                if (!QuestTracker.isReady(q, sp)) return;
+                claimQuest(sp, q);
+            });
         });
     }
 
@@ -449,6 +522,32 @@ public final class BoundlessNetwork {
         });
     }
 
+    private static void handleCreateScroll(CreateScroll p, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            ServerPlayer sp = (ServerPlayer) ctx.player();
+            QuestData.byIdServer(sp.server, p.questId()).ifPresent(q -> {
+                if (!QuestTracker.canCreateScroll(q, sp)) return;
+                QuestProgressState.get(sp.serverLevel()).setScrollCreated(sp.getUUID(), q.id, true);
+                ItemStack stack = ModItems.createQuestScroll(q.id);
+                if (!sp.getInventory().add(stack) && !stack.isEmpty()) {
+                    sp.drop(stack, false);
+                }
+                sendProgressMeta(sp, q.id);
+            });
+        });
+    }
+
+    private static void handleRestartRepeatable(RestartRepeatable p, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            ServerPlayer sp = (ServerPlayer) ctx.player();
+            QuestData.byIdServer(sp.server, p.questId()).ifPresent(q -> {
+                if (QuestTracker.restartRepeatable(q, sp)) {
+                    sendStatus(sp, q.id, QuestTracker.Status.INCOMPLETE.name());
+                }
+            });
+        });
+    }
+
     private static void handleSyncStatus(SyncStatus p, IPayloadContext ctx) {
         ctx.enqueueWork(() ->
                 QuestTracker.clientSetStatus(p.questId(), QuestTracker.Status.valueOf(p.status()))
@@ -459,6 +558,16 @@ public final class BoundlessNetwork {
         ctx.enqueueWork(() -> {
             for (StatusEntry e : p.entries()) {
                 QuestTracker.clientSetStatus(e.questId(), QuestTracker.Status.valueOf(e.status()));
+            }
+        });
+    }
+
+    private static void handleSyncProgressMeta(SyncProgressMeta p, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            for (ProgressMetaEntry e : p.entries()) {
+                QuestTracker.clientSetClaimCount(e.questId(), e.claimCount());
+                QuestTracker.clientSetScrollRedeemed(e.questId(), e.scrollRedeemed());
+                QuestTracker.clientSetScrollCreated(e.questId(), e.scrollCreated());
             }
         });
     }
@@ -508,14 +617,34 @@ public final class BoundlessNetwork {
     private static boolean isSubmitTarget(QuestData.Quest q, QuestData.Target t) {
         if (t == null) return false;
         return "submit".equalsIgnoreCase(t.kind)
+                || "xp".equalsIgnoreCase(t.kind)
                 || (("submission".equalsIgnoreCase(q.type) || "submit".equalsIgnoreCase(q.type)) && t.isItem());
     }
 
-    private static boolean consumeSubmitItems(ServerPlayer sp, QuestData.Quest q) {
+    public static boolean claimQuest(ServerPlayer sp, QuestData.Quest q) {
+        if (sp == null || q == null) return false;
+        String lockKey = sp.getUUID() + ":" + q.id;
+        if (!REDEEM_IN_FLIGHT.add(lockKey)) return false;
+        try {
+            if (!QuestTracker.isReady(q, sp)) return false;
+            if (questHasSubmit(q) && !consumeSubmitTargets(sp, q)) return false;
+            boolean ok = QuestTracker.serverRedeem(q, sp);
+            if (!ok) return false;
+            sendStatus(sp, q.id, QuestTracker.Status.REDEEMED.name());
+            sendProgressMeta(sp, q.id);
+            return true;
+        } finally {
+            REDEEM_IN_FLIGHT.remove(lockKey);
+        }
+    }
+
+    private static boolean consumeSubmitTargets(ServerPlayer sp, QuestData.Quest q) {
         if (sp == null || q == null || q.completion == null) return false;
 
         Inventory inv = sp.getInventory();
         int size = inv.getContainerSize();
+        int totalXpLevels = 0;
+        int totalXpPoints = 0;
 
         ItemStack[] sim = new ItemStack[size];
         for (int i = 0; i < size; i++) sim[i] = inv.getItem(i).copy();
@@ -524,6 +653,13 @@ public final class BoundlessNetwork {
             if (t == null) continue;
             boolean submitTarget = isSubmitTarget(q, t);
             if (!submitTarget) continue;
+
+            if (t.isXp()) {
+                String mode = QuestTracker.normalizeXpType(t.id);
+                if ("levels".equals(mode)) totalXpLevels += Math.max(0, t.count);
+                else totalXpPoints += Math.max(0, t.count);
+                continue;
+            }
 
             String raw = t.id;
             int need = Math.max(1, t.count);
@@ -551,10 +687,18 @@ public final class BoundlessNetwork {
             }
         }
 
+        if (sp.experienceLevel < totalXpLevels) return false;
+        if (Math.max(0, sp.totalExperience) < totalXpPoints) return false;
+
         for (QuestData.Target t : q.completion.targets) {
             if (t == null) continue;
             boolean submitTarget = isSubmitTarget(q, t);
             if (!submitTarget) continue;
+
+            if (t.isXp()) {
+                if (!QuestTracker.consumeXpTarget(sp, t)) return false;
+                continue;
+            }
 
             String raw = t.id;
             int need = Math.max(1, t.count);

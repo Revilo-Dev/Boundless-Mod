@@ -18,7 +18,5 @@ public final class ServerQuestTicker {
         // Update statuses server-side and notify client on changes
         QuestTracker.serverTickPlayer(sp);
 
-        // If you want to also keep kills/status snapshots fresh on reconnect only, do nothing else here.
-        // Do NOT spam full syncPlayer every tick.
     }
 }
