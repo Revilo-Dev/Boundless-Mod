@@ -4050,17 +4050,34 @@ public final class QuestEditorScreen extends Screen {
 
     private void collectLootTablesFromVersionJar(Set<String> out) {
         if (out == null) return;
-        String version;
-        try {
-            version = SharedConstants.getCurrentVersion().getName();
-        } catch (Exception ignored) {
-            version = "1.21.1";
-        }
-        if (version == null || version.isBlank()) version = "1.21.1";
         Path versionsRoot = Minecraft.getInstance().gameDirectory.toPath().resolve("versions");
-        Path jarPath = versionsRoot.resolve(version).resolve(version + ".jar");
-        if (!Files.exists(jarPath)) return;
-        collectLootTablesFromZip(jarPath, out);
+        Path jarPath = null;
+        try {
+            String version = SharedConstants.getCurrentVersion().getName();
+            if (version != null && !version.isBlank()) {
+                Path exact = versionsRoot.resolve(version).resolve(version + ".jar");
+                if (Files.exists(exact)) jarPath = exact;
+            }
+        } catch (Exception ignored) {
+        }
+        if (jarPath == null && Files.isDirectory(versionsRoot)) {
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(versionsRoot)) {
+                List<Path> candidates = new ArrayList<>();
+                for (Path entry : stream) {
+                    if (entry == null || !Files.isDirectory(entry)) continue;
+                    String name = entry.getFileName().toString();
+                    if (!name.startsWith("1.21")) continue;
+                    Path candidate = entry.resolve(name + ".jar");
+                    if (Files.exists(candidate)) candidates.add(candidate);
+                }
+                candidates.sort(Comparator.comparing(Path::toString).reversed());
+                if (!candidates.isEmpty()) jarPath = candidates.get(0);
+            } catch (IOException ignored) {
+            }
+        }
+        if (jarPath != null) {
+            collectLootTablesFromZip(jarPath, out);
+        }
     }
 
     private void addLootTablePath(String path, Set<String> out) {
@@ -4110,7 +4127,74 @@ public final class QuestEditorScreen extends Screen {
 
     private List<String> lootTableSuggestions() {
         ensureLootTableIdCache();
+        if (lootTableIdCache.isEmpty()) {
+            populateFallbackLootTables(lootTableIdCache);
+        }
         return lootTableIdCache;
+    }
+
+    private void populateFallbackLootTables(List<String> out) {
+        if (out == null) return;
+        Set<String> found = new LinkedHashSet<>(out);
+        String[] chestDefaults = {
+                "chests/abandoned_mineshaft",
+                "chests/ancient_city",
+                "chests/ancient_city_ice_box",
+                "chests/bastion_bridge",
+                "chests/bastion_hoglin_stable",
+                "chests/bastion_other",
+                "chests/bastion_treasure",
+                "chests/buried_treasure",
+                "chests/desert_pyramid",
+                "chests/end_city_treasure",
+                "chests/igloo_chest",
+                "chests/jungle_temple",
+                "chests/jungle_temple_dispenser",
+                "chests/nether_bridge",
+                "chests/pillager_outpost",
+                "chests/ruined_portal",
+                "chests/shipwreck_map",
+                "chests/shipwreck_supply",
+                "chests/shipwreck_treasure",
+                "chests/simple_dungeon",
+                "chests/spawn_bonus_chest",
+                "chests/stronghold_corridor",
+                "chests/stronghold_crossing",
+                "chests/stronghold_library",
+                "chests/trial_chambers/corridor",
+                "chests/trial_chambers/entrance",
+                "chests/trial_chambers/intersection",
+                "chests/trial_chambers/reward",
+                "chests/trial_chambers/reward_common",
+                "chests/trial_chambers/reward_ominous",
+                "chests/trial_chambers/supply",
+                "chests/underwater_ruin_big",
+                "chests/underwater_ruin_small",
+                "chests/village/village_armorer",
+                "chests/village/village_butcher",
+                "chests/village/village_cartographer",
+                "chests/village/village_desert_house",
+                "chests/village/village_fisher",
+                "chests/village/village_fletcher",
+                "chests/village/village_mason",
+                "chests/village/village_plains_house",
+                "chests/village/village_savanna_house",
+                "chests/village/village_shepherd",
+                "chests/village/village_snowy_house",
+                "chests/village/village_taiga_house",
+                "chests/village/village_tannery",
+                "chests/village/village_temple",
+                "chests/village/village_toolsmith",
+                "chests/village/village_weaponsmith",
+                "chests/woodland_mansion"
+        };
+        for (String chest : chestDefaults) found.add(chest);
+        for (ResourceLocation rl : BuiltInRegistries.ENTITY_TYPE.keySet()) {
+            if (rl != null) found.add("entities/" + rl.getPath());
+        }
+        out.clear();
+        out.addAll(found);
+        out.sort(String::compareTo);
     }
 
     private String computeIconSuggestion(String raw) {

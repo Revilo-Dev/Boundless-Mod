@@ -79,7 +79,9 @@ public final class BoundlessMod {
             if (!Config.disableQuestBook()) {
                 event.accept(ModItems.QUEST_BOOK.get());
             }
-            event.accept(ModItems.QUEST_COMPLETION_SCROLL.get());
+            if (Config.enableQuestScrolls()) {
+                event.accept(ModItems.QUEST_COMPLETION_SCROLL.get());
+            }
         }
     }
 

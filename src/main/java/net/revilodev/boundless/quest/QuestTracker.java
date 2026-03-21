@@ -482,7 +482,11 @@ public final class QuestTracker {
     }
 
     public static boolean canCreateScroll(QuestData.Quest q, Player player) {
-        return q != null && player != null && hasEverClaimed(q, player) && !hasCreatedScroll(q.id, player);
+        return Config.enableQuestScrolls()
+                && q != null
+                && player != null
+                && hasEverClaimed(q, player)
+                && !hasCreatedScroll(q.id, player);
     }
 
     public static boolean canRestartRepeatable(QuestData.Quest q, Player player) {

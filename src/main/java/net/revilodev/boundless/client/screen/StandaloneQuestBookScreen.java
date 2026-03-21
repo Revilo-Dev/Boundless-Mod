@@ -94,7 +94,7 @@ public final class StandaloneQuestBookScreen extends Screen {
             showingDetails = true;
             updateVisibility();
         });
-        list.setTopInset(0);
+        list.setTopInset(Config.enableQuestSearchBox() ? 18 : 0);
         list.setQuests(QuestData.all());
         list.setCategory(selectedCategory);
         list.setSearchQuery(searchQuery);

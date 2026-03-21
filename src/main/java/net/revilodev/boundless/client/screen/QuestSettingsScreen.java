@@ -70,6 +70,7 @@ public final class QuestSettingsScreen extends Screen {
     private ConfigRow uiEnableSearchBoxRow;
     private ConfigRow functionalityDisablePinningRow;
     private ConfigRow functionalityAutoClaimRow;
+    private ConfigRow functionalityQuestScrollsRow;
     private ConfigRow gameplayDisableQuestBookRow;
     private ConfigRow gameplaySpawnWithBookRow;
 
@@ -92,6 +93,7 @@ public final class QuestSettingsScreen extends Screen {
     private int uiEnableSearchBoxBaseY;
     private int functionalityDisablePinningBaseY;
     private int functionalityAutoClaimBaseY;
+    private int functionalityQuestScrollsBaseY;
     private int gameplayDisableQuestBookBaseY;
     private int gameplaySpawnWithBookBaseY;
 
@@ -104,6 +106,7 @@ public final class QuestSettingsScreen extends Screen {
     private boolean enableQuestSearchBox;
     private boolean disableQuestPinning;
     private boolean autoClaimQuestRewards;
+    private boolean enableQuestScrolls;
     private boolean disableQuestBook;
     private boolean spawnWithQuestBook;
 
@@ -159,7 +162,8 @@ public final class QuestSettingsScreen extends Screen {
         functionalityHeaderBaseY = uiRow1 + rowGap * 7 + 4;
         functionalityDisablePinningBaseY = functionalityHeaderBaseY + 10;
         functionalityAutoClaimBaseY = functionalityDisablePinningBaseY + rowGap;
-        gameplayHeaderBaseY = functionalityAutoClaimBaseY + rowGap + 2;
+        functionalityQuestScrollsBaseY = functionalityAutoClaimBaseY + rowGap;
+        gameplayHeaderBaseY = functionalityQuestScrollsBaseY + rowGap + 2;
         gameplayDisableQuestBookBaseY = gameplayHeaderBaseY + 10;
         gameplaySpawnWithBookBaseY = gameplayDisableQuestBookBaseY + rowGap;
 
@@ -202,6 +206,10 @@ public final class QuestSettingsScreen extends Screen {
                 "Automatically claim rewards when a quest becomes complete.",
                 () -> autoClaimQuestRewards ? "On" : "Off",
                 () -> autoClaimQuestRewards = !autoClaimQuestRewards);
+        functionalityQuestScrollsRow = new ConfigRow(px, functionalityQuestScrollsBaseY, pw, "Enable Quest Scrolls",
+                "Show and allow quest completion scrolls.",
+                () -> enableQuestScrolls ? "On" : "Off",
+                () -> enableQuestScrolls = !enableQuestScrolls);
 
         gameplayDisableQuestBookRow = new ConfigRow(px, gameplayDisableQuestBookBaseY, pw, "Disable Quest Book",
                 "Disable opening the quest book from key/item/network open.",
@@ -224,6 +232,7 @@ public final class QuestSettingsScreen extends Screen {
         addRenderableWidget(uiEnableSearchBoxRow);
         addRenderableWidget(functionalityDisablePinningRow);
         addRenderableWidget(functionalityAutoClaimRow);
+        addRenderableWidget(functionalityQuestScrollsRow);
         addRenderableWidget(gameplayDisableQuestBookRow);
         addRenderableWidget(gameplaySpawnWithBookRow);
         applyConfigScrollLayout();
@@ -279,6 +288,8 @@ public final class QuestSettingsScreen extends Screen {
         functionalityDisablePinningRow.active = config;
         functionalityAutoClaimRow.visible = config;
         functionalityAutoClaimRow.active = config;
+        functionalityQuestScrollsRow.visible = config;
+        functionalityQuestScrollsRow.active = config;
         gameplayDisableQuestBookRow.visible = config;
         gameplayDisableQuestBookRow.active = config;
         gameplaySpawnWithBookRow.visible = config;
@@ -310,6 +321,7 @@ public final class QuestSettingsScreen extends Screen {
         enableQuestSearchBox = Config.enableQuestSearchBox();
         disableQuestPinning = Config.disableQuestPinning();
         autoClaimQuestRewards = Config.autoClaimQuestRewards();
+        enableQuestScrolls = Config.enableQuestScrolls();
         disableQuestBook = Config.disableQuestBook();
         spawnWithQuestBook = Config.spawnWithQuestBook();
     }
@@ -334,6 +346,7 @@ public final class QuestSettingsScreen extends Screen {
         Config.ENABLE_QUEST_SEARCH_BOX.set(enableQuestSearchBox);
         Config.DISABLE_QUEST_PINNING.set(disableQuestPinning);
         Config.AUTO_CLAIM_QUEST_REWARDS.set(autoClaimQuestRewards);
+        Config.ENABLE_QUEST_SCROLLS.set(enableQuestScrolls);
         Config.DISABLE_QUEST_BOOK.set(disableQuestBook);
         Config.SPAWN_WITH_QUEST_BOOK.set(spawnWithQuestBook);
         Config.SPEC.save();

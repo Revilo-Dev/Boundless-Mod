@@ -525,6 +525,7 @@ public final class BoundlessNetwork {
     private static void handleCreateScroll(CreateScroll p, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             ServerPlayer sp = (ServerPlayer) ctx.player();
+            if (!Config.enableQuestScrolls()) return;
             QuestData.byIdServer(sp.server, p.questId()).ifPresent(q -> {
                 if (!QuestTracker.canCreateScroll(q, sp)) return;
                 QuestProgressState.get(sp.serverLevel()).setScrollCreated(sp.getUUID(), q.id, true);

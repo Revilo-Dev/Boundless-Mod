@@ -262,7 +262,7 @@ public final class QuestPanelClient {
 
         if (st.list != null) {
             st.list.setBounds(px, py, pw, ph);
-            st.list.setTopInset(0);
+            st.list.setTopInset(Config.enableQuestSearchBox() ? 18 : 0);
         }
         if (st.details != null) {
             st.details.setBounds(px, py, pw, ph);

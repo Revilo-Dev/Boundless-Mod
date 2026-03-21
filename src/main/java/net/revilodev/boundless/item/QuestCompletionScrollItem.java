@@ -12,6 +12,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
+import net.revilodev.boundless.Config;
 import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestProgressState;
@@ -47,6 +48,11 @@ public final class QuestCompletionScrollItem extends Item {
         ItemStack stack = player.getItemInHand(hand);
         if (!(player instanceof ServerPlayer sp)) {
             return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
+        }
+
+        if (!Config.enableQuestScrolls()) {
+            sp.displayClientMessage(Component.literal("Quest scrolls are disabled.").withStyle(ChatFormatting.RED), true);
+            return InteractionResultHolder.fail(stack);
         }
 
         String questId = getQuestId(stack);

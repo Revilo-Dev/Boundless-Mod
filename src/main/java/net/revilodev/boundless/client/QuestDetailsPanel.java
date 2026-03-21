@@ -216,7 +216,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
             gg.drawString(mc.font, title, x + 26, y + 6, 0xFFFFFF, false);
         }
 
-        boolean showScrollButton = QuestTracker.canCreateScroll(quest, mc.player);
+        boolean showScrollButton = Config.enableQuestScrolls() && QuestTracker.canCreateScroll(quest, mc.player);
         boolean pinningEnabled = !Config.disableQuestPinning() && !showScrollButton;
         pin.visible = pinningEnabled;
         pin.active = pinningEnabled;
@@ -500,10 +500,11 @@ public final class QuestDetailsPanel extends AbstractWidget {
             curY[0] += 2;
         }
 
+        int lootCommandCount = commandLootRewardCount();
         boolean hasItemRewards = quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty();
-        boolean hasCommandRewards = quest.rewards != null && quest.rewards.hasCommands();
+        boolean hasCommandRewards = quest.rewards != null && quest.rewards.hasCommands() && quest.rewards.commands.size() > lootCommandCount;
         boolean hasFunctionRewards = quest.rewards != null && quest.rewards.hasFunctions();
-        boolean hasLootTableRewards = quest.rewards != null && quest.rewards.hasLootTables();
+        boolean hasLootTableRewards = (quest.rewards != null && quest.rewards.hasLootTables()) || lootCommandCount > 0;
         boolean hasExpReward = quest.rewards != null && quest.rewards.hasExp();
 
         boolean hasAnyReward = hasItemRewards || hasCommandRewards || hasFunctionRewards || hasLootTableRewards || hasExpReward;
@@ -540,6 +541,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         if (hasCommandRewards) {
             for (QuestData.CommandReward cr : quest.rewards.commands) {
+                String lootTableId = lootTableIdFromCommand(cr.command);
+                if (!lootTableId.isBlank()) continue;
                 int lineY = curY[0];
 
                 ItemStack icon = new ItemStack(Items.COMMAND_BLOCK);
@@ -589,10 +592,29 @@ public final class QuestDetailsPanel extends AbstractWidget {
         }
 
         if (hasLootTableRewards) {
+            if (quest.rewards != null && quest.rewards.commands != null) {
+                for (QuestData.CommandReward cr : quest.rewards.commands) {
+                    String lootTableId = lootTableIdFromCommand(cr.command);
+                    if (lootTableId.isBlank()) continue;
+                    int lineY = curY[0];
+                    ItemStack icon = lootTableIcon(lootTableId);
+                    String pretty = prettyLootTableName(lootTableId);
+                    String display = "Loot Table: " + pretty;
+
+                    gg.renderItem(icon, x + 4, lineY);
+                    gg.drawWordWrap(mc.font, Component.literal(display), x + 24, lineY + 4, w - 30, 0xA8FFA8);
+
+                    if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
+                        hoveredTooltips.add(Component.literal(pretty));
+                    }
+
+                    curY[0] += LINE_ITEM_ROW;
+                }
+            }
             for (QuestData.LootTableReward lr : quest.rewards.lootTables) {
                 int lineY = curY[0];
 
-                ItemStack icon = new ItemStack(Items.CHEST);
+                ItemStack icon = lootTableIcon(lr.lootTable);
                 if (lr.icon != null && !lr.icon.isBlank()) {
                     try {
                         Item it = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(lr.icon)).orElse(null);
@@ -600,13 +622,14 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     } catch (Exception ignored) {}
                 }
 
-                String display = (lr.title != null && !lr.title.isBlank()) ? lr.title : lr.lootTable;
+                String pretty = (lr.title != null && !lr.title.isBlank()) ? lr.title : prettyLootTableName(lr.lootTable);
+                String display = "Loot Table: " + pretty;
 
                 gg.renderItem(icon, x + 4, lineY);
                 gg.drawWordWrap(mc.font, Component.literal(display), x + 24, lineY + 4, w - 30, 0xA8FFA8);
 
                 if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
-                    hoveredTooltips.add(Component.literal(lr.lootTable));
+                    hoveredTooltips.add(Component.literal(pretty));
                 }
 
                 curY[0] += LINE_ITEM_ROW;
@@ -692,18 +715,19 @@ public final class QuestDetailsPanel extends AbstractWidget {
             y += quest.completion.targets.size() * LINE_ITEM_ROW + 2;
         }
 
+        int lootCommandCount = commandLootRewardCount();
         boolean hasItemRewards = quest.rewards != null && quest.rewards.items != null && !quest.rewards.items.isEmpty();
-        boolean hasCommandRewards = quest.rewards != null && quest.rewards.hasCommands();
+        boolean hasCommandRewards = quest.rewards != null && quest.rewards.hasCommands() && quest.rewards.commands.size() > lootCommandCount;
         boolean hasFunctionRewards = quest.rewards != null && quest.rewards.hasFunctions();
-        boolean hasLootTableRewards = quest.rewards != null && quest.rewards.hasLootTables();
+        boolean hasLootTableRewards = (quest.rewards != null && quest.rewards.hasLootTables()) || lootCommandCount > 0;
         boolean hasExpReward = quest.rewards != null && quest.rewards.hasExp();
 
         if (hasItemRewards || hasCommandRewards || hasFunctionRewards || hasLootTableRewards || hasExpReward) {
             y += mc.font.wordWrapHeight("Reward:", w - 8) + 4;
             if (hasItemRewards) y += quest.rewards.items.size() * LINE_ITEM_ROW;
-            if (hasCommandRewards) y += quest.rewards.commands.size() * LINE_ITEM_ROW;
+            if (hasCommandRewards) y += Math.max(0, quest.rewards.commands.size() - lootCommandCount) * LINE_ITEM_ROW;
             if (hasFunctionRewards) y += quest.rewards.functions.size() * LINE_ITEM_ROW;
-            if (hasLootTableRewards) y += quest.rewards.lootTables.size() * LINE_ITEM_ROW;
+            if (hasLootTableRewards) y += (quest.rewards.lootTables.size() + lootCommandCount) * LINE_ITEM_ROW;
             if (hasExpReward) y += LINE_ITEM_ROW;
             y += 2;
         }
@@ -765,6 +789,64 @@ public final class QuestDetailsPanel extends AbstractWidget {
             case 'x' -> fallback;
             default -> fallback;
         };
+    }
+
+    private String lootTableIdFromCommand(String command) {
+        if (command == null) return "";
+        String trimmed = command.trim();
+        if (trimmed.startsWith("/")) trimmed = trimmed.substring(1).trim();
+        String prefix = "loot give @s loot ";
+        if (!trimmed.regionMatches(true, 0, prefix, 0, prefix.length())) return "";
+        return trimmed.substring(prefix.length()).trim();
+    }
+
+    private int commandLootRewardCount() {
+        if (quest == null || quest.rewards == null || quest.rewards.commands == null) return 0;
+        int total = 0;
+        for (QuestData.CommandReward cr : quest.rewards.commands) {
+            if (cr != null && !lootTableIdFromCommand(cr.command).isBlank()) total++;
+        }
+        return total;
+    }
+
+    private String prettyLootTableName(String lootTableId) {
+        if (lootTableId == null || lootTableId.isBlank()) return "Unknown";
+        String cleaned = lootTableId;
+        int colon = cleaned.indexOf(':');
+        if (colon >= 0 && colon + 1 < cleaned.length()) cleaned = cleaned.substring(colon + 1);
+        if (cleaned.startsWith("chests/")) cleaned = cleaned.substring("chests/".length());
+        else if (cleaned.startsWith("entities/")) cleaned = cleaned.substring("entities/".length());
+        cleaned = cleaned.replace('/', ' ').replace('_', ' ').trim();
+        if (cleaned.isBlank()) return "Unknown";
+        String[] parts = cleaned.split("\\s+");
+        StringBuilder out = new StringBuilder();
+        for (String part : parts) {
+            if (part.isEmpty()) continue;
+            if (out.length() > 0) out.append(' ');
+            out.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) out.append(part.substring(1));
+        }
+        return out.toString();
+    }
+
+    private ItemStack lootTableIcon(String lootTableId) {
+        if (lootTableId == null || lootTableId.isBlank()) return new ItemStack(Items.CHEST);
+        String namespace = "minecraft";
+        String path = lootTableId;
+        int colon = lootTableId.indexOf(':');
+        if (colon >= 0) {
+            namespace = lootTableId.substring(0, colon);
+            if (colon + 1 < lootTableId.length()) path = lootTableId.substring(colon + 1);
+        }
+        if (path.startsWith("entities/")) {
+            String entityPath = path.substring("entities/".length());
+            Item egg = BuiltInRegistries.ITEM.getOptional(ResourceLocation.fromNamespaceAndPath(namespace, entityPath + "_spawn_egg")).orElse(null);
+            if (egg == null) {
+                egg = BuiltInRegistries.ITEM.getOptional(ResourceLocation.fromNamespaceAndPath("minecraft", "zombie_spawn_egg")).orElse(Items.ZOMBIE_SPAWN_EGG);
+            }
+            return new ItemStack(egg);
+        }
+        return new ItemStack(Items.CHEST);
     }
 
     private List<Item> resolveTagItems(ResourceLocation tagId) {
