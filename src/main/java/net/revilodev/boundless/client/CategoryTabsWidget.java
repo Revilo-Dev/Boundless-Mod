@@ -22,12 +22,19 @@ public final class CategoryTabsWidget extends AbstractWidget {
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/tab.png");
     private static final ResourceLocation TAB_SELECTED =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/tab_selected.png");
+    private static final ResourceLocation MOVE_DOWN =
+            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/gui/sprites/transferable_list/move_down.png");
+    private static final ResourceLocation MOVE_UP =
+            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/gui/sprites/transferable_list/move_up.png");
+    private static final int PAGE_SIZE = 6;
+    private static final int CONTROL_ICON = 12;
+    private static final int CONTROL_GAP = 2;
 
     private final Minecraft mc = Minecraft.getInstance();
     private final Consumer<String> onSelect;
     private final List<QuestData.Category> categories = new ArrayList<>();
     private String selected = "";
-    private int scrollIndex = 0;
+    private int pageIndex = 0;
 
     private int cellW = 26;
     private int cellH = 26;
@@ -37,6 +44,9 @@ public final class CategoryTabsWidget extends AbstractWidget {
     private Component pendingTooltip;
     private int pendingTooltipX;
     private int pendingTooltipY;
+    private int tabRenderX() {
+        return getX() + Math.max(0, width - cellW);
+    }
 
     public CategoryTabsWidget(int x, int y, int w, int h, Consumer<String> onSelect) {
         super(x, y, w, h, Component.empty());
@@ -70,10 +80,10 @@ public final class CategoryTabsWidget extends AbstractWidget {
             if (!hasSelected) selected = categories.get(0).id;
         } else {
             selected = "";
-            scrollIndex = 0;
+            pageIndex = 0;
             return;
         }
-        clampScroll();
+        clampPage();
     }
 
     public void setSelected(String id) {
@@ -96,7 +106,7 @@ public final class CategoryTabsWidget extends AbstractWidget {
     public String selectFirstCategory() {
         if (categories.isEmpty()) {
             selected = "";
-            scrollIndex = 0;
+            pageIndex = 0;
             return "";
         }
         selected = categories.get(0).id;
@@ -127,15 +137,16 @@ public final class CategoryTabsWidget extends AbstractWidget {
 
         int visibleCount = visibleTabCount();
         if (visibleCount <= 0) return;
-        clampScroll();
+        clampPage();
 
-        int x = getX();
+        int x = tabRenderX();
         int y = getY();
 
-        int end = Math.min(categories.size(), scrollIndex + visibleCount);
-        for (int idx = scrollIndex; idx < end; idx++) {
+        int start = pageIndex * PAGE_SIZE;
+        int end = Math.min(categories.size(), start + visibleCount);
+        for (int idx = start; idx < end; idx++) {
             QuestData.Category c = categories.get(idx);
-            int i = idx - scrollIndex;
+            int i = idx - start;
             int top = y + i * (cellH + gap);
 
             boolean sel = !selected.isBlank() && c.id.equalsIgnoreCase(selected);
@@ -151,6 +162,7 @@ public final class CategoryTabsWidget extends AbstractWidget {
                 pendingTooltipY = mouseY;
             }
         }
+        renderPageControls(gg, mouseX, mouseY, getX(), y + visibleCount * (cellH + gap));
     }
 
     @Override
@@ -160,14 +172,15 @@ public final class CategoryTabsWidget extends AbstractWidget {
 
         int visibleCount = visibleTabCount();
         if (visibleCount <= 0) return false;
-        clampScroll();
+        clampPage();
 
-        int x = getX();
+        int x = tabRenderX();
         int y = getY();
 
-        int end = Math.min(categories.size(), scrollIndex + visibleCount);
-        for (int idx = scrollIndex; idx < end; idx++) {
-            int i = idx - scrollIndex;
+        int start = pageIndex * PAGE_SIZE;
+        int end = Math.min(categories.size(), start + visibleCount);
+        for (int idx = start; idx < end; idx++) {
+            int i = idx - start;
             int top = y + i * (cellH + gap);
             if (mouseX >= x && mouseX < x + cellW && mouseY >= top && mouseY < top + cellH) {
                 String id = categories.get(idx).id;
@@ -177,45 +190,41 @@ public final class CategoryTabsWidget extends AbstractWidget {
             }
         }
 
+        if (categories.size() > PAGE_SIZE) {
+            int controlsY = y + visibleCount * (cellH + gap);
+            if (isOverUp(mouseX, mouseY, getX(), controlsY) && pageIndex > 0) {
+                pageIndex--;
+                return true;
+            }
+            if (isOverDown(mouseX, mouseY, getX(), controlsY) && pageIndex < maxPageIndex()) {
+                pageIndex++;
+                return true;
+            }
+        }
+
         return false;
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (!visible || !active) return false;
-        if (mouseX < getX() || mouseX >= getX() + cellW || mouseY < getY() || mouseY >= getY() + height) return false;
-        int max = maxScrollIndex();
-        if (max <= 0) return false;
-        if (scrollY > 0) {
-            scrollIndex = Math.max(0, scrollIndex - 1);
-            return true;
-        }
-        if (scrollY < 0) {
-            scrollIndex = Math.min(max, scrollIndex + 1);
-            return true;
-        }
         return false;
     }
 
     private int visibleTabCount() {
-        int step = cellH + gap;
-        if (step <= 0) return 0;
-        return Math.max(1, height / step);
+        return PAGE_SIZE;
     }
 
-    private int maxScrollIndex() {
-        int visible = visibleTabCount();
-        if (visible <= 0) return 0;
-        return Math.max(0, categories.size() - visible);
+    private int maxPageIndex() {
+        return Math.max(0, (categories.size() - 1) / PAGE_SIZE);
     }
 
-    private void clampScroll() {
-        scrollIndex = Math.max(0, Math.min(scrollIndex, maxScrollIndex()));
+    private void clampPage() {
+        pageIndex = Math.max(0, Math.min(pageIndex, maxPageIndex()));
     }
 
     private void ensureSelectedVisible() {
         if (selected == null || selected.isBlank() || categories.isEmpty()) {
-            clampScroll();
+            clampPage();
             return;
         }
         int selectedIndex = -1;
@@ -226,20 +235,53 @@ public final class CategoryTabsWidget extends AbstractWidget {
             }
         }
         if (selectedIndex < 0) {
-            clampScroll();
+            clampPage();
             return;
         }
-        int visible = visibleTabCount();
-        if (visible <= 0) {
-            clampScroll();
-            return;
+        pageIndex = selectedIndex / PAGE_SIZE;
+        clampPage();
+    }
+
+    private void renderPageControls(GuiGraphics gg, int mouseX, int mouseY, int x, int y) {
+        if (categories.size() <= PAGE_SIZE) return;
+        int upY = y + 1;
+        int downY = upY + CONTROL_ICON + CONTROL_GAP;
+        int iconX = tabRenderX() + 7;
+        gg.blit(MOVE_UP, iconX, upY, 0, 0, CONTROL_ICON, CONTROL_ICON, CONTROL_ICON, CONTROL_ICON);
+        gg.blit(MOVE_DOWN, iconX, downY, 0, 0, CONTROL_ICON, CONTROL_ICON, CONTROL_ICON, CONTROL_ICON);
+        String text = (pageIndex + 1) + "/" + (maxPageIndex() + 1);
+        drawScaledString(gg, text, 0.6f, tabRenderX() + 21, upY + 9, 0xFFFFFFFF);
+
+        if (isOverUp(mouseX, mouseY, x, y) && pageIndex > 0) {
+            pendingTooltip = Component.literal("Previous page");
+            pendingTooltipX = mouseX;
+            pendingTooltipY = mouseY;
+        } else if (isOverDown(mouseX, mouseY, x, y) && pageIndex < maxPageIndex()) {
+            pendingTooltip = Component.literal("Next page");
+            pendingTooltipX = mouseX;
+            pendingTooltipY = mouseY;
         }
-        if (selectedIndex < scrollIndex) {
-            scrollIndex = selectedIndex;
-        } else if (selectedIndex >= scrollIndex + visible) {
-            scrollIndex = selectedIndex - visible + 1;
-        }
-        clampScroll();
+    }
+
+    private boolean isOverUp(double mouseX, double mouseY, int x, int y) {
+        int upY = y + 1;
+        int iconX = tabRenderX() + 7;
+        return mouseX >= iconX && mouseX < iconX + CONTROL_ICON && mouseY >= upY && mouseY < upY + CONTROL_ICON;
+    }
+
+    private boolean isOverDown(double mouseX, double mouseY, int x, int y) {
+        int downY = y + 1 + CONTROL_ICON + CONTROL_GAP;
+        int iconX = tabRenderX() + 7;
+        return mouseX >= iconX && mouseX < iconX + CONTROL_ICON && mouseY >= downY && mouseY < downY + CONTROL_ICON;
+    }
+
+    private void drawScaledString(GuiGraphics gg, String text, float scale, int x, int y, int color) {
+        if (text == null || text.isEmpty()) return;
+        gg.pose().pushPose();
+        gg.pose().scale(scale, scale, 1f);
+        float inv = 1f / scale;
+        gg.drawString(mc.font, text, (int) (x * inv), (int) (y * inv), color, false);
+        gg.pose().popPose();
     }
 
     @Override

@@ -68,7 +68,7 @@ public final class StandaloneQuestBookScreen extends Screen {
         int pw = 127;
         int ph = panelHeight - 20;
 
-        tabs = new CategoryTabsWidget(leftX - 23, topY + 4, 26, panelHeight - 8, id -> {
+        tabs = new CategoryTabsWidget(leftX - 41, topY + 4, 44, panelHeight + 34, id -> {
             if (Config.disableCategories()) return;
             list.setCategory(id);
             showingDetails = false;
@@ -179,7 +179,7 @@ public final class StandaloneQuestBookScreen extends Screen {
         }
         if (settingsButton != null) {
             boolean canAccessSettings = minecraft != null && minecraft.player != null && minecraft.player.hasPermissions(2);
-            boolean showSettings = Config.hideFilters() && canAccessSettings;
+            boolean showSettings = !Config.displayFiltersAsTabs() && canAccessSettings;
             settingsButton.visible = showSettings;
             settingsButton.active = showSettings;
         }

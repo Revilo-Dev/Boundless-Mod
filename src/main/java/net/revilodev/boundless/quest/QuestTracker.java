@@ -27,6 +27,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.revilodev.boundless.Config;
+import net.revilodev.boundless.compat.LevelUpCompat;
 import net.revilodev.boundless.network.BoundlessNetwork;
 
 import java.io.BufferedReader;
@@ -184,7 +185,7 @@ public final class QuestTracker {
         }
     }
 
-    private static Status decodeStatus(String raw) {
+    public static Status decodeStatus(String raw) {
         if (raw == null || raw.isBlank()) return Status.INCOMPLETE;
         try { return Status.valueOf(raw); } catch (Exception ignored) { return Status.INCOMPLETE; }
     }
@@ -342,6 +343,7 @@ public final class QuestTracker {
             if (t.isAdvancement() && !hasAdvancement(player, t.id)) return false;
             if (t.isStat() && getStatCount(player, t.id) < t.count) return false;
             if (t.isXp() && getXpAmount(player, t.id) < t.count) return false;
+            if (t.isLevelUpLevel() && !LevelUpCompat.meetsLevelRequirement(player, t.count)) return false;
         }
 
         return true;
@@ -524,6 +526,10 @@ public final class QuestTracker {
         if (player == null || rewards == null || !rewards.hasExp()) return;
         int amount = Math.max(0, rewards.expAmount);
         if (amount <= 0) return;
+        if ("levelup".equalsIgnoreCase(rewards.expType)) {
+            LevelUpCompat.awardXp(player, amount);
+            return;
+        }
         if ("levels".equalsIgnoreCase(rewards.expType)) {
             player.giveExperienceLevels(amount);
         } else {
@@ -580,7 +586,8 @@ public final class QuestTracker {
         if (q.rewards != null && q.rewards.items != null) {
             for (QuestData.RewardEntry r : q.rewards.items) {
                 if (r == null || r.item == null || r.item.isBlank()) continue;
-                ResourceLocation rl = ResourceLocation.parse(r.item);
+                ResourceLocation rl = tryParseCached(r.item);
+                if (rl == null) continue;
                 Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
                 if (item != null) {
                     ItemStack stack = new ItemStack(item, Math.max(1, r.count));
@@ -851,7 +858,7 @@ public final class QuestTracker {
                     if (obj == null) return;
                     for (String qid : obj.keySet()) {
                         try {
-                            Status st = Status.valueOf(obj.get(qid).getAsString());
+                            Status st = decodeStatus(obj.get(qid).getAsString());
                             map.put(qid, st);
                         } catch (Exception ignored) {}
                     }

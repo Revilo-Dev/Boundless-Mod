@@ -89,7 +89,7 @@ public final class QuestPanelClient {
         e.addListener(st.details.scrollButton());
         e.addListener(st.searchBox);
 
-        st.tabs = new CategoryTabsWidget(0, 0, 26, PANEL_H, id -> {
+        st.tabs = new CategoryTabsWidget(0, 0, 44, PANEL_H + 34, id -> {
             if (Config.disableCategories()) return;
             st.selectedCategory = id;
             if (st.list != null) st.list.setCategory(id);
@@ -241,7 +241,7 @@ public final class QuestPanelClient {
     }
 
     private static int computeTabsX(InventoryScreen inv) {
-        return computePanelX(inv) - 23;
+        return computePanelX(inv) - 41;
     }
 
     private static void setPanelChildBounds(InventoryScreen inv, State st) {
@@ -278,7 +278,7 @@ public final class QuestPanelClient {
             );
         }
 
-        if (st.tabs != null) st.tabs.setBounds(computeTabsX(inv), bgy + 4, 26, PANEL_H - 8);
+        if (st.tabs != null) st.tabs.setBounds(computeTabsX(inv), bgy + 4, 44, PANEL_H + 34);
         if (st.header != null) st.header.setPanelBounds(bgx, bgy, PANEL_W);
 
         if (st.filter != null) {
@@ -442,7 +442,7 @@ public final class QuestPanelClient {
         if (st.settingsButton != null) {
             boolean canAccessSettings = Minecraft.getInstance().player != null
                     && Minecraft.getInstance().player.hasPermissions(2);
-            boolean showSettings = st.open && Config.hideFilters() && canAccessSettings;
+            boolean showSettings = st.open && !Config.displayFiltersAsTabs() && canAccessSettings;
             st.settingsButton.visible = showSettings;
             st.settingsButton.active = showSettings;
         }

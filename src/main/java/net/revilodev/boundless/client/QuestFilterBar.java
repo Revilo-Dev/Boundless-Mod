@@ -8,15 +8,20 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
+import net.revilodev.boundless.Config;
 
 @OnlyIn(Dist.CLIENT)
 public final class QuestFilterBar extends AbstractWidget {
+    private static final int BTN_W = 20;
+    private static final int BTN_H = 20;
+    private static final int BTN_GAP = 2;
 
     private static final int TAB_W = 32;
     private static final int TAB_H = 32;
     private static final int TAB_SELECTED_H = 35;
     private static final int GAP = -2;
     private static final int BAR_H = TAB_SELECTED_H;
+    private static final int SIDE_GAP = 1;
 
     private static final ResourceLocation TEX_COMPLETE =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/pull-tab-completed.png");
@@ -42,6 +47,24 @@ public final class QuestFilterBar extends AbstractWidget {
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/pull-tab-settings.png");
     private static final ResourceLocation TEX_SETTINGS_HOVER =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/pull-tab-settings-pulled.png");
+    private static final ResourceLocation BTN_COMPLETE =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/complete_filter.png");
+    private static final ResourceLocation BTN_COMPLETE_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/complete_filter_hovered.png");
+    private static final ResourceLocation BTN_COMPLETE_DISABLED =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/complete_filter_disabled.png");
+    private static final ResourceLocation BTN_REJECT =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/reject_filter.png");
+    private static final ResourceLocation BTN_REJECT_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/reject_filter_hovered.png");
+    private static final ResourceLocation BTN_REJECT_DISABLED =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/reject_filter_disabled.png");
+    private static final ResourceLocation BTN_LOCKED =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/locked_filter.png");
+    private static final ResourceLocation BTN_LOCKED_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/locked_filter_hovered.png");
+    private static final ResourceLocation BTN_LOCKED_DISABLED =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/locked_filter_disabled.png");
 
     private static boolean showCompleted = false;
     private static boolean showRejected = false;
@@ -78,16 +101,27 @@ public final class QuestFilterBar extends AbstractWidget {
     }
 
     public int getPreferredWidth() {
+        if (Config.displayFiltersAsButtons()) {
+            return BTN_W * 3 + BTN_GAP * 2;
+        }
         int count = showSettingsButton() ? 4 : 3;
         return TAB_W * count + GAP * (count - 1);
     }
 
     public int getPreferredHeight() {
+        if (Config.displayFiltersAsButtons()) {
+            return BTN_H;
+        }
         return BAR_H;
     }
 
     @Override
     protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
+        if (Config.hideFilters()) return;
+        if (Config.displayFiltersAsButtons()) {
+            renderAsButtons(gg, mouseX, mouseY);
+            return;
+        }
         int bx = getX();
         int by = getY();
 
@@ -107,6 +141,16 @@ public final class QuestFilterBar extends AbstractWidget {
             drawHoverButton(gg, bx, by, TEX_SETTINGS, TEX_SETTINGS_HOVER,
                     "Settings", mouseX, mouseY);
         }
+    }
+
+    private void renderAsButtons(GuiGraphics gg, int mouseX, int mouseY) {
+        int x = getX();
+        int y = getY();
+        drawSquareButton(gg, x, y, showCompleted, BTN_COMPLETE, BTN_COMPLETE_HOVER, BTN_COMPLETE_DISABLED, "Show redeemed quests", mouseX, mouseY);
+        x += BTN_W + BTN_GAP;
+        drawSquareButton(gg, x, y, showRejected, BTN_REJECT, BTN_REJECT_HOVER, BTN_REJECT_DISABLED, "Show rejected quests", mouseX, mouseY);
+        x += BTN_W + BTN_GAP;
+        drawSquareButton(gg, x, y, showLocked, BTN_LOCKED, BTN_LOCKED_HOVER, BTN_LOCKED_DISABLED, "Show locked quests", mouseX, mouseY);
     }
 
     private void drawButton(GuiGraphics gg, int x, int y, boolean state,
@@ -141,10 +185,43 @@ public final class QuestFilterBar extends AbstractWidget {
         }
     }
 
+    private void drawSquareButton(GuiGraphics gg, int x, int y, boolean state,
+                                  ResourceLocation enabled, ResourceLocation hovered, ResourceLocation disabled,
+                                  String tooltip, int mouseX, int mouseY) {
+        boolean hover = mouseX >= x && mouseX < x + BTN_W && mouseY >= y && mouseY < y + BTN_H;
+        ResourceLocation tex = state ? (hover ? hovered : enabled) : disabled;
+        gg.blit(tex, x, y, 0, 0, BTN_W, BTN_H, BTN_W, BTN_H);
+        if (hover) {
+            gg.renderTooltip(Minecraft.getInstance().font, Component.literal(tooltip), mouseX, mouseY);
+        }
+    }
+
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
         if (!visible || !active) return false;
         if (button != 0) return false;
+        if (Config.hideFilters()) return false;
+
+        if (Config.displayFiltersAsButtons()) {
+            int bx = getX();
+            int by = getY();
+
+            if (hitSquare(mx, my, bx, by)) {
+                showCompleted = !showCompleted;
+                return true;
+            }
+            bx += BTN_W + BTN_GAP;
+            if (hitSquare(mx, my, bx, by)) {
+                showRejected = !showRejected;
+                return true;
+            }
+            bx += BTN_W + BTN_GAP;
+            if (hitSquare(mx, my, bx, by)) {
+                showLocked = !showLocked;
+                return true;
+            }
+            return false;
+        }
 
         int bx = getX();
         int by = getY();
@@ -177,6 +254,10 @@ public final class QuestFilterBar extends AbstractWidget {
 
     private boolean hit(double mx, double my, int x, int y) {
         return mx >= x && mx < x + TAB_W && my >= y && my < y + BAR_H;
+    }
+
+    private boolean hitSquare(double mx, double my, int x, int y) {
+        return mx >= x && mx < x + BTN_W && my >= y && my < y + BTN_H;
     }
 
     @Override

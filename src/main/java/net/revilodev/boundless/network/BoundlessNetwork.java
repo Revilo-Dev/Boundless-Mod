@@ -551,14 +551,14 @@ public final class BoundlessNetwork {
 
     private static void handleSyncStatus(SyncStatus p, IPayloadContext ctx) {
         ctx.enqueueWork(() ->
-                QuestTracker.clientSetStatus(p.questId(), QuestTracker.Status.valueOf(p.status()))
+                QuestTracker.clientSetStatus(p.questId(), QuestTracker.decodeStatus(p.status()))
         );
     }
 
     private static void handleSyncStatuses(SyncStatuses p, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             for (StatusEntry e : p.entries()) {
-                QuestTracker.clientSetStatus(e.questId(), QuestTracker.Status.valueOf(e.status()));
+                QuestTracker.clientSetStatus(e.questId(), QuestTracker.decodeStatus(e.status()));
             }
         });
     }
@@ -629,7 +629,12 @@ public final class BoundlessNetwork {
         try {
             if (!QuestTracker.isReady(q, sp)) return false;
             if (questHasSubmit(q) && !consumeSubmitTargets(sp, q)) return false;
-            boolean ok = QuestTracker.serverRedeem(q, sp);
+            boolean ok;
+            try {
+                ok = QuestTracker.serverRedeem(q, sp);
+            } catch (Throwable ignored) {
+                ok = false;
+            }
             if (!ok) return false;
             sendStatus(sp, q.id, QuestTracker.Status.REDEEMED.name());
             sendProgressMeta(sp, q.id);

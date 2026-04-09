@@ -24,6 +24,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.revilodev.boundless.Config;
+import net.revilodev.boundless.compat.LevelUpCompat;
 import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestTracker;
@@ -64,6 +65,15 @@ public final class QuestDetailsPanel extends AbstractWidget {
     private boolean hideBackButton = false;
 
     private final List<DepClickRegion> depRegions = new ArrayList<>();
+
+    private static ResourceLocation safeParse(String id) {
+        return id == null || id.isBlank() ? null : ResourceLocation.tryParse(id);
+    }
+
+    private static Item resolveItem(String id) {
+        ResourceLocation rl = safeParse(id);
+        return rl == null ? null : BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+    }
 
     private static final class DepClickRegion {
         final int x, y, w, h;
@@ -250,7 +260,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
             if (needsMore) {
                 int toggleY = curY[0] + wrapHeight + 2;
-                String toggleText = descExpanded ? "Read less ▲" : "Read more ▼";
+                String toggleText = descExpanded ? "Read Less ^" : "Read More v";
                 int toggleW = mc.font.width(toggleText);
                 int toggleX = x + (w - toggleW) / 2;
 
@@ -334,6 +344,20 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     continue;
                 }
 
+                if (t.isLevelUpLevel()) {
+                    if (!printedSubmitHeader) {
+                        gg.drawString(mc.font, "Submit:", x + 4, curY[0], 0x1d9633, false);
+                        curY[0] += mc.font.lineHeight + 2;
+                        printedSubmitHeader = true;
+                    }
+                    int have = Math.min(LevelUpCompat.getLevel(mc.player), t.count);
+                    int color = have >= t.count ? 0x55FF55 : 0xFF5555;
+                    gg.renderItem(new ItemStack(Items.EXPERIENCE_BOTTLE), x + 4, curY[0]);
+                    gg.drawString(mc.font, "LevelUP Level: " + have + "/" + t.count, x + 24, curY[0] + 4, color, false);
+                    curY[0] += LINE_ITEM_ROW;
+                    continue;
+                }
+
                 if (isItemLike) {
 
                     if (isSubmitTarget) {
@@ -353,7 +377,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     String raw = t.id;
                     boolean isTagSyntax = raw.startsWith("#");
                     String key = isTagSyntax ? raw.substring(1) : raw;
-                    ResourceLocation rl = ResourceLocation.parse(key);
+                    ResourceLocation rl = safeParse(key);
+                    if (rl == null) {
+                        gg.drawString(mc.font, "Invalid item target", x + 4, curY[0] + 4, 0xFF5555, false);
+                        curY[0] += LINE_ITEM_ROW;
+                        continue;
+                    }
                     Item direct = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
                     boolean treatAsTag = isTagSyntax || direct == null;
 
@@ -397,7 +426,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
                         printedKillHeader = true;
                     }
 
-                    ResourceLocation rl = ResourceLocation.parse(t.id);
+                    ResourceLocation rl = safeParse(t.id);
+                    if (rl == null) {
+                        gg.drawString(mc.font, "Invalid entity target", x + 4, curY[0] + 4, 0xFF5555, false);
+                        curY[0] += LINE_ITEM_ROW;
+                        continue;
+                    }
                     EntityType<?> et = BuiltInRegistries.ENTITY_TYPE.getOptional(rl).orElse(null);
                     String eName = et == null ? rl.toString() : et.getDescription().getString();
 
@@ -426,7 +460,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     gg.drawString(mc.font, "Have effect:", x + 4, curY[0], 0x55FFFF, false);
                     curY[0] += mc.font.lineHeight + 2;
 
-                    ResourceLocation rl = ResourceLocation.parse(t.id);
+                    ResourceLocation rl = safeParse(t.id);
+                    if (rl == null) {
+                        gg.drawString(mc.font, "Invalid effect target", x + 4, curY[0] + 4, 0xFF5555, false);
+                        curY[0] += LINE_ITEM_ROW;
+                        continue;
+                    }
                     MobEffect eff = BuiltInRegistries.MOB_EFFECT.getOptional(rl).orElse(null);
                     String eName = eff == null ? rl.toString() : Component.translatable(eff.getDescriptionId()).getString();
                     boolean has = QuestTracker.hasEffect(mc.player, t.id);
@@ -445,7 +484,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     gg.drawString(mc.font, "Achieve:", x + 4, curY[0], 0x55FFFF, false);
                     curY[0] += mc.font.lineHeight + 2;
 
-                    ResourceLocation rl = ResourceLocation.parse(t.id);
+                    ResourceLocation rl = safeParse(t.id);
+                    if (rl == null) {
+                        gg.drawString(mc.font, "Invalid advancement target", x + 4, curY[0] + 4, 0xFF5555, false);
+                        curY[0] += LINE_ITEM_ROW;
+                        continue;
+                    }
                     ItemStack icon = new ItemStack(Items.MOJANG_BANNER_PATTERN);
                     String advName = rl.toString();
 
@@ -520,8 +564,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         if (hasItemRewards) {
             for (QuestData.RewardEntry re : quest.rewards.items) {
-                ResourceLocation rl = ResourceLocation.parse(re.item);
-                Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+                Item item = resolveItem(re.item);
                 int lineY = curY[0];
                 if (item != null) {
                     ItemStack st = new ItemStack(item, Math.max(1, re.count));
@@ -547,10 +590,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
                 ItemStack icon = new ItemStack(Items.COMMAND_BLOCK);
                 if (cr.icon != null && !cr.icon.isBlank()) {
-                    try {
-                        Item it = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(cr.icon)).orElse(null);
-                        if (it != null) icon = new ItemStack(it);
-                    } catch (Exception ignored) {}
+                    Item it = resolveItem(cr.icon);
+                    if (it != null) icon = new ItemStack(it);
                 }
 
                 String display = (cr.title != null && !cr.title.isBlank()) ? cr.title : cr.command;
@@ -572,10 +613,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
                 ItemStack icon = new ItemStack(Items.KNOWLEDGE_BOOK);
                 if (fr.icon != null && !fr.icon.isBlank()) {
-                    try {
-                        Item it = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(fr.icon)).orElse(null);
-                        if (it != null) icon = new ItemStack(it);
-                    } catch (Exception ignored) {}
+                    Item it = resolveItem(fr.icon);
+                    if (it != null) icon = new ItemStack(it);
                 }
 
                 String display = (fr.title != null && !fr.title.isBlank()) ? fr.title : fr.function;
@@ -616,10 +655,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
                 ItemStack icon = lootTableIcon(lr.lootTable);
                 if (lr.icon != null && !lr.icon.isBlank()) {
-                    try {
-                        Item it = BuiltInRegistries.ITEM.getOptional(ResourceLocation.parse(lr.icon)).orElse(null);
-                        if (it != null) icon = new ItemStack(it);
-                    } catch (Exception ignored) {}
+                    Item it = resolveItem(lr.icon);
+                    if (it != null) icon = new ItemStack(it);
                 }
 
                 String pretty = (lr.title != null && !lr.title.isBlank()) ? lr.title : prettyLootTableName(lr.lootTable);
@@ -639,9 +676,11 @@ public final class QuestDetailsPanel extends AbstractWidget {
         if (hasExpReward) {
             int lineY = curY[0];
             gg.renderItem(new ItemStack(Items.EXPERIENCE_BOTTLE), x + 4, lineY);
-            String txt = quest.rewards.expType.equals("levels")
-                    ? ("Levels: " + quest.rewards.expAmount)
-                    : ("XP: " + quest.rewards.expAmount);
+            String txt = switch (quest.rewards.expType) {
+                case "levels" -> "Levels: " + quest.rewards.expAmount;
+                case "levelup" -> "LevelUP XP: " + quest.rewards.expAmount;
+                default -> "XP: " + quest.rewards.expAmount;
+            };
             gg.drawString(mc.font, txt, x + 24, lineY + 6, 0xA8FFA8, false);
             if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
                 hoveredTooltips.add(Component.literal(txt));
@@ -741,6 +780,9 @@ public final class QuestDetailsPanel extends AbstractWidget {
     }
 
     private Component formatColorCodes(String raw, int defaultColor) {
+        if (!Config.enableDescriptionColors()) {
+            return Component.literal(stripColorTokens(raw)).withStyle(Style.EMPTY.withColor(defaultColor));
+        }
         MutableComponent out = Component.empty();
         String text = raw == null ? "" : raw;
         int current = defaultColor;
@@ -761,6 +803,19 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     .withStyle(Style.EMPTY.withColor(current)));
         }
         return out;
+    }
+
+    private String stripColorTokens(String raw) {
+        String text = raw == null ? "" : raw;
+        StringBuilder out = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            if (startsWithColorToken(text, i)) {
+                i += 1;
+                continue;
+            }
+            out.append(text.charAt(i));
+        }
+        return out.toString();
     }
 
     private boolean startsWithColorToken(String text, int index) {

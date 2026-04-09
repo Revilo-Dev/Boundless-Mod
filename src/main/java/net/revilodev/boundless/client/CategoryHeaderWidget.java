@@ -54,8 +54,8 @@ public final class CategoryHeaderWidget extends AbstractWidget {
 
         int middleW = Math.max(0, headerW - SLICE * 2);
         gg.blit(HEADER_TEX, x, y, 0, 0, SLICE, TEX_H, TEX_W, TEX_H);
-        if (middleW > 0) {
-            gg.blit(HEADER_TEX, x + SLICE, y, SLICE, 0, middleW, TEX_H, TEX_W, TEX_H);
+        for (int i = 0; i < middleW; i++) {
+            gg.blit(HEADER_TEX, x + SLICE + i, y, SLICE, 0, 1, TEX_H, TEX_W, TEX_H);
         }
         gg.blit(HEADER_TEX, x + SLICE + middleW, y, TEX_W - SLICE, 0, SLICE, TEX_H, TEX_W, TEX_H);
 

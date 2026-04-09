@@ -195,6 +195,7 @@ public final class QuestData {
         public boolean isAdvancement() { return "advancement".equals(kind); }
         public boolean isStat() { return "stat".equals(kind); }
         public boolean isXp() { return "xp".equals(kind); }
+        public boolean isLevelUpLevel() { return "levelup_level".equals(kind); }
     }
 
     public static final class Category {
@@ -283,6 +284,14 @@ public final class QuestData {
         return Config.disabledCategories().contains(q.category);
     }
 
+    private static boolean isBuiltinQuestNamespace(String namespace) {
+        return namespace != null && namespace.equalsIgnoreCase("boundless");
+    }
+
+    private static boolean shouldSkipNamespace(String namespace) {
+        return !Config.enableBuiltinQuestPack() && isBuiltinQuestNamespace(namespace);
+    }
+
     private static boolean shouldIgnoreQuestJson(ResourceLocation loc) {
         if (loc == null) return false;
         String p = loc.getPath();
@@ -346,6 +355,7 @@ public final class QuestData {
                 rm.listResourceStacks(PATH_CATEGORIES, rl -> rl.getPath().endsWith(".json"));
 
         for (var entry : catStacks.entrySet()) {
+            if (shouldSkipNamespace(entry.getKey() == null ? null : entry.getKey().getNamespace())) continue;
             List<Resource> stack = entry.getValue();
             if (stack == null || stack.isEmpty()) continue;
 
@@ -377,6 +387,7 @@ public final class QuestData {
 
         for (var entry : questStacks.entrySet()) {
             ResourceLocation loc = entry.getKey();
+            if (shouldSkipNamespace(loc == null ? null : loc.getNamespace())) continue;
             String path = loc.getPath();
             if (path.contains("/categories/")) continue;
             if (isSubCategoryPath(path)) continue;
@@ -416,6 +427,7 @@ public final class QuestData {
                 try (PackResources res = pack.open()) {
                     Set<String> namespaces = res.getNamespaces(PackType.SERVER_DATA);
                     for (String ns : namespaces) {
+                        if (shouldSkipNamespace(ns)) continue;
                         listDataCategoriesFromPack(res, ns);
                         listDataSubCategoriesFromPack(res, ns, PATH_SUBCATEGORIES);
                         listDataSubCategoriesFromPack(res, ns, PATH_SUBCATEGORIES_ALT);
@@ -458,6 +470,7 @@ public final class QuestData {
 
         for (var entry : subStacks.entrySet()) {
             ResourceLocation loc = entry.getKey();
+            if (shouldSkipNamespace(loc == null ? null : loc.getNamespace())) continue;
             List<Resource> stack = entry.getValue();
             if (stack == null || stack.isEmpty()) continue;
 
@@ -1073,6 +1086,17 @@ public final class QuestData {
             String xpType = o.get("xp").getAsString();
             int count = o.has("count") ? o.get("count").getAsInt() : 1;
             out.add(new Target("xp", xpType, count));
+            return;
+        }
+
+        if (o.has("levelup_level")) {
+            int count;
+            try {
+                count = o.get("levelup_level").getAsInt();
+            } catch (Exception ignored) {
+                count = o.has("count") ? o.get("count").getAsInt() : 1;
+            }
+            out.add(new Target("levelup_level", "level", count));
         }
     }
 
@@ -1121,6 +1145,17 @@ public final class QuestData {
             String xpType = optString(o, "xp");
             int count = o.has("count") ? o.get("count").getAsInt() : 1;
             if (xpType != null && !xpType.isBlank()) out.add(new Target("xp", xpType, count));
+            return;
+        }
+
+        if (o.has("levelup_level")) {
+            int count;
+            try {
+                count = o.get("levelup_level").getAsInt();
+            } catch (Exception ignored) {
+                count = o.has("count") ? o.get("count").getAsInt() : 1;
+            }
+            out.add(new Target("levelup_level", "level", count));
         }
     }
 

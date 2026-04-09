@@ -427,13 +427,13 @@ public final class QuestListWidget extends AbstractWidget {
 
                 gg.blit(tex, getX(), top, 0, 0, 127, 27, 127, 27);
 
-                int textX = getX() + 25;
+                int textX = getX() + 23;
                 if (!hideIcons) {
                     q.iconItem().ifPresent(item ->
                             gg.renderItem(new ItemStack(item), getX() + 6, top + 5)
                     );
                 } else {
-                    textX = getX() + 8;
+                    textX = getX() + 6;
                 }
 
                 String name = q.name;

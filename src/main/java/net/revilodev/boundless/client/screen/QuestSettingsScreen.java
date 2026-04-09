@@ -1,6 +1,7 @@
 package net.revilodev.boundless.client.screen;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractButton;
@@ -41,6 +42,7 @@ public final class QuestSettingsScreen extends Screen {
 
     private static final String MENU_ID_CONFIG = "01_settings_config";
     private static final String MENU_ID_EDITOR = "02_settings_editor";
+    private static final String MENU_ID_DISCORD = "03_settings_discord";
     private static final List<String> HUD_POSITIONS = List.of(
             "bottom_left",
             "bottom_right",
@@ -64,10 +66,12 @@ public final class QuestSettingsScreen extends Screen {
     private ConfigRow uiPinnedRow;
     private ConfigRow uiHideInventoryRow;
     private ConfigRow uiHideHeaderRow;
-    private ConfigRow uiHideFiltersRow;
+    private ConfigRow uiFilterDisplayRow;
     private ConfigRow uiDisableCategoriesRow;
+    private ConfigRow uiBuiltinQuestPackRow;
     private ConfigRow uiHideQuestWidgetIconsRow;
     private ConfigRow uiEnableSearchBoxRow;
+    private ConfigRow uiEnableDescriptionColorsRow;
     private ConfigRow functionalityDisablePinningRow;
     private ConfigRow functionalityAutoClaimRow;
     private ConfigRow functionalityQuestScrollsRow;
@@ -87,10 +91,12 @@ public final class QuestSettingsScreen extends Screen {
     private int uiPinnedBaseY;
     private int uiHideInventoryBaseY;
     private int uiHideHeaderBaseY;
-    private int uiHideFiltersBaseY;
+    private int uiFilterDisplayBaseY;
     private int uiDisableCategoriesBaseY;
+    private int uiBuiltinQuestPackBaseY;
     private int uiHideQuestWidgetIconsBaseY;
     private int uiEnableSearchBoxBaseY;
+    private int uiEnableDescriptionColorsBaseY;
     private int functionalityDisablePinningBaseY;
     private int functionalityAutoClaimBaseY;
     private int functionalityQuestScrollsBaseY;
@@ -100,10 +106,12 @@ public final class QuestSettingsScreen extends Screen {
     private String pinnedHudPos;
     private boolean hideQuestBookInInventory;
     private boolean hideCategoryHeader;
-    private boolean hideFilters;
+    private String filterDisplayMode;
     private boolean disableCategories;
+    private boolean enableBuiltinQuestPack;
     private boolean hideQuestWidgetIcons;
     private boolean enableQuestSearchBox;
+    private boolean enableDescriptionColors;
     private boolean disableQuestPinning;
     private boolean autoClaimQuestRewards;
     private boolean enableQuestScrolls;
@@ -147,7 +155,7 @@ public final class QuestSettingsScreen extends Screen {
     }
 
     private void initConfigWidgets() {
-        int uiHeaderY = py;
+        int uiHeaderY = py + 2;
         int uiRow1 = uiHeaderY + 10;
         int rowGap = 21;
 
@@ -155,11 +163,13 @@ public final class QuestSettingsScreen extends Screen {
         uiPinnedBaseY = uiRow1;
         uiHideInventoryBaseY = uiRow1 + rowGap;
         uiHideHeaderBaseY = uiRow1 + rowGap * 2;
-        uiHideFiltersBaseY = uiRow1 + rowGap * 3;
+        uiFilterDisplayBaseY = uiRow1 + rowGap * 3;
         uiDisableCategoriesBaseY = uiRow1 + rowGap * 4;
-        uiHideQuestWidgetIconsBaseY = uiRow1 + rowGap * 5;
-        uiEnableSearchBoxBaseY = uiRow1 + rowGap * 6;
-        functionalityHeaderBaseY = uiRow1 + rowGap * 7 + 4;
+        uiBuiltinQuestPackBaseY = uiRow1 + rowGap * 5;
+        uiHideQuestWidgetIconsBaseY = uiRow1 + rowGap * 6;
+        uiEnableSearchBoxBaseY = uiRow1 + rowGap * 7;
+        uiEnableDescriptionColorsBaseY = uiRow1 + rowGap * 8;
+        functionalityHeaderBaseY = uiRow1 + rowGap * 9 + 4;
         functionalityDisablePinningBaseY = functionalityHeaderBaseY + 10;
         functionalityAutoClaimBaseY = functionalityDisablePinningBaseY + rowGap;
         functionalityQuestScrollsBaseY = functionalityAutoClaimBaseY + rowGap;
@@ -181,14 +191,18 @@ public final class QuestSettingsScreen extends Screen {
                 "Hide the category header above the quest list.",
                 () -> hideCategoryHeader ? "On" : "Off",
                 () -> hideCategoryHeader = !hideCategoryHeader);
-        uiHideFiltersRow = new ConfigRow(px, uiHideFiltersBaseY, pw, "Hide Filters",
-                "Hide the quest filter tabs.",
-                () -> hideFilters ? "On" : "Off",
-                () -> hideFilters = !hideFilters);
+        uiFilterDisplayRow = new ConfigRow(px, uiFilterDisplayBaseY, pw, "Display Filters",
+                "Choose whether filters appear as buttons, tabs, or stay hidden.",
+                this::formatFilterDisplayMode,
+                this::cycleFilterDisplayMode);
         uiDisableCategoriesRow = new ConfigRow(px, uiDisableCategoriesBaseY, pw, "Disable Categories",
                 "Disable category tabs and category-based filtering.",
                 () -> disableCategories ? "On" : "Off",
                 () -> disableCategories = !disableCategories);
+        uiBuiltinQuestPackRow = new ConfigRow(px, uiBuiltinQuestPackBaseY, pw, "Built-in Quest Pack",
+                "Enable or disable the built-in Boundless quest pack.",
+                () -> enableBuiltinQuestPack ? "On" : "Off",
+                () -> enableBuiltinQuestPack = !enableBuiltinQuestPack);
         uiHideQuestWidgetIconsRow = new ConfigRow(px, uiHideQuestWidgetIconsBaseY, pw, "Hide Quest Widget Icons",
                 "Hide icons in quest list widgets.",
                 () -> hideQuestWidgetIcons ? "On" : "Off",
@@ -197,6 +211,10 @@ public final class QuestSettingsScreen extends Screen {
                 "Show a search box above the quest list.",
                 () -> enableQuestSearchBox ? "On" : "Off",
                 () -> enableQuestSearchBox = !enableQuestSearchBox);
+        uiEnableDescriptionColorsRow = new ConfigRow(px, uiEnableDescriptionColorsBaseY, pw, "Enable Description Colors",
+                "Allow Boundless color tokens to tint quest descriptions.",
+                () -> enableDescriptionColors ? "On" : "Off",
+                () -> enableDescriptionColors = !enableDescriptionColors);
 
         functionalityDisablePinningRow = new ConfigRow(px, functionalityDisablePinningBaseY, pw, "Disable Quest Pinning",
                 "Disable pin buttons and pinned quest HUD.",
@@ -226,10 +244,12 @@ public final class QuestSettingsScreen extends Screen {
         addRenderableWidget(uiPinnedRow);
         addRenderableWidget(uiHideInventoryRow);
         addRenderableWidget(uiHideHeaderRow);
-        addRenderableWidget(uiHideFiltersRow);
+        addRenderableWidget(uiFilterDisplayRow);
         addRenderableWidget(uiDisableCategoriesRow);
+        addRenderableWidget(uiBuiltinQuestPackRow);
         addRenderableWidget(uiHideQuestWidgetIconsRow);
         addRenderableWidget(uiEnableSearchBoxRow);
+        addRenderableWidget(uiEnableDescriptionColorsRow);
         addRenderableWidget(functionalityDisablePinningRow);
         addRenderableWidget(functionalityAutoClaimRow);
         addRenderableWidget(functionalityQuestScrollsRow);
@@ -259,6 +279,8 @@ public final class QuestSettingsScreen extends Screen {
             setPage(Page.CONFIG);
         } else if (MENU_ID_EDITOR.equals(q.id)) {
             Minecraft.getInstance().setScreen(new QuestEditorScreen(this));
+        } else if (MENU_ID_DISCORD.equals(q.id)) {
+            Util.getPlatform().openUri("https://discord.gg/DARzByw6VW");
         }
     }
 
@@ -276,14 +298,18 @@ public final class QuestSettingsScreen extends Screen {
         uiHideInventoryRow.active = config;
         uiHideHeaderRow.visible = config;
         uiHideHeaderRow.active = config;
-        uiHideFiltersRow.visible = config;
-        uiHideFiltersRow.active = config;
+        uiFilterDisplayRow.visible = config;
+        uiFilterDisplayRow.active = config;
         uiDisableCategoriesRow.visible = config;
         uiDisableCategoriesRow.active = config;
+        uiBuiltinQuestPackRow.visible = config;
+        uiBuiltinQuestPackRow.active = config;
         uiHideQuestWidgetIconsRow.visible = config;
         uiHideQuestWidgetIconsRow.active = config;
         uiEnableSearchBoxRow.visible = config;
         uiEnableSearchBoxRow.active = config;
+        uiEnableDescriptionColorsRow.visible = config;
+        uiEnableDescriptionColorsRow.active = config;
         functionalityDisablePinningRow.visible = config;
         functionalityDisablePinningRow.active = config;
         functionalityAutoClaimRow.visible = config;
@@ -315,10 +341,12 @@ public final class QuestSettingsScreen extends Screen {
         pinnedHudPos = normalizeHudPos(Config.pinnedQuestHudPosition());
         hideQuestBookInInventory = Config.hideQuestBookInInventory();
         hideCategoryHeader = Config.hideCategoryHeader();
-        hideFilters = Config.hideFilters();
+        filterDisplayMode = Config.filterDisplayMode();
         disableCategories = Config.disableCategories();
+        enableBuiltinQuestPack = Config.enableBuiltinQuestPack();
         hideQuestWidgetIcons = Config.hideQuestWidgetIcons();
         enableQuestSearchBox = Config.enableQuestSearchBox();
+        enableDescriptionColors = Config.enableDescriptionColors();
         disableQuestPinning = Config.disableQuestPinning();
         autoClaimQuestRewards = Config.autoClaimQuestRewards();
         enableQuestScrolls = Config.enableQuestScrolls();
@@ -332,6 +360,22 @@ public final class QuestSettingsScreen extends Screen {
         pinnedHudPos = HUD_POSITIONS.get(next);
     }
 
+    private void cycleFilterDisplayMode() {
+        filterDisplayMode = switch (filterDisplayMode == null ? "tabs" : filterDisplayMode) {
+            case "buttons" -> "tabs";
+            case "tabs" -> "hidden";
+            default -> "buttons";
+        };
+    }
+
+    private String formatFilterDisplayMode() {
+        return switch (filterDisplayMode == null ? "tabs" : filterDisplayMode) {
+            case "buttons" -> "As Buttons";
+            case "hidden" -> "Hidden";
+            default -> "As Tabs";
+        };
+    }
+
     private void saveConfig() {
         if (disableQuestBook && hideQuestBookInInventory) {
             hideQuestBookInInventory = false;
@@ -340,10 +384,12 @@ public final class QuestSettingsScreen extends Screen {
         Config.PINNED_QUEST_HUD_POSITION.set(pinnedHudPos);
         Config.HIDE_QUEST_BOOK_IN_INVENTORY.set(hideQuestBookInInventory);
         Config.HIDE_CATEGORY_HEADER.set(hideCategoryHeader);
-        Config.HIDE_FILTERS.set(hideFilters);
+        Config.FILTER_DISPLAY_MODE.set(filterDisplayMode);
         Config.DISABLE_CATEGORIES.set(disableCategories);
+        Config.ENABLE_BUILTIN_QUEST_PACK.set(enableBuiltinQuestPack);
         Config.HIDE_QUEST_WIDGET_ICONS.set(hideQuestWidgetIcons);
         Config.ENABLE_QUEST_SEARCH_BOX.set(enableQuestSearchBox);
+        Config.ENABLE_DESCRIPTION_COLORS.set(enableDescriptionColors);
         Config.DISABLE_QUEST_PINNING.set(disableQuestPinning);
         Config.AUTO_CLAIM_QUEST_REWARDS.set(autoClaimQuestRewards);
         Config.ENABLE_QUEST_SCROLLS.set(enableQuestScrolls);
@@ -358,6 +404,7 @@ public final class QuestSettingsScreen extends Screen {
         List<QuestData.Quest> out = new ArrayList<>();
         out.add(buildMenuQuest(MENU_ID_CONFIG, "Config", "minecraft:comparator"));
         out.add(buildMenuQuest(MENU_ID_EDITOR, "Quest Editor", "minecraft:writable_book"));
+        out.add(buildMenuQuest(MENU_ID_DISCORD, "Discord", "minecraft:amethyst_shard"));
         return out;
     }
 
@@ -405,7 +452,7 @@ public final class QuestSettingsScreen extends Screen {
             int top = configViewportTop();
             int bottom = configViewportBottom();
             gg.enableScissor(px, top, px + pw, bottom);
-            renderSectionHeader(gg, "UI", px + 2, scrolledY(uiHeaderBaseY), 0xFFE7C98A);
+            renderSectionHeader(gg, "[UI]", px + 2, scrolledY(uiHeaderBaseY), 0xFFE7C98A);
             renderSectionHeader(gg, "Functionality", px + 2, scrolledY(functionalityHeaderBaseY), 0xFFA8D8FF);
             renderSectionHeader(gg, "Gameplay", px + 2, scrolledY(gameplayHeaderBaseY), 0xFFBEE5A8);
             super.render(gg, mouseX, mouseY, partialTick);
@@ -490,12 +537,15 @@ public final class QuestSettingsScreen extends Screen {
         layoutRow(uiPinnedRow, uiPinnedBaseY, top, bottom);
         layoutRow(uiHideInventoryRow, uiHideInventoryBaseY, top, bottom);
         layoutRow(uiHideHeaderRow, uiHideHeaderBaseY, top, bottom);
-        layoutRow(uiHideFiltersRow, uiHideFiltersBaseY, top, bottom);
+        layoutRow(uiFilterDisplayRow, uiFilterDisplayBaseY, top, bottom);
         layoutRow(uiDisableCategoriesRow, uiDisableCategoriesBaseY, top, bottom);
+        layoutRow(uiBuiltinQuestPackRow, uiBuiltinQuestPackBaseY, top, bottom);
         layoutRow(uiHideQuestWidgetIconsRow, uiHideQuestWidgetIconsBaseY, top, bottom);
         layoutRow(uiEnableSearchBoxRow, uiEnableSearchBoxBaseY, top, bottom);
+        layoutRow(uiEnableDescriptionColorsRow, uiEnableDescriptionColorsBaseY, top, bottom);
         layoutRow(functionalityDisablePinningRow, functionalityDisablePinningBaseY, top, bottom);
         layoutRow(functionalityAutoClaimRow, functionalityAutoClaimBaseY, top, bottom);
+        layoutRow(functionalityQuestScrollsRow, functionalityQuestScrollsBaseY, top, bottom);
         layoutRow(gameplayDisableQuestBookRow, gameplayDisableQuestBookBaseY, top, bottom);
         layoutRow(gameplaySpawnWithBookRow, gameplaySpawnWithBookBaseY, top, bottom);
     }

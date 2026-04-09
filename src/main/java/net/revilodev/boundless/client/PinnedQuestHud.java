@@ -22,6 +22,7 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.revilodev.boundless.Config;
+import net.revilodev.boundless.compat.LevelUpCompat;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestTracker;
 
@@ -451,6 +452,13 @@ public final class PinnedQuestHud {
                 int have = Math.min(QuestTracker.getStatCount(player, t.id), need);
                 boolean done = have >= need;
                 return new TargetView(new ItemStack(Items.PAPER), have + "/" + need, done);
+            }
+
+            if (t.isLevelUpLevel()) {
+                int need = Math.max(1, t.count);
+                int have = Math.min(LevelUpCompat.getLevel(player), need);
+                boolean done = have >= need;
+                return new TargetView(new ItemStack(Items.EXPERIENCE_BOTTLE), have + "/" + need, done);
             }
         } catch (Throwable ignored) {}
         return null;
