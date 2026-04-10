@@ -26,6 +26,7 @@ import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.fml.loading.FMLEnvironment;
+import net.revilodev.boundless.BoundlessMod;
 import net.revilodev.boundless.Config;
 import net.revilodev.boundless.compat.LevelUpCompat;
 import net.revilodev.boundless.network.BoundlessNetwork;
@@ -42,6 +43,7 @@ import java.util.*;
 import static net.revilodev.boundless.network.BoundlessNetwork.sendToastLocal;
 
 public final class QuestTracker {
+    public record ExperienceSnapshot(int level, float progress) {}
 
     public enum Status { INCOMPLETE, COMPLETED, REDEEMED, REJECTED }
 
@@ -355,7 +357,7 @@ public final class QuestTracker {
         if ("levels".equals(mode)) {
             return Math.max(0, player.experienceLevel);
         }
-        return Math.max(0, player.totalExperience);
+        return currentExperiencePoints(player);
     }
 
     public static String normalizeXpType(String xpType) {
@@ -406,20 +408,29 @@ public final class QuestTracker {
 
         Item direct = resolveItemById(key);
         int found = 0;
+        var inventory = player.getInventory();
+        int containerSize = inventory.getContainerSize();
 
         if (isTagSyntax || direct == null) {
             var itemTag = net.minecraft.tags.TagKey.create(Registries.ITEM, rl);
-            for (ItemStack s : player.getInventory().items) if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
+            for (int i = 0; i < containerSize; i++) {
+                ItemStack s = inventory.getItem(i);
+                if (!s.isEmpty() && s.is(itemTag)) found += s.getCount();
+            }
             if (found == 0) {
                 var blockTag = net.minecraft.tags.TagKey.create(Registries.BLOCK, rl);
-                for (ItemStack s : player.getInventory().items) {
+                for (int i = 0; i < containerSize; i++) {
+                    ItemStack s = inventory.getItem(i);
                     if (!s.isEmpty() && s.getItem() instanceof BlockItem bi && bi.getBlock().builtInRegistryHolder().is(blockTag)) {
                         found += s.getCount();
                     }
                 }
             }
         } else {
-            for (ItemStack s : player.getInventory().items) if (!s.isEmpty() && s.is(direct)) found += s.getCount();
+            for (int i = 0; i < containerSize; i++) {
+                ItemStack s = inventory.getItem(i);
+                if (!s.isEmpty() && s.is(direct)) found += s.getCount();
+            }
         }
 
         return found;
@@ -501,15 +512,73 @@ public final class QuestTracker {
         if (amount <= 0) return true;
         String mode = normalizeXpType(target.id);
         if ("levels".equals(mode)) {
-            if (player.experienceLevel < amount) return false;
-            player.giveExperienceLevels(-amount);
+            ExperienceSnapshot next = consumeExperience(new ExperienceSnapshot(player.experienceLevel, player.experienceProgress), mode, amount);
+            if (next == null) return false;
+            setExperienceSnapshot(player, next);
             return true;
         }
 
-        int current = Math.max(0, player.totalExperience);
+        int current = currentExperiencePoints(player);
         if (current < amount) return false;
         setTotalExperience(player, current - amount);
         return true;
+    }
+
+    public static int currentExperiencePoints(Player player) {
+        if (player == null) return 0;
+        int level = Math.max(0, player.experienceLevel);
+        int intoLevel = (int) Math.floor(Math.max(0.0F, player.experienceProgress) * xpNeededForNextLevel(level));
+        return Math.max(0, experienceForLevel(level) + intoLevel);
+    }
+
+    public static ExperienceSnapshot consumeExperience(ExperienceSnapshot snapshot, String xpType, int amount) {
+        if (snapshot == null) return null;
+        int sanitizedAmount = Math.max(0, amount);
+        int level = Math.max(0, snapshot.level());
+        float progress = Math.max(0.0F, Math.min(1.0F, snapshot.progress()));
+        if (sanitizedAmount <= 0) return new ExperienceSnapshot(level, progress);
+
+        if ("levels".equals(normalizeXpType(xpType))) {
+            if (level < sanitizedAmount) return null;
+            return new ExperienceSnapshot(level - sanitizedAmount, progress);
+        }
+
+        int total = experienceForLevel(level) + (int) Math.floor(progress * xpNeededForNextLevel(level));
+        if (total < sanitizedAmount) return null;
+        return snapshotFromTotalExperience(total - sanitizedAmount);
+    }
+
+    public static ExperienceSnapshot snapshotFromTotalExperience(int totalExperience) {
+        int total = Math.max(0, totalExperience);
+        int level = 0;
+        while (experienceForLevel(level + 1) <= total) {
+            level++;
+        }
+        int base = experienceForLevel(level);
+        int needed = xpNeededForNextLevel(level);
+        float progress = needed <= 0 ? 0.0F : (float) (total - base) / (float) needed;
+        return new ExperienceSnapshot(level, Math.max(0.0F, Math.min(1.0F, progress)));
+    }
+
+    public static void setExperienceSnapshot(ServerPlayer player, ExperienceSnapshot snapshot) {
+        if (player == null || snapshot == null) return;
+        int level = Math.max(0, snapshot.level());
+        int total = experienceForLevel(level)
+                + (int) Math.floor(Math.max(0.0F, Math.min(1.0F, snapshot.progress())) * xpNeededForNextLevel(level));
+        setTotalExperience(player, total);
+    }
+
+    private static int experienceForLevel(int level) {
+        int sanitized = Math.max(0, level);
+        if (sanitized <= 16) return sanitized * sanitized + 6 * sanitized;
+        if (sanitized <= 31) return (int) Math.floor(2.5D * sanitized * sanitized - 40.5D * sanitized + 360.0D);
+        return (int) Math.floor(4.5D * sanitized * sanitized - 162.5D * sanitized + 2220.0D);
+    }
+
+    private static int xpNeededForNextLevel(int level) {
+        int sanitized = Math.max(0, level);
+        if (sanitized >= 30) return 112 + (sanitized - 30) * 9;
+        return sanitized >= 15 ? 37 + (sanitized - 15) * 5 : 7 + sanitized * 2;
     }
 
     private static void setTotalExperience(ServerPlayer player, int totalExperience) {
@@ -526,14 +595,19 @@ public final class QuestTracker {
         if (player == null || rewards == null || !rewards.hasExp()) return;
         int amount = Math.max(0, rewards.expAmount);
         if (amount <= 0) return;
-        if ("levelup".equalsIgnoreCase(rewards.expType)) {
-            LevelUpCompat.awardXp(player, amount);
-            return;
-        }
-        if ("levels".equalsIgnoreCase(rewards.expType)) {
-            player.giveExperienceLevels(amount);
-        } else {
-            player.giveExperiencePoints(amount);
+        try {
+            if ("levelup".equalsIgnoreCase(rewards.expType)) {
+                LevelUpCompat.awardXp(player, amount);
+                return;
+            }
+            if ("levels".equalsIgnoreCase(rewards.expType)) {
+                player.giveExperienceLevels(amount);
+            } else {
+                player.giveExperiencePoints(amount);
+            }
+        } catch (Throwable t) {
+            BoundlessMod.LOGGER.error("Failed to grant exp reward for player {} quest rewards type={} amount={}",
+                    player.getGameProfile().getName(), rewards.expType, amount, t);
         }
     }
 
@@ -559,10 +633,79 @@ public final class QuestTracker {
             ObjectArrayList<ItemStack> generated = table.getRandomItems(params, player.getRandom());
             for (ItemStack stack : generated) {
                 if (stack == null || stack.isEmpty()) continue;
-                ItemStack copy = stack.copy();
-                if (!player.getInventory().add(copy) && !copy.isEmpty()) {
-                    player.drop(copy, false);
+                try {
+                    ItemStack copy = stack.copy();
+                    if (!player.getInventory().add(copy) && !copy.isEmpty()) {
+                        player.drop(copy, false);
+                    }
+                } catch (Throwable t) {
+                    BoundlessMod.LOGGER.error("Failed to grant loot-table reward {} to player {}",
+                            reward.lootTable, player.getGameProfile().getName(), t);
                 }
+            }
+        }
+    }
+
+    private static void giveItemRewards(ServerPlayer player, QuestData.Quest q) {
+        if (player == null || q == null || q.rewards == null || q.rewards.items == null) return;
+        for (QuestData.RewardEntry r : q.rewards.items) {
+            if (r == null || r.item == null || r.item.isBlank()) continue;
+            try {
+                ResourceLocation rl = tryParseCached(r.item);
+                if (rl == null) {
+                    BoundlessMod.LOGGER.warn("Skipping invalid item reward '{}' for quest {}", r.item, q.id);
+                    continue;
+                }
+                Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
+                if (item == null) {
+                    BoundlessMod.LOGGER.warn("Skipping missing item reward '{}' for quest {}", r.item, q.id);
+                    continue;
+                }
+                ItemStack stack = new ItemStack(item, Math.max(1, r.count));
+                if (!player.getInventory().add(stack) && !stack.isEmpty()) {
+                    player.drop(stack, false);
+                }
+            } catch (Throwable t) {
+                BoundlessMod.LOGGER.error("Failed to grant item reward {} x{} for quest {} to player {}",
+                        r.item, Math.max(1, r.count), q.id, player.getGameProfile().getName(), t);
+            }
+        }
+    }
+
+    private static void runCommandRewards(ServerPlayer player, QuestData.Quest q) {
+        if (player == null || q == null || q.rewards == null) return;
+        CommandSourceStack css = player.createCommandSourceStack().withPermission(4);
+        LinkedHashSet<String> toRun = new LinkedHashSet<>();
+
+        if (q.rewards.commands != null) {
+            for (QuestData.CommandReward cr : q.rewards.commands) {
+                if (cr == null || cr.command == null) continue;
+                String cmd = cr.command.trim();
+                if (cmd.isBlank()) continue;
+                if (cmd.startsWith("/")) cmd = cmd.substring(1).trim();
+                toRun.add(cmd);
+            }
+        }
+
+        if (q.rewards.functions != null) {
+            for (QuestData.FunctionReward fr : q.rewards.functions) {
+                if (fr == null || fr.function == null) continue;
+                String fn = fr.function.trim();
+                if (fn.isBlank()) continue;
+                if (fn.startsWith("/")) fn = fn.substring(1).trim();
+                if (fn.regionMatches(true, 0, "function", 0, "function".length())) {
+                    fn = fn.substring("function".length()).trim();
+                }
+                toRun.add("function " + fn);
+            }
+        }
+
+        for (String cmd : toRun) {
+            try {
+                player.server.getCommands().performPrefixedCommand(css, cmd);
+            } catch (Throwable t) {
+                BoundlessMod.LOGGER.error("Failed to execute quest reward command '{}' for quest {} player {}",
+                        cmd, q.id, player.getGameProfile().getName(), t);
             }
         }
     }
@@ -582,60 +725,13 @@ public final class QuestTracker {
 
         Status current = getServerStatus(player, q.id);
         if (current == Status.REDEEMED || current == Status.REJECTED) return false;
-
-        if (q.rewards != null && q.rewards.items != null) {
-            for (QuestData.RewardEntry r : q.rewards.items) {
-                if (r == null || r.item == null || r.item.isBlank()) continue;
-                ResourceLocation rl = tryParseCached(r.item);
-                if (rl == null) continue;
-                Item item = BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
-                if (item != null) {
-                    ItemStack stack = new ItemStack(item, Math.max(1, r.count));
-                    if (!player.getInventory().add(stack) && !stack.isEmpty()) {
-                        player.drop(stack, false);
-                    }
-                }
-            }
-        }
-
-        if (q.rewards != null) {
-            CommandSourceStack css = player.createCommandSourceStack().withPermission(4);
-
-            LinkedHashSet<String> toRun = new LinkedHashSet<>();
-
-            if (q.rewards.commands != null) {
-                for (QuestData.CommandReward cr : q.rewards.commands) {
-                    if (cr == null || cr.command == null) continue;
-                    String cmd = cr.command.trim();
-                    if (cmd.isBlank()) continue;
-                    if (cmd.startsWith("/")) cmd = cmd.substring(1).trim();
-                    toRun.add(cmd);
-                }
-            }
-
-            if (q.rewards.functions != null) {
-                for (QuestData.FunctionReward fr : q.rewards.functions) {
-                    if (fr == null || fr.function == null) continue;
-                    String fn = fr.function.trim();
-                    if (fn.isBlank()) continue;
-                    if (fn.startsWith("/")) fn = fn.substring(1).trim();
-                    if (fn.regionMatches(true, 0, "function", 0, "function".length())) {
-                        fn = fn.substring("function".length()).trim();
-                    }
-                    toRun.add("function " + fn);
-                }
-            }
-
-            for (String cmd : toRun) {
-                try { player.server.getCommands().performPrefixedCommand(css, cmd); } catch (Throwable ignored) {}
-            }
-        }
-
-        giveLootRewards(player, q.rewards);
-        giveExpReward(player, q.rewards);
         markQuestClaimed(player, q);
         clearQuestCycle(player, q);
         setServerStatus(player, q.id, Status.REDEEMED);
+        giveItemRewards(player, q);
+        runCommandRewards(player, q);
+        giveLootRewards(player, q.rewards);
+        giveExpReward(player, q.rewards);
         return true;
     }
 

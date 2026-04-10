@@ -25,6 +25,7 @@ public final class StandaloneQuestBookScreen extends Screen {
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/settings_button.png");
     private static final ResourceLocation BTN_SETTINGS_HOVER =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/settings_button_hovered.png");
+    private static String lastSelectedCategory = "all";
 
     private int panelWidth = 147;
     private int panelHeight = 166;
@@ -43,6 +44,7 @@ public final class StandaloneQuestBookScreen extends Screen {
 
     private boolean showingDetails = false;
     private String searchQuery = "";
+    private String selectedCategory = "all";
 
     public StandaloneQuestBookScreen() {
         super(Component.literal("Quests"));
@@ -70,14 +72,24 @@ public final class StandaloneQuestBookScreen extends Screen {
 
         tabs = new CategoryTabsWidget(leftX - 41, topY + 4, 44, panelHeight + 34, id -> {
             if (Config.disableCategories()) return;
+            selectedCategory = id;
+            lastSelectedCategory = id;
             list.setCategory(id);
             showingDetails = false;
             updateVisibility();
         });
-        String selectedCategory = "all";
+        selectedCategory = lastSelectedCategory;
         if (!Config.disableCategories()) {
+            tabs.setSelected(selectedCategory);
             tabs.setCategories(QuestData.categoriesOrdered());
-            selectedCategory = tabs.selectFirstCategory();
+            selectedCategory = tabs.getSelectedId();
+            if (selectedCategory == null || selectedCategory.isBlank()) {
+                selectedCategory = tabs.selectFirstCategory();
+            }
+            lastSelectedCategory = selectedCategory;
+        } else {
+            selectedCategory = "all";
+            lastSelectedCategory = "all";
         }
 
         searchBox = new EditBox(font, pxLeft, py, pw, 16, Component.literal("Search quests"));

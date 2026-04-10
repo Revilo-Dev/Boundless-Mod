@@ -23,11 +23,16 @@ public final class CategoryTabsWidget extends AbstractWidget {
     private static final ResourceLocation TAB_SELECTED =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/tab_selected.png");
     private static final ResourceLocation MOVE_DOWN =
-            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/gui/sprites/transferable_list/move_down.png");
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/move_down.png");
     private static final ResourceLocation MOVE_UP =
-            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/gui/sprites/transferable_list/move_up.png");
-    private static final int PAGE_SIZE = 6;
-    private static final int CONTROL_ICON = 12;
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/move_up.png");
+    private static final ResourceLocation MOVE_DOWN_HIGHLIGHTED =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/move_down-highlighted.png");
+    private static final ResourceLocation MOVE_UP_HIGHLIGHTED =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/move_up-highlighted.png");
+    private static final int PAGE_SIZE = 5;
+    private static final int CONTROL_ICON_BASE = 16;
+    private static final int CONTROL_ICON = CONTROL_ICON_BASE;
     private static final int CONTROL_GAP = 2;
 
     private final Minecraft mc = Minecraft.getInstance();
@@ -244,19 +249,24 @@ public final class CategoryTabsWidget extends AbstractWidget {
 
     private void renderPageControls(GuiGraphics gg, int mouseX, int mouseY, int x, int y) {
         if (categories.size() <= PAGE_SIZE) return;
-        int upY = y + 1;
-        int downY = upY + CONTROL_ICON + CONTROL_GAP;
-        int iconX = tabRenderX() + 7;
-        gg.blit(MOVE_UP, iconX, upY, 0, 0, CONTROL_ICON, CONTROL_ICON, CONTROL_ICON, CONTROL_ICON);
-        gg.blit(MOVE_DOWN, iconX, downY, 0, 0, CONTROL_ICON, CONTROL_ICON, CONTROL_ICON, CONTROL_ICON);
-        String text = (pageIndex + 1) + "/" + (maxPageIndex() + 1);
-        drawScaledString(gg, text, 0.6f, tabRenderX() + 21, upY + 9, 0xFFFFFFFF);
+        int controlsY = y + 1;
+        int iconX = tabRenderX() + (cellW - CONTROL_ICON) / 2;
+        int downY = controlsY + CONTROL_ICON + CONTROL_GAP;
+        boolean hoverUp = isOverUp(mouseX, mouseY, x, y);
+        boolean hoverDown = isOverDown(mouseX, mouseY, x, y);
+        gg.blit(hoverUp ? MOVE_UP_HIGHLIGHTED : MOVE_UP, iconX, controlsY, 0, 0, CONTROL_ICON, CONTROL_ICON, CONTROL_ICON_BASE, CONTROL_ICON_BASE);
+        gg.blit(hoverDown ? MOVE_DOWN_HIGHLIGHTED : MOVE_DOWN, iconX, downY, 0, 0, CONTROL_ICON, CONTROL_ICON, CONTROL_ICON_BASE, CONTROL_ICON_BASE);
 
-        if (isOverUp(mouseX, mouseY, x, y) && pageIndex > 0) {
+        String text = (pageIndex + 1) + "/" + (maxPageIndex() + 1);
+        int textX = iconX + (CONTROL_ICON / 2) - (int) ((mc.font.width(text) * 0.8f) / 2f);
+        int textY = downY + CONTROL_ICON + 2;
+        drawScaledString(gg, text, 0.8f, textX, textY, 0xFFFFFFFF);
+
+        if (hoverUp && pageIndex > 0) {
             pendingTooltip = Component.literal("Previous page");
             pendingTooltipX = mouseX;
             pendingTooltipY = mouseY;
-        } else if (isOverDown(mouseX, mouseY, x, y) && pageIndex < maxPageIndex()) {
+        } else if (hoverDown && pageIndex < maxPageIndex()) {
             pendingTooltip = Component.literal("Next page");
             pendingTooltipX = mouseX;
             pendingTooltipY = mouseY;
@@ -264,15 +274,18 @@ public final class CategoryTabsWidget extends AbstractWidget {
     }
 
     private boolean isOverUp(double mouseX, double mouseY, int x, int y) {
-        int upY = y + 1;
-        int iconX = tabRenderX() + 7;
-        return mouseX >= iconX && mouseX < iconX + CONTROL_ICON && mouseY >= upY && mouseY < upY + CONTROL_ICON;
+        int controlsY = y + 1;
+        int iconX = tabRenderX() + (cellW - CONTROL_ICON) / 2;
+        return mouseX >= iconX && mouseX < iconX + CONTROL_ICON
+                && mouseY >= controlsY && mouseY < controlsY + CONTROL_ICON;
     }
 
     private boolean isOverDown(double mouseX, double mouseY, int x, int y) {
-        int downY = y + 1 + CONTROL_ICON + CONTROL_GAP;
-        int iconX = tabRenderX() + 7;
-        return mouseX >= iconX && mouseX < iconX + CONTROL_ICON && mouseY >= downY && mouseY < downY + CONTROL_ICON;
+        int controlsY = y + 1;
+        int iconX = tabRenderX() + (cellW - CONTROL_ICON) / 2;
+        int downY = controlsY + CONTROL_ICON + CONTROL_GAP;
+        return mouseX >= iconX && mouseX < iconX + CONTROL_ICON
+                && mouseY >= downY && mouseY < downY + CONTROL_ICON;
     }
 
     private void drawScaledString(GuiGraphics gg, String text, float scale, int x, int y, int color) {

@@ -627,6 +627,8 @@ public final class BoundlessNetwork {
         String lockKey = sp.getUUID() + ":" + q.id;
         if (!REDEEM_IN_FLIGHT.add(lockKey)) return false;
         try {
+            QuestTracker.Status status = QuestTracker.getStatus(q, sp);
+            if (status == QuestTracker.Status.REDEEMED || status == QuestTracker.Status.REJECTED) return false;
             if (!QuestTracker.isReady(q, sp)) return false;
             if (questHasSubmit(q) && !consumeSubmitTargets(sp, q)) return false;
             boolean ok;
@@ -649,11 +651,11 @@ public final class BoundlessNetwork {
 
         Inventory inv = sp.getInventory();
         int size = inv.getContainerSize();
-        int totalXpLevels = 0;
-        int totalXpPoints = 0;
-
         ItemStack[] sim = new ItemStack[size];
         for (int i = 0; i < size; i++) sim[i] = inv.getItem(i).copy();
+        QuestTracker.ExperienceSnapshot simulatedXp =
+                new QuestTracker.ExperienceSnapshot(sp.experienceLevel, sp.experienceProgress);
+        boolean hasXpSubmitTarget = false;
 
         for (QuestData.Target t : q.completion.targets) {
             if (t == null) continue;
@@ -661,9 +663,9 @@ public final class BoundlessNetwork {
             if (!submitTarget) continue;
 
             if (t.isXp()) {
-                String mode = QuestTracker.normalizeXpType(t.id);
-                if ("levels".equals(mode)) totalXpLevels += Math.max(0, t.count);
-                else totalXpPoints += Math.max(0, t.count);
+                hasXpSubmitTarget = true;
+                simulatedXp = QuestTracker.consumeExperience(simulatedXp, t.id, t.count);
+                if (simulatedXp == null) return false;
                 continue;
             }
 
@@ -693,18 +695,12 @@ public final class BoundlessNetwork {
             }
         }
 
-        if (sp.experienceLevel < totalXpLevels) return false;
-        if (Math.max(0, sp.totalExperience) < totalXpPoints) return false;
-
         for (QuestData.Target t : q.completion.targets) {
             if (t == null) continue;
             boolean submitTarget = isSubmitTarget(q, t);
             if (!submitTarget) continue;
 
-            if (t.isXp()) {
-                if (!QuestTracker.consumeXpTarget(sp, t)) return false;
-                continue;
-            }
+            if (t.isXp()) continue;
 
             String raw = t.id;
             int need = Math.max(1, t.count);
@@ -730,6 +726,9 @@ public final class BoundlessNetwork {
             if (!ok) return false;
         }
 
+        if (hasXpSubmitTarget) {
+            QuestTracker.setExperienceSnapshot(sp, simulatedXp);
+        }
         inv.setChanged();
         sp.containerMenu.broadcastChanges();
         return true;

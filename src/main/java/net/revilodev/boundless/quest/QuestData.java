@@ -406,7 +406,7 @@ public final class QuestData {
             } catch (Exception ignored) {}
         }
 
-        if (FMLEnvironment.dist == Dist.CLIENT) {
+        if (FMLEnvironment.dist == Dist.CLIENT && shouldScanSelectedResourcePacksData()) {
             scanSelectedResourcePacksData();
         }
 
@@ -438,6 +438,13 @@ public final class QuestData {
                 } catch (Throwable ignored) {}
             }
         } catch (Throwable ignored) {}
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static boolean shouldScanSelectedResourcePacksData() {
+        if (!Config.datapackQuestPacksOnlyOnServer()) return true;
+        Minecraft mc = Minecraft.getInstance();
+        return mc != null && mc.hasSingleplayerServer();
     }
 
     private static int listDataCategoriesFromPack(PackResources res, String ns) {
@@ -1397,15 +1404,4 @@ public final class QuestData {
         return el.getAsJsonObject();
     }
 
-    @OnlyIn(Dist.CLIENT)
-    private static String debugWorldIdClient() {
-        try {
-            Minecraft mc = Minecraft.getInstance();
-            if (mc.getSingleplayerServer() != null) {
-                var swd = mc.getSingleplayerServer().getWorldData();
-                return swd.getLevelName() + "@" + swd.worldGenOptions().seed();
-            }
-        } catch (Throwable ignored) {}
-        return null;
-    }
 }

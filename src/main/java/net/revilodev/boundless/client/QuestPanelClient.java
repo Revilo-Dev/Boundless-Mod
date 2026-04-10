@@ -44,6 +44,7 @@ public final class QuestPanelClient {
     private static final Map<Screen, State> STATES = new WeakHashMap<>();
     private static Field LEFT_FIELD;
     private static boolean lastQuestOpen = false;
+    private static String lastSelectedCategory = "all";
 
     private QuestPanelClient() {
     }
@@ -53,6 +54,7 @@ public final class QuestPanelClient {
         if (!(s instanceof InventoryScreen inv)) return;
         QuestData.loadClient(false);
         State st = new State(inv);
+        st.selectedCategory = lastSelectedCategory;
         STATES.put(s, st);
 
         if (shouldShowInventoryQuestButton()) {
@@ -92,14 +94,21 @@ public final class QuestPanelClient {
         st.tabs = new CategoryTabsWidget(0, 0, 44, PANEL_H + 34, id -> {
             if (Config.disableCategories()) return;
             st.selectedCategory = id;
+            lastSelectedCategory = id;
             if (st.list != null) st.list.setCategory(id);
         });
         if (!Config.disableCategories()) {
+            st.tabs.setSelected(st.selectedCategory);
             st.tabs.setCategories(QuestData.categoriesOrdered());
-            st.selectedCategory = st.tabs.selectFirstCategory();
+            st.selectedCategory = st.tabs.getSelectedId();
+            if (st.selectedCategory == null || st.selectedCategory.isBlank()) {
+                st.selectedCategory = st.tabs.selectFirstCategory();
+            }
+            lastSelectedCategory = st.selectedCategory;
             if (st.list != null) st.list.setCategory(st.selectedCategory);
         } else {
             st.selectedCategory = "all";
+            lastSelectedCategory = "all";
             if (st.list != null) st.list.setCategory("all");
         }
         e.addListener(st.tabs);
@@ -127,6 +136,9 @@ public final class QuestPanelClient {
     public static void onScreenClosing(ScreenEvent.Closing e) {
         State st = STATES.remove(e.getScreen());
         if (st == null) return;
+        if (st.selectedCategory != null && !st.selectedCategory.isBlank()) {
+            lastSelectedCategory = st.selectedCategory;
+        }
         if (st.open && st.originalLeft != null) {
             setLeft(st.inv, st.originalLeft);
         }
@@ -197,12 +209,17 @@ public final class QuestPanelClient {
             }
             if (st.tabs != null) {
                 if (!Config.disableCategories()) {
+                    st.tabs.setSelected(st.selectedCategory);
                     st.tabs.setCategories(QuestData.categoriesOrdered());
-                    String selected = st.tabs.getSelectedId();
-                    st.selectedCategory = (selected == null || selected.isBlank()) ? st.tabs.selectFirstCategory() : selected;
+                    st.selectedCategory = st.tabs.getSelectedId();
+                    if (st.selectedCategory == null || st.selectedCategory.isBlank()) {
+                        st.selectedCategory = st.tabs.selectFirstCategory();
+                    }
+                    lastSelectedCategory = st.selectedCategory;
                     if (st.list != null) st.list.setCategory(st.selectedCategory);
                 } else {
                     st.selectedCategory = "all";
+                    lastSelectedCategory = "all";
                     if (st.list != null) st.list.setCategory("all");
                 }
             }
@@ -221,7 +238,8 @@ public final class QuestPanelClient {
         if (st.open) {
             if (st.originalLeft == null) st.originalLeft = getLeft(st.inv);
             setLeft(st.inv, computeCenteredLeft(st.inv));
-            selectFirstCategory(st);
+            applySelectedCategory(st);
+            st.showingDetails = false;
         } else if (st.originalLeft != null) {
             setLeft(st.inv, st.originalLeft);
         }
@@ -462,16 +480,21 @@ public final class QuestPanelClient {
         mc.setScreen(new QuestSettingsScreen(inv));
     }
 
-    private static void selectFirstCategory(State st) {
+    private static void applySelectedCategory(State st) {
         if (st.tabs == null) return;
         if (Config.disableCategories()) {
             st.selectedCategory = "all";
+            lastSelectedCategory = "all";
             if (st.list != null) st.list.setCategory("all");
         } else {
-            st.selectedCategory = st.tabs.selectFirstCategory();
+            st.tabs.setSelected(st.selectedCategory);
+            st.selectedCategory = st.tabs.getSelectedId();
+            if (st.selectedCategory == null || st.selectedCategory.isBlank()) {
+                st.selectedCategory = st.tabs.selectFirstCategory();
+            }
+            lastSelectedCategory = st.selectedCategory;
             if (st.list != null) st.list.setCategory(st.selectedCategory);
         }
-        st.showingDetails = false;
     }
 
 
