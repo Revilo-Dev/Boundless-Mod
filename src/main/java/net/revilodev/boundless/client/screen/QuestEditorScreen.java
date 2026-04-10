@@ -15,7 +15,9 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractButton;
 import net.minecraft.client.gui.components.AbstractScrollWidget;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.Whence;
 import net.minecraft.client.gui.narration.NarratedElementType;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
@@ -85,10 +87,10 @@ public final class QuestEditorScreen extends Screen {
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/button.png");
     private static final int CREATE_BTN_TEX_W = 130;
     private static final int CREATE_BTN_TEX_H = 20;
-    private static final ResourceLocation VANILLA_BTN_TEX =
-            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/gui/sprites/widget/button.png");
-    private static final ResourceLocation VANILLA_BTN_TEX_HOVER =
-            ResourceLocation.fromNamespaceAndPath("minecraft", "textures/gui/sprites/widget/button_highlighted.png");
+    private static final ResourceLocation VANILLA_BUTTON_SPRITE =
+            ResourceLocation.withDefaultNamespace("widget/button");
+    private static final ResourceLocation VANILLA_BUTTON_HIGHLIGHTED_SPRITE =
+            ResourceLocation.withDefaultNamespace("widget/button_highlighted");
     private static final ResourceLocation TOGGLE_TEX_OFF =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/x_button.png");
     private static final ResourceLocation TOGGLE_TEX_ON =
@@ -113,15 +115,14 @@ public final class QuestEditorScreen extends Screen {
     private static final int TOGGLE_SIZE = 20;
     private static final int SMALL_BTN_SIZE = 20;
     private static final int SMALL_BTN_GAP = 4;
-    private static final int VANILLA_BTN_H = 18;
-    private static final int VANILLA_BTN_SLICE_H = 15;
-    private static final int VANILLA_BTN_SLICE_W = 100;
-    private static final int VANILLA_BTN_CAP_W = 3;
     private static final int TAB_W = 35;
     private static final int TAB_H = 27;
     private static final int TAB_GAP = 2;
     private static final int TOP_ACTION_GAP = 3;
     private static final int BOTTOM_CREATE_GAP = 3;
+    private static final int CREATE_PACK_BUTTON_OFFSET_X = -1;
+    private static final int LIST_CREATE_BUTTON_W = 127;
+    private static final int LIST_CREATE_BUTTON_H = 20;
     private static final int HEADER_TEX_W = 72;
     private static final int HEADER_TEX_H = 10;
     private static final int HEADER_SLICE = 3;
@@ -179,25 +180,6 @@ public final class QuestEditorScreen extends Screen {
     private static ScreenState pendingInitState;
     private static long pendingInitUntil = 0L;
 
-    private static void drawSlicedVanillaButton(GuiGraphics gg, ResourceLocation texture, int x, int y, int width, int height) {
-        int leftCap = Math.min(VANILLA_BTN_CAP_W, Math.max(0, width / 2));
-        int rightCap = Math.min(VANILLA_BTN_CAP_W, Math.max(0, width - leftCap));
-        int middleWidth = Math.max(0, width - leftCap - rightCap);
-        int middleSourceWidth = Math.max(0, VANILLA_BTN_SLICE_W - VANILLA_BTN_CAP_W * 2);
-
-        if (leftCap > 0) {
-            gg.blit(texture, x, y, 0, 0, leftCap, height, VANILLA_BTN_SLICE_W, VANILLA_BTN_SLICE_H);
-        }
-        if (middleWidth > 0) {
-            gg.blit(texture, x + leftCap, y, VANILLA_BTN_CAP_W, 0, middleWidth, height,
-                    middleSourceWidth, VANILLA_BTN_SLICE_H, VANILLA_BTN_SLICE_W, VANILLA_BTN_SLICE_H);
-        }
-        if (rightCap > 0) {
-            gg.blit(texture, x + width - rightCap, y, VANILLA_BTN_SLICE_W - rightCap, 0, rightCap, height,
-                    VANILLA_BTN_SLICE_W, VANILLA_BTN_SLICE_H);
-        }
-    }
-
     private final Screen parent;
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
@@ -212,7 +194,7 @@ public final class QuestEditorScreen extends Screen {
     private int listH;
     private BackButton backButton;
     private EditBox questSearchBox;
-    private VanillaButton createPackButton;
+    private Button createPackButton;
     private EditorTabButton categoriesTabButton;
     private EditorTabButton subCategoriesTabButton;
     private EditorTabButton questsTabButton;
@@ -276,8 +258,8 @@ public final class QuestEditorScreen extends Screen {
     private final List<ScaledMultiLineEditBox> rewardEntryBoxes = new ArrayList<>();
     private final List<EntryRemoveButton> completionEntryRemoveButtons = new ArrayList<>();
     private final List<EntryRemoveButton> rewardEntryRemoveButtons = new ArrayList<>();
-    private ActionButton exportDataPackButton;
-    private ActionButton openDataPackFolderButton;
+    private Button exportDataPackButton;
+    private Button openDataPackFolderButton;
     private boolean syncingEntryRows = false;
     private boolean entryRowsDirty = false;
     private final List<TextInsertButton> descriptionFormatButtons = new ArrayList<>();
@@ -352,9 +334,9 @@ public final class QuestEditorScreen extends Screen {
 
         backButton = new BackButton(pxLeft + 2, barY, this::goBack);
         addRenderableWidget(backButton);
-        createPackButton = new VanillaButton(pxLeft + 2 + backButton.getWidth() + BOTTOM_CREATE_GAP, barY,
-                100, 20,
-                Component.literal("create new pack"), this::openPackCreate);
+        createPackButton = Button.builder(Component.literal("create new pack"), button -> openPackCreate())
+                .bounds(pxLeft + 2 + backButton.getWidth() + BOTTOM_CREATE_GAP + CREATE_PACK_BUTTON_OFFSET_X, barY, 100, 20)
+                .build();
         addRenderableWidget(createPackButton);
         deletePackButton = new IconButton(pxLeft + 2 + 24 + SMALL_BTN_GAP, barY, SMALL_BTN_SIZE, DELETE_TEX, this::confirmDeletePack);
         addRenderableWidget(deletePackButton);
@@ -432,16 +414,17 @@ public final class QuestEditorScreen extends Screen {
         attachIdSanitizer(questSubCategoryBox, false);
         attachIdSanitizer(questDependenciesBox, true);
 
-        exportDataPackButton = new ActionButton(0, 0, 100, 20,
-                Component.literal("Export as datapack"),
-                List.of(Component.literal("Export as a datapack for server use,")),
-                this::exportCurrentPackAsDataPack);
+        exportDataPackButton = Button.builder(Component.literal("Export as datapack"), button -> exportCurrentPackAsDataPack())
+                .bounds(0, 0, 125, 20)
+                .tooltip(Tooltip.create(Component.literal("Export as a datapack for server use.")))
+                .build();
         exportDataPackButton.visible = false;
         exportDataPackButton.active = false;
         addRenderableWidget(exportDataPackButton);
 
-        openDataPackFolderButton = new ActionButton(0, 0, 100, 20,
-                Component.literal("Open datapack folder"), this::openDataPackFolder);
+        openDataPackFolderButton = Button.builder(Component.literal("Open datapack folder"), button -> openDataPackFolder())
+                .bounds(0, 0, 125, 20)
+                .build();
         openDataPackFolderButton.visible = false;
         openDataPackFolderButton.active = false;
         addRenderableWidget(openDataPackFolderButton);
@@ -585,7 +568,7 @@ public final class QuestEditorScreen extends Screen {
 
     private List<EditorEntry> buildSubCategoryEntries() {
         List<EditorEntry> out = new ArrayList<>();
-        out.add(new EditorEntry(ENTRY_NEW, "create sub", "", ""));
+        out.add(new EditorEntry(ENTRY_NEW, "Create New Sub-category", "", ""));
         if (currentPack == null) return out;
         for (NamedEntry entry : listSubCategoryEntries(currentPack)) {
             out.add(new EditorEntry(entry.id, entry.name, entry.id, entry.icon));
@@ -3452,7 +3435,7 @@ public final class QuestEditorScreen extends Screen {
             leftList.setBounds(pxLeft, py, pw, listH);
         }
         if (createPackButton != null && backButton != null) {
-            createPackButton.setX(backButton.getX() + backButton.getWidth() + BOTTOM_CREATE_GAP);
+            createPackButton.setX(backButton.getX() + backButton.getWidth() + BOTTOM_CREATE_GAP + CREATE_PACK_BUTTON_OFFSET_X);
             createPackButton.setY(backButton.getY());
             createPackButton.visible = mode == Mode.PACK_LIST;
             createPackButton.active = mode == Mode.PACK_LIST;
@@ -6080,19 +6063,15 @@ public final class QuestEditorScreen extends Screen {
                 }
 
                 if (ENTRY_NEW.equals(entry.id)) {
-                    int buttonWidth = 125;
+                    int buttonWidth = LIST_CREATE_BUTTON_W;
+                    int buttonHeight = LIST_CREATE_BUTTON_H;
                     int buttonX = getX() + (width - buttonWidth) / 2;
-                    int buttonY = top + 4;
-                    int buttonHeight = 20;
+                    int buttonY = top + (rowH - buttonHeight) / 2;
                     boolean hovered = mouseX >= buttonX && mouseX <= buttonX + buttonWidth
                             && mouseY >= buttonY && mouseY <= buttonY + buttonHeight;
-                    ResourceLocation tex = CREATE_BTN_TEX;
-                    gg.blit(tex, buttonX, buttonY, 0, 0, buttonWidth, buttonHeight, CREATE_BTN_TEX_W, CREATE_BTN_TEX_H);
+                    gg.blitSprite(hovered ? VANILLA_BUTTON_HIGHLIGHTED_SPRITE : VANILLA_BUTTON_SPRITE, buttonX, buttonY, buttonWidth, buttonHeight);
                     Font font = Minecraft.getInstance().font;
-                    int textWidth = font.width(entry.label);
-                    int textX = buttonX + (buttonWidth - textWidth) / 2;
-                    int textY = buttonY + (buttonHeight - font.lineHeight) / 2 + 1;
-                    gg.drawString(font, entry.label, textX, textY, 0xFFFFFF, false);
+                    gg.drawCenteredString(font, entry.label, buttonX + buttonWidth / 2, buttonY + (buttonHeight - font.lineHeight) / 2 + 1, 0xFFFFFF);
                 } else {
                     int textX = getX() + 6 + entry.indent;
                     ItemStack iconStack = iconStackFromId(entry.icon);
@@ -6329,40 +6308,6 @@ public final class QuestEditorScreen extends Screen {
             int textX = getX() + (this.width - textW) / 2;
             int textY = getY() + (this.height - font.lineHeight) / 2 + 1;
             gg.drawString(font, getMessage(), textX, textY, 0xFFFFFF, false);
-        }
-
-        @Override
-        protected void updateWidgetNarration(NarrationElementOutput narration) {
-        }
-    }
-
-    private static final class VanillaButton extends AbstractButton {
-        private final Runnable onPress;
-
-        VanillaButton(int x, int y, int w, int h, Component text, Runnable onPress) {
-            super(x, y, w, h, text);
-            this.onPress = onPress;
-        }
-
-        public void setWidth(int width) {
-            this.width = width;
-        }
-
-        @Override
-        public void onPress() {
-            if (onPress != null) onPress.run();
-        }
-
-        @Override
-        protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-            ResourceLocation tex = this.active && this.isMouseOver(mouseX, mouseY) ? VANILLA_BTN_TEX_HOVER : VANILLA_BTN_TEX;
-            drawSlicedVanillaButton(gg, tex, getX(), getY(), this.width, this.height);
-            int color = this.active ? 0xFFFFFFFF : 0xFF808080;
-            Font font = Minecraft.getInstance().font;
-            int textW = font.width(getMessage());
-            int textX = getX() + (this.width - textW) / 2;
-            int textY = getY() + (this.height - font.lineHeight) / 2 + 1;
-            gg.drawString(font, getMessage(), textX, textY, color, false);
         }
 
         @Override
