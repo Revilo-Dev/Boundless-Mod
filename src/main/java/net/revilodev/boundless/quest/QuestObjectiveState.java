@@ -13,6 +13,7 @@ import java.util.UUID;
 public final class QuestObjectiveState extends SavedData {
     private final Map<String, Map<String, Integer>> itemProgressByPlayer = new HashMap<>();
     private final Map<String, Map<String, Boolean>> effectProgressByPlayer = new HashMap<>();
+    private final Map<String, Map<String, String>> inputProgressByPlayer = new HashMap<>();
 
     private QuestObjectiveState() {}
 
@@ -51,6 +52,21 @@ public final class QuestObjectiveState extends SavedData {
             }
         }
 
+        if (tag.contains("inputs", Tag.TAG_COMPOUND)) {
+            CompoundTag inputsRoot = tag.getCompound("inputs");
+            for (String playerKey : inputsRoot.getAllKeys()) {
+                CompoundTag inner = inputsRoot.getCompound(playerKey);
+                Map<String, String> m = new HashMap<>();
+                for (String k : inner.getAllKeys()) {
+                    if (inner.contains(k, Tag.TAG_STRING)) {
+                        String value = inner.getString(k);
+                        if (!value.isBlank()) m.put(k, value);
+                    }
+                }
+                if (!m.isEmpty()) s.inputProgressByPlayer.put(playerKey, m);
+            }
+        }
+
         return s;
     }
 
@@ -75,6 +91,17 @@ public final class QuestObjectiveState extends SavedData {
             effectsRoot.put(e.getKey(), inner);
         }
         tag.put("effects", effectsRoot);
+
+        CompoundTag inputsRoot = new CompoundTag();
+        for (Map.Entry<String, Map<String, String>> e : inputProgressByPlayer.entrySet()) {
+            CompoundTag inner = new CompoundTag();
+            for (Map.Entry<String, String> q : e.getValue().entrySet()) {
+                String value = q.getValue() == null ? "" : q.getValue().trim();
+                if (!value.isBlank()) inner.putString(q.getKey(), value);
+            }
+            if (!inner.isEmpty()) inputsRoot.put(e.getKey(), inner);
+        }
+        tag.put("inputs", inputsRoot);
 
         return tag;
     }
@@ -121,10 +148,35 @@ public final class QuestObjectiveState extends SavedData {
         return now;
     }
 
+    public String getInputProgress(UUID player, String key) {
+        if (key == null || key.isBlank()) return "";
+        Map<String, String> m = inputProgressByPlayer.get(player.toString());
+        if (m == null) return "";
+        return m.getOrDefault(key, "");
+    }
+
+    public void setInputProgress(UUID player, String key, String value) {
+        if (key == null || key.isBlank()) return;
+        String p = player.toString();
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.isBlank()) {
+            Map<String, String> m = inputProgressByPlayer.get(p);
+            if (m != null) {
+                m.remove(key);
+                if (m.isEmpty()) inputProgressByPlayer.remove(p);
+            }
+            setDirty();
+            return;
+        }
+        inputProgressByPlayer.computeIfAbsent(p, k -> new HashMap<>()).put(key, normalized);
+        setDirty();
+    }
+
     public void clearPlayer(UUID player) {
         String p = player.toString();
         itemProgressByPlayer.remove(p);
         effectProgressByPlayer.remove(p);
+        inputProgressByPlayer.remove(p);
         setDirty();
     }
 
@@ -142,6 +194,12 @@ public final class QuestObjectiveState extends SavedData {
         if (effects != null) {
             effects.entrySet().removeIf(entry -> entry.getKey() != null && entry.getKey().startsWith(questId + ":"));
             if (effects.isEmpty()) effectProgressByPlayer.remove(p);
+        }
+
+        Map<String, String> inputs = inputProgressByPlayer.get(p);
+        if (inputs != null) {
+            inputs.entrySet().removeIf(entry -> entry.getKey() != null && entry.getKey().startsWith(questId + ":"));
+            if (inputs.isEmpty()) inputProgressByPlayer.remove(p);
         }
 
         setDirty();

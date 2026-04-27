@@ -55,6 +55,7 @@ public final class QuestTracker {
     private static final Map<String, Integer> CLIENT_STATS = new HashMap<>();
     private static final Map<String, Integer> CLIENT_ITEM_PROGRESS = new HashMap<>();
     private static final Map<String, Boolean> CLIENT_EFFECT_PROGRESS = new HashMap<>();
+    private static final Map<String, String> CLIENT_INPUT_PROGRESS = new HashMap<>();
     private static final Map<String, Integer> CLIENT_CLAIM_COUNTS = new HashMap<>();
     private static final Map<String, Boolean> CLIENT_SCROLL_REDEEMED = new HashMap<>();
     private static final Map<String, Boolean> CLIENT_SCROLL_CREATED = new HashMap<>();
@@ -120,6 +121,24 @@ public final class QuestTracker {
                     .updateEffectDone(sp.getUUID(), key, hasEffect);
         }
         return getPermanentEffectProgress(key, hasEffect);
+    }
+
+    public static void setFieldInputProgress(Player player, String key, String value) {
+        if (key == null || key.isBlank()) return;
+        String normalized = value == null ? "" : value.trim();
+        if (player instanceof ServerPlayer sp) {
+            QuestObjectiveState.get(sp.serverLevel()).setInputProgress(sp.getUUID(), key, normalized);
+        }
+        if (normalized.isBlank()) CLIENT_INPUT_PROGRESS.remove(key);
+        else CLIENT_INPUT_PROGRESS.put(key, normalized);
+    }
+
+    public static String getFieldInputProgress(Player player, String key) {
+        if (key == null || key.isBlank()) return "";
+        if (player instanceof ServerPlayer sp) {
+            return QuestObjectiveState.get(sp.serverLevel()).getInputProgress(sp.getUUID(), key);
+        }
+        return CLIENT_INPUT_PROGRESS.getOrDefault(key, "");
     }
 
     private static String sanitize(String s) {
@@ -256,12 +275,28 @@ public final class QuestTracker {
 
     public static boolean dependenciesMet(QuestData.Quest q, Player player) {
         if (q == null || q.dependencies.isEmpty()) return true;
+        if (q.lockAfterDependency) {
+            for (String depId : q.dependencies) {
+                QuestData.Quest dep = QuestData.byId(depId).orElse(null);
+                if (dep == null) return false;
+                if (hasEverClaimed(dep, player)) return false;
+            }
+            return true;
+        }
         for (String depId : q.dependencies) {
             QuestData.Quest dep = QuestData.byId(depId).orElse(null);
             if (dep == null) return false;
             if (!hasEverClaimed(dep, player)) return false;
         }
         return true;
+    }
+
+    private static boolean shouldAutoClaim(QuestData.Quest q) {
+        if (q == null) return Config.autoClaimQuestRewards();
+        if (q.autoComplete) return true;
+        QuestData.Category category = QuestData.categoryById(q.category).orElse(null);
+        if (category != null && category.autoComplete) return true;
+        return Config.autoClaimQuestRewards();
     }
 
     public static boolean isVisible(QuestData.Quest q, Player player) {
@@ -346,6 +381,11 @@ public final class QuestTracker {
             if (t.isStat() && getStatCount(player, t.id) < t.count) return false;
             if (t.isXp() && getXpAmount(player, t.id) < t.count) return false;
             if (t.isLevelUpLevel() && !LevelUpCompat.meetsLevelRequirement(player, t.count)) return false;
+            if (t.isFieldInput()) {
+                String key = q.id + ":field:" + t.id;
+                String value = getFieldInputProgress(player, key);
+                if (!safeNormalizeFieldInput(value).equals(safeNormalizeFieldInput(t.id))) return false;
+            }
         }
 
         return true;
@@ -363,6 +403,10 @@ public final class QuestTracker {
     public static String normalizeXpType(String xpType) {
         String mode = xpType == null ? "" : xpType.trim().toLowerCase(Locale.ROOT);
         return "levels".equals(mode) ? "levels" : "points";
+    }
+
+    private static String safeNormalizeFieldInput(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     public static int getStatCount(Player player, String statId) {
@@ -777,10 +821,17 @@ public final class QuestTracker {
         }
         if (st == Status.INCOMPLETE) {
             activeStateMap().remove(questId);
+            clearClientInputForQuest(questId);
         } else {
             activeStateMap().put(questId, st);
+            if (st == Status.REDEEMED) clearClientInputForQuest(questId);
         }
         if (FMLEnvironment.dist == Dist.CLIENT && ACTIVE_KEY != null) ClientOnly.saveClientState(ACTIVE_KEY);
+    }
+
+    private static void clearClientInputForQuest(String questId) {
+        if (questId == null || questId.isBlank()) return;
+        CLIENT_INPUT_PROGRESS.entrySet().removeIf(e -> e.getKey() != null && e.getKey().startsWith(questId + ":"));
     }
 
     public static void clientSetClaimCount(String questId, int count) {
@@ -812,6 +863,7 @@ public final class QuestTracker {
         CLIENT_STATS.clear();
         CLIENT_ITEM_PROGRESS.clear();
         CLIENT_EFFECT_PROGRESS.clear();
+        CLIENT_INPUT_PROGRESS.clear();
         CLIENT_CLAIM_COUNTS.clear();
         CLIENT_SCROLL_REDEEMED.clear();
         CLIENT_SCROLL_CREATED.clear();
@@ -866,7 +918,7 @@ public final class QuestTracker {
             boolean hasItemTargets = hasItemOrSubmitTargets(q);
 
             if (ready && cur == Status.INCOMPLETE) {
-                if (Config.autoClaimQuestRewards()) {
+                if (shouldAutoClaim(q)) {
                     BoundlessNetwork.claimQuest(sp, q);
                 } else {
                     setServerStatus(sp, q.id, Status.COMPLETED);

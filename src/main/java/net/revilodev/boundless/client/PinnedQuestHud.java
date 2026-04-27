@@ -460,6 +460,13 @@ public final class PinnedQuestHud {
                 boolean done = have >= need;
                 return new TargetView(new ItemStack(Items.EXPERIENCE_BOTTLE), have + "/" + need, done);
             }
+
+            if (t.isFieldInput()) {
+                String key = q.id + ":field:" + t.id;
+                String value = QuestTracker.getFieldInputProgress(player, key);
+                boolean done = value != null && value.trim().equalsIgnoreCase(t.id == null ? "" : t.id.trim());
+                return new TargetView(new ItemStack(Items.NAME_TAG), done ? "1/1" : "0/1", done);
+            }
         } catch (Throwable ignored) {}
         return null;
     }

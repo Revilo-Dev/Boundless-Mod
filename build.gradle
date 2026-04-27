@@ -19,7 +19,7 @@ base {
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 repositories {
-    // Add additional repositories if needed
+    maven { url = 'https://maven.blamejared.com' }
 }
 
 runs {
@@ -59,7 +59,8 @@ configurations {
 
 dependencies {
     implementation "net.neoforged:neoforge:${neo_version}"
-    // other mod/library dependencies can go here
+    compileOnly "mezz.jei:jei-1.21.1-neoforge-api:19.+"
+    localRuntime "mezz.jei:jei-1.21.1-neoforge:19.+"
 }
 
 // Replace properties inside neoforge.mods.toml with gradle.properties values

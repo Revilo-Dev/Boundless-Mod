@@ -49,8 +49,10 @@ public final class QuestData {
         public final String icon;
         public final String description;
         public final List<String> dependencies;
+        public final boolean lockAfterDependency;
         public final boolean optional;
         public final boolean repeatable;
+        public final boolean autoComplete;
         public final boolean hiddenUnderDependency;
         public final Rewards rewards;
         public final String type;
@@ -60,7 +62,8 @@ public final class QuestData {
         public final String sourcePath;
 
         public Quest(String id, String name, String icon, String description,
-                     List<String> dependencies, boolean optional, boolean repeatable,
+                     List<String> dependencies, boolean lockAfterDependency, boolean optional, boolean repeatable,
+                     boolean autoComplete,
                      boolean hiddenUnderDependency, Rewards rewards,
                      String type, Completion completion, String category,
                      String subCategory, String sourcePath) {
@@ -70,8 +73,10 @@ public final class QuestData {
             this.icon = icon == null ? "minecraft:book" : icon;
             this.description = description == null ? "" : description;
             this.dependencies = dependencies == null ? List.of() : List.copyOf(dependencies);
+            this.lockAfterDependency = lockAfterDependency;
             this.optional = optional;
             this.repeatable = repeatable;
+            this.autoComplete = autoComplete;
             this.hiddenUnderDependency = hiddenUnderDependency;
             this.rewards = rewards;
             this.type = type == null ? "collection" : type;
@@ -181,11 +186,17 @@ public final class QuestData {
         public final String kind;
         public final String id;
         public final int count;
+        public final String hint;
 
         public Target(String kind, String id, int count) {
+            this(kind, id, count, "");
+        }
+
+        public Target(String kind, String id, int count, String hint) {
             this.kind = kind;
             this.id = id;
             this.count = Math.max(1, count);
+            this.hint = hint == null ? "" : hint;
         }
 
         public boolean isItem() { return "item".equals(kind); }
@@ -196,6 +207,7 @@ public final class QuestData {
         public boolean isStat() { return "stat".equals(kind); }
         public boolean isXp() { return "xp".equals(kind); }
         public boolean isLevelUpLevel() { return "levelup_level".equals(kind); }
+        public boolean isFieldInput() { return "field".equals(kind); }
     }
 
     public static final class Category {
@@ -205,15 +217,17 @@ public final class QuestData {
         public final int order;
         public final boolean excludeFromAll;
         public final String dependency;
+        public final boolean autoComplete;
 
         public Category(String id, String icon, String name, int order,
-                        boolean excludeFromAll, String dependency) {
+                        boolean excludeFromAll, String dependency, boolean autoComplete) {
             this.id = id;
             this.icon = icon == null || icon.isBlank() ? "minecraft:book" : icon;
             this.name = name == null || name.isBlank() ? id : name;
             this.order = order;
             this.excludeFromAll = excludeFromAll;
             this.dependency = dependency == null ? "" : dependency;
+            this.autoComplete = autoComplete;
         }
 
         public Optional<Item> iconItem() {
@@ -372,8 +386,10 @@ public final class QuestData {
                 int order = parseIntFlexible(obj, "order", 0);
                 boolean excludeFromAll = parseBoolFlexible(obj, "exclude_from_all", false);
                 String dependency = optString(obj, "dependency");
+                boolean autoComplete = parseBoolFlexible(obj, "auto_complete",
+                        parseBoolFlexible(obj, "autoComplete", false));
 
-                CATEGORIES.put(id, new Category(id, icon, cname, order, excludeFromAll, dependency));
+                CATEGORIES.put(id, new Category(id, icon, cname, order, excludeFromAll, dependency, autoComplete));
             } catch (Exception ignored) {}
         }
 
@@ -414,7 +430,7 @@ public final class QuestData {
 
         if (!CATEGORIES.containsKey("all")) {
             CATEGORIES.put("all", new Category("all", "minecraft:book", "All",
-                    Integer.MIN_VALUE, false, ""));
+                    Integer.MIN_VALUE, false, "", false));
         }
     }
 
@@ -463,8 +479,10 @@ public final class QuestData {
                 int order = parseIntFlexible(obj, "order", 0);
                 boolean excludeFromAll = parseBoolFlexible(obj, "exclude_from_all", false);
                 String dependency = optString(obj, "dependency");
+                boolean autoComplete = parseBoolFlexible(obj, "auto_complete",
+                        parseBoolFlexible(obj, "autoComplete", false));
 
-                CATEGORIES.put(id, new Category(id, icon, cname, order, excludeFromAll, dependency));
+                CATEGORIES.put(id, new Category(id, icon, cname, order, excludeFromAll, dependency, autoComplete));
                 count[0]++;
             } catch (Exception ignored) {}
         });
@@ -669,7 +687,7 @@ public final class QuestData {
 
         if (!CATEGORIES.containsKey("all")) {
             CATEGORIES.put("all", new Category("all", "minecraft:book", "All",
-                    Integer.MIN_VALUE, false, ""));
+                    Integer.MIN_VALUE, false, "", false));
         }
 
         List<Category> list = new ArrayList<>(CATEGORIES.values());
@@ -689,7 +707,7 @@ public final class QuestData {
 
         if (!CATEGORIES.containsKey("all")) {
             CATEGORIES.put("all", new Category("all", "minecraft:book", "All",
-                    Integer.MIN_VALUE, false, ""));
+                    Integer.MIN_VALUE, false, "", false));
         }
 
         List<Category> list = new ArrayList<>(CATEGORIES.values());
@@ -786,6 +804,10 @@ public final class QuestData {
         List<String> deps = parseDependencies(obj);
         boolean optional = parseBoolFlexible(obj, "optional", false);
         boolean repeatable = parseBoolFlexible(obj, "repeatable", false);
+        boolean autoComplete = parseBoolFlexible(obj, "auto_complete",
+                parseBoolFlexible(obj, "autoComplete", false));
+        boolean lockAfterDependency = parseBoolFlexible(obj, "lock_after_dependency",
+                parseBoolFlexible(obj, "lockAfterDependency", false));
         boolean hiddenUnderDependency = parseBoolFlexible(obj, "hiddenUnderDependency",
                 parseBoolFlexible(obj, "hidden_under_dependency", false));
 
@@ -802,7 +824,7 @@ public final class QuestData {
 
         String sourcePath = src == null ? "" : src.getPath();
 
-        return new Quest(id, name, icon, description, deps, optional, repeatable, hiddenUnderDependency,
+        return new Quest(id, name, icon, description, deps, lockAfterDependency, optional, repeatable, autoComplete, hiddenUnderDependency,
                 rewards, type, completion,
                 category, subCategory, sourcePath);
     }
@@ -1043,6 +1065,15 @@ public final class QuestData {
                                 ? obj.getAsJsonPrimitive("count").getAsInt() : 1));
                 return new Completion(out);
             }
+            if (obj.has("field")) {
+                String value = optString(obj, "field");
+                String hint = optString(obj, "field_text");
+                if (hint == null || hint.isBlank()) hint = optString(obj, "fieldText");
+                if (value != null && !value.isBlank()) {
+                    out.add(new Target("field", value, 1, hint));
+                }
+                return new Completion(out);
+            }
         }
 
         return new Completion(List.of());
@@ -1104,6 +1135,18 @@ public final class QuestData {
                 count = o.has("count") ? o.get("count").getAsInt() : 1;
             }
             out.add(new Target("levelup_level", "level", count));
+            return;
+        }
+
+        if (o.has("field")) {
+            String fieldValue = o.get("field").getAsString();
+            String hint = "";
+            if (o.has("field_text") && o.get("field_text").isJsonPrimitive()) {
+                hint = o.get("field_text").getAsString();
+            } else if (o.has("fieldText") && o.get("fieldText").isJsonPrimitive()) {
+                hint = o.get("fieldText").getAsString();
+            }
+            out.add(new Target("field", fieldValue, 1, hint));
         }
     }
 
@@ -1163,6 +1206,15 @@ public final class QuestData {
                 count = o.has("count") ? o.get("count").getAsInt() : 1;
             }
             out.add(new Target("levelup_level", "level", count));
+            return;
+        }
+
+        if (o.has("field")) {
+            String fieldValue = optString(o, "field");
+            if (fieldValue == null || fieldValue.isBlank()) return;
+            String hint = optString(o, "field_text");
+            if (hint == null || hint.isBlank()) hint = optString(o, "fieldText");
+            out.add(new Target("field", fieldValue, 1, hint));
         }
     }
 
@@ -1193,8 +1245,10 @@ public final class QuestData {
                     int order = parseIntFlexible(o, "order", 0);
                     boolean excludeFromAll = parseBoolFlexible(o, "excludeFromAll", false);
                     String dependency = optString(o, "dependency");
+                    boolean autoComplete = parseBoolFlexible(o, "auto_complete",
+                            parseBoolFlexible(o, "autoComplete", false));
 
-                    CATEGORIES.put(id, new Category(id, icon, name, order, excludeFromAll, dependency));
+                    CATEGORIES.put(id, new Category(id, icon, name, order, excludeFromAll, dependency, autoComplete));
                 }
             }
 
@@ -1253,6 +1307,10 @@ public final class QuestData {
 
                     boolean optional = parseBoolFlexible(o, "optional", false);
                     boolean repeatable = parseBoolFlexible(o, "repeatable", false);
+                    boolean autoComplete = parseBoolFlexible(o, "auto_complete",
+                            parseBoolFlexible(o, "autoComplete", false));
+                    boolean lockAfterDependency = parseBoolFlexible(o, "lock_after_dependency",
+                            parseBoolFlexible(o, "lockAfterDependency", false));
                     boolean hiddenUnderDependency = parseBoolFlexible(o, "hiddenUnderDependency", false);
 
                     Rewards rewards = new Rewards(List.of(), List.of(), List.of(), List.of(), "", 0);
@@ -1344,8 +1402,9 @@ public final class QuestData {
                                 String kind = optString(to, "kind");
                                 String tid = optString(to, "id");
                                 int count = to.has("count") ? to.get("count").getAsInt() : 1;
+                                String hint = optString(to, "hint");
                                 if (kind != null && !kind.isBlank() && tid != null && !tid.isBlank()) {
-                                    targets.add(new Target(kind, tid, count));
+                                    targets.add(new Target(kind, tid, count, hint));
                                 }
                             }
                         }
@@ -1356,7 +1415,7 @@ public final class QuestData {
                     String subCategory = optString(o, "subCategory");
                     String sourcePath = optString(o, "sourcePath");
 
-                    Quest q = new Quest(id, name, icon, description, deps, optional, repeatable, hiddenUnderDependency,
+                    Quest q = new Quest(id, name, icon, description, deps, lockAfterDependency, optional, repeatable, autoComplete, hiddenUnderDependency,
                             rewards, type, completion,
                             category, subCategory, sourcePath);
                     if (!isQuestDisabled(q)) QUESTS.put(q.id, q);
@@ -1365,7 +1424,7 @@ public final class QuestData {
 
             if (!CATEGORIES.containsKey("all")) {
                 CATEGORIES.put("all", new Category("all", "minecraft:book", "All",
-                        Integer.MIN_VALUE, false, ""));
+                        Integer.MIN_VALUE, false, "", false));
             }
 
             ensureSubCategoriesFromQuests();

@@ -68,7 +68,6 @@ public final class QuestSettingsScreen extends Screen {
     private ConfigRow uiHideHeaderRow;
     private ConfigRow uiFilterDisplayRow;
     private ConfigRow uiDisableCategoriesRow;
-    private ConfigRow uiBuiltinQuestPackRow;
     private ConfigRow uiHideQuestWidgetIconsRow;
     private ConfigRow uiEnableSearchBoxRow;
     private ConfigRow uiEnableDescriptionColorsRow;
@@ -93,7 +92,6 @@ public final class QuestSettingsScreen extends Screen {
     private int uiHideHeaderBaseY;
     private int uiFilterDisplayBaseY;
     private int uiDisableCategoriesBaseY;
-    private int uiBuiltinQuestPackBaseY;
     private int uiHideQuestWidgetIconsBaseY;
     private int uiEnableSearchBoxBaseY;
     private int uiEnableDescriptionColorsBaseY;
@@ -108,7 +106,6 @@ public final class QuestSettingsScreen extends Screen {
     private boolean hideCategoryHeader;
     private String filterDisplayMode;
     private boolean disableCategories;
-    private boolean enableBuiltinQuestPack;
     private boolean hideQuestWidgetIcons;
     private boolean enableQuestSearchBox;
     private boolean enableDescriptionColors;
@@ -165,11 +162,10 @@ public final class QuestSettingsScreen extends Screen {
         uiHideHeaderBaseY = uiRow1 + rowGap * 2;
         uiFilterDisplayBaseY = uiRow1 + rowGap * 3;
         uiDisableCategoriesBaseY = uiRow1 + rowGap * 4;
-        uiBuiltinQuestPackBaseY = uiRow1 + rowGap * 5;
-        uiHideQuestWidgetIconsBaseY = uiRow1 + rowGap * 6;
-        uiEnableSearchBoxBaseY = uiRow1 + rowGap * 7;
-        uiEnableDescriptionColorsBaseY = uiRow1 + rowGap * 8;
-        functionalityHeaderBaseY = uiRow1 + rowGap * 9 + 4;
+        uiHideQuestWidgetIconsBaseY = uiRow1 + rowGap * 5;
+        uiEnableSearchBoxBaseY = uiRow1 + rowGap * 6;
+        uiEnableDescriptionColorsBaseY = uiRow1 + rowGap * 7;
+        functionalityHeaderBaseY = uiRow1 + rowGap * 8 + 4;
         functionalityDisablePinningBaseY = functionalityHeaderBaseY + 10;
         functionalityAutoClaimBaseY = functionalityDisablePinningBaseY + rowGap;
         functionalityQuestScrollsBaseY = functionalityAutoClaimBaseY + rowGap;
@@ -199,10 +195,6 @@ public final class QuestSettingsScreen extends Screen {
                 "Disable category tabs and category-based filtering.",
                 () -> disableCategories ? "On" : "Off",
                 () -> disableCategories = !disableCategories);
-        uiBuiltinQuestPackRow = new ConfigRow(px, uiBuiltinQuestPackBaseY, pw, "Built-in Quest Pack",
-                "Enable or disable the built-in Boundless quest pack.",
-                () -> enableBuiltinQuestPack ? "On" : "Off",
-                () -> enableBuiltinQuestPack = !enableBuiltinQuestPack);
         uiHideQuestWidgetIconsRow = new ConfigRow(px, uiHideQuestWidgetIconsBaseY, pw, "Hide Quest Widget Icons",
                 "Hide icons in quest list widgets.",
                 () -> hideQuestWidgetIcons ? "On" : "Off",
@@ -246,7 +238,6 @@ public final class QuestSettingsScreen extends Screen {
         addRenderableWidget(uiHideHeaderRow);
         addRenderableWidget(uiFilterDisplayRow);
         addRenderableWidget(uiDisableCategoriesRow);
-        addRenderableWidget(uiBuiltinQuestPackRow);
         addRenderableWidget(uiHideQuestWidgetIconsRow);
         addRenderableWidget(uiEnableSearchBoxRow);
         addRenderableWidget(uiEnableDescriptionColorsRow);
@@ -302,8 +293,6 @@ public final class QuestSettingsScreen extends Screen {
         uiFilterDisplayRow.active = config;
         uiDisableCategoriesRow.visible = config;
         uiDisableCategoriesRow.active = config;
-        uiBuiltinQuestPackRow.visible = config;
-        uiBuiltinQuestPackRow.active = config;
         uiHideQuestWidgetIconsRow.visible = config;
         uiHideQuestWidgetIconsRow.active = config;
         uiEnableSearchBoxRow.visible = config;
@@ -343,7 +332,6 @@ public final class QuestSettingsScreen extends Screen {
         hideCategoryHeader = Config.hideCategoryHeader();
         filterDisplayMode = Config.filterDisplayMode();
         disableCategories = Config.disableCategories();
-        enableBuiltinQuestPack = Config.enableBuiltinQuestPack();
         hideQuestWidgetIcons = Config.hideQuestWidgetIcons();
         enableQuestSearchBox = Config.enableQuestSearchBox();
         enableDescriptionColors = Config.enableDescriptionColors();
@@ -386,7 +374,6 @@ public final class QuestSettingsScreen extends Screen {
         Config.HIDE_CATEGORY_HEADER.set(hideCategoryHeader);
         Config.FILTER_DISPLAY_MODE.set(filterDisplayMode);
         Config.DISABLE_CATEGORIES.set(disableCategories);
-        Config.ENABLE_BUILTIN_QUEST_PACK.set(enableBuiltinQuestPack);
         Config.HIDE_QUEST_WIDGET_ICONS.set(hideQuestWidgetIcons);
         Config.ENABLE_QUEST_SEARCH_BOX.set(enableQuestSearchBox);
         Config.ENABLE_DESCRIPTION_COLORS.set(enableDescriptionColors);
@@ -415,6 +402,8 @@ public final class QuestSettingsScreen extends Screen {
                 icon,
                 "",
                 List.of(),
+                false,
+                false,
                 false,
                 false,
                 false,
@@ -539,7 +528,6 @@ public final class QuestSettingsScreen extends Screen {
         layoutRow(uiHideHeaderRow, uiHideHeaderBaseY, top, bottom);
         layoutRow(uiFilterDisplayRow, uiFilterDisplayBaseY, top, bottom);
         layoutRow(uiDisableCategoriesRow, uiDisableCategoriesBaseY, top, bottom);
-        layoutRow(uiBuiltinQuestPackRow, uiBuiltinQuestPackBaseY, top, bottom);
         layoutRow(uiHideQuestWidgetIconsRow, uiHideQuestWidgetIconsBaseY, top, bottom);
         layoutRow(uiEnableSearchBoxRow, uiEnableSearchBoxBaseY, top, bottom);
         layoutRow(uiEnableDescriptionColorsRow, uiEnableDescriptionColorsBaseY, top, bottom);

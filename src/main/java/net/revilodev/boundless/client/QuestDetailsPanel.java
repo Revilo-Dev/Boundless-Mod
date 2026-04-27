@@ -6,6 +6,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractButton;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -24,6 +25,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.revilodev.boundless.Config;
+import net.revilodev.boundless.compat.JeiCompat;
 import net.revilodev.boundless.compat.LevelUpCompat;
 import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.QuestData;
@@ -31,6 +33,10 @@ import net.revilodev.boundless.quest.QuestTracker;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @OnlyIn(Dist.CLIENT)
 public final class QuestDetailsPanel extends AbstractWidget {
@@ -40,6 +46,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
     private static final int CONTENT_BOTTOM_MARGIN = 10;
     private static final int HEADER_HEIGHT = 19;
     private static final int DESC_CHAR_LIMIT = 180;
+    private static final Pattern ITEM_ID_PATTERN = Pattern.compile("\\b[a-z0-9_.-]+:[a-z0-9_./-]+\\b");
 
     private static final ResourceLocation TEX_PIN =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/pin.png");
@@ -65,6 +72,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
     private boolean hideBackButton = false;
 
     private final List<DepClickRegion> depRegions = new ArrayList<>();
+    private final List<ItemClickRegion> itemRegions = new ArrayList<>();
+    private final Map<String, EditBox> inputBoxes = new HashMap<>();
 
     private static ResourceLocation safeParse(String id) {
         return id == null || id.isBlank() ? null : ResourceLocation.tryParse(id);
@@ -139,6 +148,26 @@ public final class QuestDetailsPanel extends AbstractWidget {
         setBounds(x, y, w, h);
     }
 
+    private static final class ItemClickRegion {
+        final int x;
+        final int y;
+        final int w;
+        final int h;
+        final ItemStack stack;
+
+        ItemClickRegion(int x, int y, int w, int h, ItemStack stack) {
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+            this.stack = stack;
+        }
+
+        boolean contains(double mx, double my) {
+            return mx >= x && mx <= x + w && my >= y && my <= y + h;
+        }
+    }
+
     public AbstractButton backButton() { return back; }
     public AbstractButton completeButton() { return complete; }
     public AbstractButton rejectButton() { return reject; }
@@ -171,6 +200,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
         this.scrollY = 0f;
         this.descExpanded = false;
         this.reject.resetConfirmState();
+        inputBoxes.clear();
         if (q != null) PinnedQuestHud.setCurrentQuestId(q.id);
     }
 
@@ -179,7 +209,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
         if (!this.visible || quest == null) return;
 
         depRegions.clear();
+        itemRegions.clear();
         List<Component> hoveredTooltips = new ArrayList<>();
+        for (EditBox box : inputBoxes.values()) {
+            box.visible = false;
+            box.active = false;
+        }
 
         int x = this.getX();
         int y = this.getY();
@@ -256,6 +291,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
             Component shownComponent = formatColorCodes(shown, 0xCFCFCF);
             gg.drawWordWrap(mc.font, shownComponent, x + 4, curY[0], w - 8, 0xCFCFCF);
+            addDescriptionItemRegions(stripColorTokens(shown), x + 4, curY[0], w - 8);
             int wrapHeight = wrappedHeight(shownComponent, w - 8);
 
             if (needsMore) {
@@ -358,6 +394,30 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     continue;
                 }
 
+                if (t.isFieldInput()) {
+                    gg.drawString(mc.font, "Input:", x + 4, curY[0], 0x1d9633, false);
+                    curY[0] += mc.font.lineHeight + 2;
+                    String key = quest.id + ":field:" + t.id;
+                    EditBox box = inputBoxes.computeIfAbsent(key, ignored -> createInputBox());
+                    if (!box.isFocused()) {
+                        box.setValue(QuestTracker.getFieldInputProgress(mc.player, key));
+                    }
+                    box.setHint(Component.literal(t.hint == null ? "" : t.hint));
+                    box.setPosition(x + 4, curY[0]);
+                    box.setWidth(w - 8);
+                    box.visible = true;
+                    box.active = true;
+                    boolean ready = QuestTracker.isReady(quest, mc.player);
+                    int borderColor = ready ? 0xFF55AA55 : 0xFF8E8E8E;
+                    gg.fill(box.getX() - 1, box.getY() - 1, box.getX() + box.getWidth() + 1, box.getY(), borderColor);
+                    gg.fill(box.getX() - 1, box.getY() + box.getHeight(), box.getX() + box.getWidth() + 1, box.getY() + box.getHeight() + 1, borderColor);
+                    gg.fill(box.getX() - 1, box.getY() - 1, box.getX(), box.getY() + box.getHeight() + 1, borderColor);
+                    gg.fill(box.getX() + box.getWidth(), box.getY() - 1, box.getX() + box.getWidth() + 1, box.getY() + box.getHeight() + 1, borderColor);
+                    box.render(gg, mouseX, mouseY, partialTick);
+                    curY[0] += box.getHeight() + 4;
+                    continue;
+                }
+
                 if (isItemLike) {
 
                     if (isSubmitTarget) {
@@ -410,6 +470,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
                     if (iconItem != null) {
                         ItemStack st = new ItemStack(iconItem);
                         gg.renderItem(st, px, curY[0]);
+                        itemRegions.add(new ItemClickRegion(px, curY[0], 16, 16, st.copy()));
                         if (mouseX >= px && mouseX <= px + 16 && mouseY >= curY[0] && mouseY <= curY[0] + 16) {
                             hoveredTooltips.add(st.getHoverName());
                         }
@@ -552,6 +613,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
         boolean hasExpReward = quest.rewards != null && quest.rewards.hasExp();
 
         boolean hasAnyReward = hasItemRewards || hasCommandRewards || hasFunctionRewards || hasLootTableRewards || hasExpReward;
+        for (ItemClickRegion region : itemRegions) {
+            if (region.contains(mouseX, mouseY) && region.stack != null && !region.stack.isEmpty()) {
+                hoveredTooltips.add(region.stack.getHoverName());
+                break;
+            }
+        }
         if (!hasAnyReward) {
             gg.disableScissor();
             for (Component tip : hoveredTooltips) gg.renderTooltip(mc.font, tip, mouseX, mouseY);
@@ -569,6 +636,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
                 if (item != null) {
                     ItemStack st = new ItemStack(item, Math.max(1, re.count));
                     gg.renderItem(st, x + 4, lineY);
+                    itemRegions.add(new ItemClickRegion(x + 4, lineY, 16, 16, st.copy()));
                     gg.drawString(mc.font, "x" + st.getCount(), x + 24, lineY + 6, 0xA8FFA8, false);
                     if (mouseX >= x + 4 && mouseX <= x + 20 && mouseY >= lineY && mouseY <= lineY + 16) {
                         hoveredTooltips.add(st.getHoverName());
@@ -751,7 +819,14 @@ public final class QuestDetailsPanel extends AbstractWidget {
         }
 
         if (quest.completion != null && !quest.completion.targets.isEmpty()) {
-            y += quest.completion.targets.size() * LINE_ITEM_ROW + 2;
+            for (QuestData.Target target : quest.completion.targets) {
+                if (target != null && target.isFieldInput()) {
+                    y += mc.font.lineHeight + 2 + 20;
+                } else {
+                    y += LINE_ITEM_ROW;
+                }
+            }
+            y += 2;
         }
 
         int lootCommandCount = commandLootRewardCount();
@@ -779,6 +854,45 @@ public final class QuestDetailsPanel extends AbstractWidget {
         return mc.font.split(component, maxWidth).size() * mc.font.lineHeight;
     }
 
+    private void addDescriptionItemRegions(String text, int x, int y, int maxWidth) {
+        if (text == null || text.isBlank() || maxWidth <= 0) return;
+        List<String> lines = wrapPlainText(text, maxWidth);
+        int lineY = y;
+        for (String line : lines) {
+            Matcher matcher = ITEM_ID_PATTERN.matcher(line);
+            while (matcher.find()) {
+                String token = matcher.group();
+                Item item = resolveItem(token);
+                if (item == null) continue;
+                int startX = x + mc.font.width(line.substring(0, matcher.start()));
+                int width = mc.font.width(token);
+                itemRegions.add(new ItemClickRegion(startX, lineY, width, mc.font.lineHeight, new ItemStack(item)));
+            }
+            lineY += mc.font.lineHeight;
+        }
+    }
+
+    private List<String> wrapPlainText(String text, int maxWidth) {
+        List<String> out = new ArrayList<>();
+        if (text == null || text.isBlank()) return out;
+        String[] words = text.split("\\s+");
+        StringBuilder line = new StringBuilder();
+        for (String word : words) {
+            if (word == null || word.isBlank()) continue;
+            String candidate = line.isEmpty() ? word : line + " " + word;
+            if (!line.isEmpty() && mc.font.width(candidate) > maxWidth) {
+                out.add(line.toString());
+                line.setLength(0);
+                line.append(word);
+            } else {
+                if (!line.isEmpty()) line.append(' ');
+                line.append(word);
+            }
+        }
+        if (!line.isEmpty()) out.add(line.toString());
+        return out;
+    }
+
     private Component formatColorCodes(String raw, int defaultColor) {
         if (!Config.enableDescriptionColors()) {
             return Component.literal(stripColorTokens(raw)).withStyle(Style.EMPTY.withColor(defaultColor));
@@ -786,21 +900,38 @@ public final class QuestDetailsPanel extends AbstractWidget {
         MutableComponent out = Component.empty();
         String text = raw == null ? "" : raw;
         int current = defaultColor;
+        boolean bold = false;
+        boolean italic = false;
+        boolean encrypted = false;
         int segStart = 0;
         for (int i = 0; i < text.length(); i++) {
             if (startsWithColorToken(text, i)) {
                 if (i > segStart) {
                     out.append(Component.literal(text.substring(segStart, i))
-                            .withStyle(Style.EMPTY.withColor(current)));
+                            .withStyle(Style.EMPTY.withColor(current).withBold(bold).withItalic(italic).withObfuscated(encrypted)));
                 }
-                current = formatColor(text.charAt(i + 1), defaultColor);
+                char code = Character.toLowerCase(text.charAt(i + 1));
+                if (code == 'l') {
+                    bold = !bold;
+                } else if (code == 'i') {
+                    italic = !italic;
+                } else if (code == 'e') {
+                    encrypted = !encrypted;
+                } else if (code == 'x') {
+                    current = defaultColor;
+                    bold = false;
+                    italic = false;
+                    encrypted = false;
+                } else {
+                    current = formatColor(code, defaultColor);
+                }
                 i += 1;
                 segStart = i + 1;
             }
         }
         if (segStart < text.length()) {
             out.append(Component.literal(text.substring(segStart))
-                    .withStyle(Style.EMPTY.withColor(current)));
+                    .withStyle(Style.EMPTY.withColor(current).withBold(bold).withItalic(italic).withObfuscated(encrypted)));
         }
         return out;
     }
@@ -826,7 +957,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
     private boolean isColorTokenCode(char code) {
         return switch (Character.toLowerCase(code)) {
-            case 'w', 'r', 'g', 'b', 'y', 'o', 'a', 'p', 'x' -> true;
+            case 'w', 'r', 'g', 'b', 'y', 'o', 'a', 'p', 'x', 'l', 'i', 'e' -> true;
             default -> false;
         };
     }
@@ -921,6 +1052,30 @@ public final class QuestDetailsPanel extends AbstractWidget {
         return out;
     }
 
+    private EditBox createInputBox() {
+        EditBox box = new EditBox(mc.font, 0, 0, 40, 16, Component.empty());
+        box.setMaxLength(128);
+        box.setResponder(value -> {
+            if (quest == null || quest.completion == null || quest.completion.targets == null || mc.player == null) return;
+            for (QuestData.Target target : quest.completion.targets) {
+                if (target == null || !target.isFieldInput()) continue;
+                String key = quest.id + ":field:" + target.id;
+                EditBox targetBox = inputBoxes.get(key);
+                if (targetBox != box) continue;
+                String normalized = value == null ? "" : value.trim();
+                QuestTracker.setFieldInputProgress(mc.player, key, normalized);
+                PacketDistributor.sendToServer(new BoundlessNetwork.UpdateFieldInput(quest.id, target.id, normalized));
+                break;
+            }
+        });
+        return box;
+    }
+
+    private boolean openJeiForStack(ItemStack stack) {
+        if (stack == null || stack.isEmpty() || !JeiCompat.isJeiInstalled()) return false;
+        return JeiCompat.showItem(stack, true) || JeiCompat.showItem(stack, false);
+    }
+
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
         if (!this.visible || !this.active) return false;
 
@@ -944,6 +1099,11 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (!this.visible || !this.active) return false;
+
+        for (EditBox box : inputBoxes.values()) {
+            if (!box.visible || !box.active) continue;
+            if (box.mouseClicked(mouseX, mouseY, button)) return true;
+        }
 
         if (pin.visible && pin.active && pin.isMouseOver(mouseX, mouseY)) {
             pin.onPress();
@@ -970,7 +1130,33 @@ public final class QuestDetailsPanel extends AbstractWidget {
             }
         }
 
+        if (button == 0) {
+            for (ItemClickRegion region : itemRegions) {
+                if (region.contains(mouseX, mouseY) && openJeiForStack(region.stack)) {
+                    return true;
+                }
+            }
+        }
+
         return false;
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        for (EditBox box : inputBoxes.values()) {
+            if (!box.visible || !box.active) continue;
+            if (box.keyPressed(keyCode, scanCode, modifiers)) return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        for (EditBox box : inputBoxes.values()) {
+            if (!box.visible || !box.active) continue;
+            if (box.charTyped(codePoint, modifiers)) return true;
+        }
+        return super.charTyped(codePoint, modifiers);
     }
 
     @Override

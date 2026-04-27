@@ -47,6 +47,13 @@ versionRange="[1.21.1]" # match the exact Minecraft version
 ordering="NONE"
 side="BOTH"
 
+[[dependencies.runic]]
+modId="jei"
+mandatory=false
+versionRange="[19,)"
+ordering="AFTER"
+side="CLIENT"
+
 # Features are specific properties of the game environment that your mod requires
 #[features.${mod_id}]
 #openGLVersion="[3.2,)"

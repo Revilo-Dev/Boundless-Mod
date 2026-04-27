@@ -65,6 +65,7 @@ public final class BoundlessNetwork {
         r.playToServer(Reject.TYPE, Reject.CODEC, BoundlessNetwork::handleReject);
         r.playToServer(CreateScroll.TYPE, CreateScroll.CODEC, BoundlessNetwork::handleCreateScroll);
         r.playToServer(RestartRepeatable.TYPE, RestartRepeatable.CODEC, BoundlessNetwork::handleRestartRepeatable);
+        r.playToServer(UpdateFieldInput.TYPE, UpdateFieldInput.CODEC, BoundlessNetwork::handleUpdateFieldInput);
 
         r.playToClient(SyncStatus.TYPE, SyncStatus.CODEC, BoundlessNetwork::handleSyncStatus);
         r.playToClient(SyncStatuses.TYPE, SyncStatuses.CODEC, BoundlessNetwork::handleSyncStatuses);
@@ -114,6 +115,20 @@ public final class BoundlessNetwork {
                 buf -> new RestartRepeatable(buf.readUtf())
         );
         @Override public Type<RestartRepeatable> type() { return TYPE; }
+    }
+
+    public record UpdateFieldInput(String questId, String targetId, String value) implements CustomPacketPayload {
+        public static final Type<UpdateFieldInput> TYPE =
+                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "update_field_input"));
+        public static final StreamCodec<FriendlyByteBuf, UpdateFieldInput> CODEC = StreamCodec.of(
+                (buf, p) -> {
+                    buf.writeUtf(p.questId);
+                    buf.writeUtf(p.targetId);
+                    buf.writeUtf(p.value == null ? "" : p.value);
+                },
+                buf -> new UpdateFieldInput(buf.readUtf(), buf.readUtf(), buf.readUtf())
+        );
+        @Override public Type<UpdateFieldInput> type() { return TYPE; }
     }
 
     public record SyncStatus(String questId, String status) implements CustomPacketPayload {
@@ -441,6 +456,9 @@ public final class BoundlessNetwork {
                     to.addProperty("kind", t.kind);
                     to.addProperty("id", t.id);
                     to.addProperty("count", t.count);
+                    if (t.hint != null && !t.hint.isBlank()) {
+                        to.addProperty("hint", t.hint);
+                    }
                     targets.add(to);
                 }
                 co.add("targets", targets);
@@ -546,6 +564,15 @@ public final class BoundlessNetwork {
                     sendStatus(sp, q.id, QuestTracker.Status.INCOMPLETE.name());
                 }
             });
+        });
+    }
+
+    private static void handleUpdateFieldInput(UpdateFieldInput p, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            ServerPlayer sp = (ServerPlayer) ctx.player();
+            if (sp == null || p.questId() == null || p.questId().isBlank() || p.targetId() == null || p.targetId().isBlank()) return;
+            String key = p.questId() + ":field:" + p.targetId();
+            QuestTracker.setFieldInputProgress(sp, key, p.value());
         });
     }
 
