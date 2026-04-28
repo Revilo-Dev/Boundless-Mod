@@ -132,9 +132,9 @@ public final class QuestEditorScreen extends Screen {
     private static final int TOGGLE_SIZE = 20;
     private static final int SMALL_BTN_SIZE = 20;
     private static final int SMALL_BTN_GAP = 4;
-    private static final int TAB_W = 35;
-    private static final int TAB_H = 27;
-    private static final int TAB_GAP = 2;
+    private static final int TAB_W = 30;
+    private static final int TAB_H = 23;
+    private static final int TAB_GAP = 3;
     private static final int TOP_ACTION_GAP = 3;
     private static final int BOTTOM_CREATE_GAP = 3;
     private static final int CREATE_PACK_BUTTON_OFFSET_X = -1;
@@ -169,6 +169,12 @@ public final class QuestEditorScreen extends Screen {
 
     private static final ResourceLocation GENERATED_PACK_ICON =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/pack.png");
+    private static final ResourceLocation IMPORT_PACK_BUTTON_TEX =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/import-button.png");
+    private static final ResourceLocation PACK_ACTION_NEEDED_TEX =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/quest_widget-action-needed.png");
+    private static final ResourceLocation PACK_CHANGED_TEX =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/quest_widget_completed.png");
     private static final int DEFAULT_INPUT_TEXT_COLOR = 0xE0E0E0;
     private static final int INVALID_INPUT_TEXT_COLOR = 0xFF4040;
     private static final String INVALID_ID_TOOLTIP = "Invalid ID";
@@ -219,6 +225,7 @@ public final class QuestEditorScreen extends Screen {
     private BackButton backButton;
     private EditBox questSearchBox;
     private Button createPackButton;
+    private IconButton importQuestPackButton;
     private EditorTabButton categoriesTabButton;
     private EditorTabButton subCategoriesTabButton;
     private EditorTabButton questsTabButton;
@@ -283,7 +290,8 @@ public final class QuestEditorScreen extends Screen {
     private final List<EntryRemoveButton> dependencyEntryRemoveButtons = new ArrayList<>();
     private final List<EntryRemoveButton> completionEntryRemoveButtons = new ArrayList<>();
     private final List<EntryRemoveButton> rewardEntryRemoveButtons = new ArrayList<>();
-    private Button exportDataPackButton;
+    private Button convertQuestFormatButton;
+    private Button exportQuestPackButton;
     private Button openDataPackFolderButton;
     private boolean syncingEntryRows = false;
     private boolean entryRowsDirty = false;
@@ -359,10 +367,12 @@ public final class QuestEditorScreen extends Screen {
 
         backButton = new BackButton(pxLeft + 2, barY, this::goBack);
         addRenderableWidget(backButton);
-        createPackButton = Button.builder(Component.literal("create new pack"), button -> openPackCreate())
-                .bounds(pxLeft + 2 + backButton.getWidth() + BOTTOM_CREATE_GAP + CREATE_PACK_BUTTON_OFFSET_X, barY, 100, 20)
+        createPackButton = Button.builder(Component.literal("Create New"), button -> openPackCreate())
+                .bounds(pxLeft + 2 + backButton.getWidth() + BOTTOM_CREATE_GAP + CREATE_PACK_BUTTON_OFFSET_X, barY, 72, 20)
                 .build();
         addRenderableWidget(createPackButton);
+        importQuestPackButton = new IconButton(createPackButton.getX() + createPackButton.getWidth() + 2, barY, SMALL_BTN_SIZE, IMPORT_PACK_BUTTON_TEX, this::openImportQuestPackDirectory);
+        addRenderableWidget(importQuestPackButton);
         categoriesTabButton = new EditorTabButton("Categories", "boundless:quest_book", Mode.CATEGORY_LIST);
         subCategoriesTabButton = new EditorTabButton("Sub-categories", "minecraft:book", Mode.SUBCATEGORY_LIST);
         questsTabButton = new EditorTabButton("Quests", QUEST_TAB_SCROLL_ICON_TEX, Mode.QUEST_LIST);
@@ -438,13 +448,21 @@ public final class QuestEditorScreen extends Screen {
         attachIdSanitizer(questIdBox, false);
         attachIdSanitizer(questCategoryBox, false);
         attachIdSanitizer(questSubCategoryBox, false);
-        exportDataPackButton = Button.builder(Component.literal("Duplicate as datapack"), button -> duplicateCurrentPackToAlternateType())
+        convertQuestFormatButton = Button.builder(Component.literal("Convert to New Format"), button -> convertCurrentPackToNewFormat())
                 .bounds(0, 0, 125, 20)
-                .tooltip(Tooltip.create(Component.literal("Duplicate this pack into the datapack output folder.")))
+                .tooltip(Tooltip.create(Component.literal("Copies this pack into config/boundless/questpacks for server-side mod-data loading.")))
                 .build();
-        exportDataPackButton.visible = false;
-        exportDataPackButton.active = false;
-        addRenderableWidget(exportDataPackButton);
+        convertQuestFormatButton.visible = false;
+        convertQuestFormatButton.active = false;
+        addRenderableWidget(convertQuestFormatButton);
+
+        exportQuestPackButton = Button.builder(Component.literal("Export questpack"), button -> exportCurrentQuestPack())
+                .bounds(0, 0, 125, 20)
+                .tooltip(Tooltip.create(Component.literal("Exports this questpack as a zip file to resourcepacks.")))
+                .build();
+        exportQuestPackButton.visible = false;
+        exportQuestPackButton.active = false;
+        addRenderableWidget(exportQuestPackButton);
 
         openDataPackFolderButton = Button.builder(Component.literal("Open directory"), button -> openPackDirectory())
                 .bounds(0, 0, 125, 20)
@@ -464,14 +482,18 @@ public final class QuestEditorScreen extends Screen {
         descriptionFormatButtons.add(createDescriptionInsertButton("", "/o", 0xFFFFAA00, 8));
         descriptionFormatButtons.add(createDescriptionInsertButton("", "/a", 0xFFAAAAAA, 8));
         descriptionFormatButtons.add(createDescriptionInsertButton("", "/p", 0xFFAA55FF, 8));
-        descriptionFormatButtons.add(createDescriptionInsertButton("X", "/x", 0xFF4A4A4A, 11));
-        descriptionFormatButtons.add(createDescriptionInsertButton("B", "/l", 0xFF555555, 11));
-        descriptionFormatButtons.add(createDescriptionInsertButton("I", "/i", 0xFF555555, 11));
-        descriptionFormatButtons.add(createDescriptionInsertButton("E", "/e", 0xFF555555, 11));
+        descriptionFormatButtons.add(createDescriptionInsertButton("X", "/x", 0xFF4A4A4A, 11, 0.8f));
+        descriptionFormatButtons.add(createDescriptionInsertButton("B", "/l", 0xFF555555, 11, 0.8f));
+        descriptionFormatButtons.add(createDescriptionInsertButton("I", "/i", 0xFF555555, 11, 0.8f));
+        descriptionFormatButtons.add(createDescriptionInsertButton("E", "/e", 0xFF555555, 11, 0.8f));
     }
 
     private TextInsertButton createDescriptionInsertButton(String label, String insertText, int fillColor, int width) {
-        TextInsertButton button = new TextInsertButton(0, 0, width, label, insertText, fillColor, this::applyDescriptionFormat);
+        return createDescriptionInsertButton(label, insertText, fillColor, width, 1.0f);
+    }
+
+    private TextInsertButton createDescriptionInsertButton(String label, String insertText, int fillColor, int width, float textScale) {
+        TextInsertButton button = new TextInsertButton(0, 0, width, label, insertText, fillColor, textScale, this::applyDescriptionFormat);
         button.visible = false;
         button.active = false;
         addRenderableWidget(button);
@@ -569,15 +591,21 @@ public final class QuestEditorScreen extends Screen {
 
         for (QuestPack pack : listPacks()) {
             String subtitle = pack.namespace.isBlank() ? "No namespace" : pack.namespace;
+            boolean converted = isPackConvertedToNewFormat(pack);
+            boolean changed = stagedPacks.containsKey(pack.name);
             boolean enabled = isPackEnabled(pack);
+            ResourceLocation actionIcon = enabled ? BUILTIN_PACK_ENABLED_TEX : BUILTIN_PACK_DISABLED_TEX;
+            String actionTooltip = enabled ? "Enabled" : "Disabled";
+            ResourceLocation rowTexture = !converted ? PACK_ACTION_NEEDED_TEX : (changed ? PACK_CHANGED_TEX : ROW_TEX);
             out.add(new EditorEntry(
                     pack.name,
                     pack.name,
                     subtitle,
                     "",
-                    enabled ? BUILTIN_PACK_ENABLED_TEX : BUILTIN_PACK_DISABLED_TEX,
-                    enabled ? "Enabled" : "Disabled",
-                    "Right click for options"
+                    actionIcon,
+                    actionTooltip,
+                    !converted ? "Convert to new format" : "Right click for options",
+                    rowTexture
             ));
         }
         return out;
@@ -652,11 +680,33 @@ public final class QuestEditorScreen extends Screen {
                 out.add(EditorEntry.subCategoryHeader(subKey, subName, subCollapsed));
                 if (subCollapsed) continue;
                 for (NamedEntry quest : subEntry.getValue()) {
-                    out.add(EditorEntry.quest(quest.id, quest.name, quest.id, quest.icon));
+                    QuestEntryData questData = loadQuest(currentPack, quest.id);
+                    boolean invalid = isQuestEntryInvalid(questData);
+                    out.add(invalid
+                            ? EditorEntry.quest(quest.id, quest.name, quest.id, quest.icon, PACK_ACTION_NEEDED_TEX, "Quest has invalid field(s)")
+                            : EditorEntry.quest(quest.id, quest.name, quest.id, quest.icon));
                 }
             }
         }
         return out;
+    }
+
+    private boolean isQuestEntryInvalid(QuestEntryData data) {
+        if (data == null) return false;
+        String category = safe(data.category).trim();
+        if (!category.isBlank() && !categoryIdCache.contains(category)) return true;
+
+        String subCategory = safe(data.subCategory).trim();
+        if (!subCategory.isBlank()) {
+            boolean hasExact = subCategoryIdCache.contains(category + "::" + subCategory);
+            boolean hasWildcard = subCategoryIdCache.contains("::" + subCategory);
+            if (!hasExact && !hasWildcard) return true;
+        }
+
+        for (String dep : extractEntryLines(safe(data.dependencies))) {
+            if (!questIdCache.contains(dep)) return true;
+        }
+        return false;
     }
 
     private boolean matchesQuestSearch(NamedEntry entry) {
@@ -981,14 +1031,10 @@ public final class QuestEditorScreen extends Screen {
         editingPath = null;
         packNameBox.setValue("");
         packNamespaceBox.setValue("");
-        packIconPathBox.setValue("");
-        packDescriptionBox.setValue("");
-        packDataPackToggle.setState(false);
 
         setActiveFields(List.of(
                 field("Pack name", packNameBox),
-                field("Namespace", packNamespaceBox),
-                field("Create as datapack", packDataPackToggle)
+                field("Namespace", packNamespaceBox)
         ));
         saveButton.setMessage(Component.literal("Create"));
         saveButton.visible = true;
@@ -1005,20 +1051,15 @@ public final class QuestEditorScreen extends Screen {
         PackMeta meta = readPackMeta(pack.root, pack.name);
         packNameBox.setValue(safe(pack.name));
         packNamespaceBox.setValue(safe(pack.namespace));
-        packIconPathBox.setValue(safe(meta.iconPath));
-        packDescriptionBox.setValue(safe(meta.description));
-        packDescriptionBox.scrollToTop();
-        packDataPackToggle.setState(meta.type == PackOutputType.DATA);
 
-        setActiveFields(List.of(
-                field("Pack name", packNameBox),
-                field("Output as datapack", packDataPackToggle),
-                field("Icon path", packIconPathBox),
-                field("Description", packDescriptionBox),
-                field("Duplicate", exportDataPackButton),
-                field("Folder", openDataPackFolderButton)
-        ));
-        updatePackOutputButtons();
+        List<FormField> fields = new ArrayList<>();
+        fields.add(field("Pack name", packNameBox));
+        fields.add(field("Namespace", packNamespaceBox));
+        fields.add(field("Export", exportQuestPackButton));
+        if (!isPackConvertedToNewFormat(pack)) {
+            fields.add(field("Convert", convertQuestFormatButton));
+        }
+        setActiveFields(fields);
         saveButton.setMessage(Component.literal("Save"));
         saveButton.visible = true;
         saveButton.active = true;
@@ -1147,10 +1188,18 @@ public final class QuestEditorScreen extends Screen {
     private void savePackCreate() {
         String name = safe(packNameBox.getValue()).trim();
         String namespace = safe(packNamespaceBox.getValue()).trim().toLowerCase(Locale.ROOT);
-        PackOutputType type = currentEditedPackOutputType();
+        PackOutputType type = PackOutputType.RESOURCE;
 
         if (name.isBlank() || namespace.isBlank()) {
             setError("Pack name and namespace required");
+            return;
+        }
+        if (isInvalidPackFolderName(name)) {
+            setError("Invalid pack name");
+            return;
+        }
+        if (isInvalidNamespace(namespace)) {
+            setError("Invalid namespace");
             return;
         }
 
@@ -1161,15 +1210,19 @@ public final class QuestEditorScreen extends Screen {
         }
 
         try {
+            Files.createDirectories(root.getParent());
             Files.createDirectories(root);
             writePackMeta(root, name, "Boundless Quest Pack: " + name, "", type);
-            writePackIcon(root, "");
+            try {
+                writePackIcon(root, "");
+            } catch (IOException ignored) {
+            }
             QuestPack pack = new QuestPack(name, namespace, root);
             pack.ensureDirs();
             currentPack = pack;
             setMode(Mode.PACK_MENU);
             stagePackChange(pack, "Pack staged");
-        } catch (IOException e) {
+        } catch (Exception e) {
             setError("Failed to create pack");
         }
     }
@@ -1178,9 +1231,7 @@ public final class QuestEditorScreen extends Screen {
         if (currentPack == null) return;
 
         String requestedName = safe(packNameBox.getValue()).trim();
-        String iconPath = safe(packIconPathBox.getValue()).trim();
-        String description = safe(packDescriptionBox.getValue()).trim();
-        PackOutputType type = currentEditedPackOutputType();
+        PackOutputType type = PackOutputType.RESOURCE;
         if (requestedName.isBlank()) {
             setError("Pack name required");
             return;
@@ -1205,7 +1256,9 @@ public final class QuestEditorScreen extends Screen {
             if (!requestedName.equals(oldName)) {
                 Files.move(oldRoot, newRoot);
             }
-            writePackMeta(newRoot, requestedName, description.isBlank() ? "Boundless Quest Pack: " + requestedName : description, iconPath, type);
+            String description = "Boundless Quest Pack: " + requestedName;
+            String iconPath = "";
+            writePackMeta(newRoot, requestedName, description, iconPath, type);
             writePackIcon(newRoot, iconPath);
             currentPack = new QuestPack(requestedName, currentPack.namespace, newRoot);
             currentPack.ensureDirs();
@@ -1439,6 +1492,65 @@ public final class QuestEditorScreen extends Screen {
         } catch (Exception e) {
             setError("Failed to open folder");
         }
+    }
+
+    private void convertCurrentPackToNewFormat() {
+        if (currentPack == null) return;
+        convertPackToNewFormat(currentPack);
+    }
+
+    private void convertPackToNewFormat(QuestPack pack) {
+        if (pack == null) return;
+        try {
+            if (!ensurePackWorkspace(pack)) {
+                setError("Failed to open pack");
+                return;
+            }
+            Path targetRoot = modDataQuestPacksRoot().resolve(pack.name);
+            mirrorDirectory(pack.root, targetRoot);
+
+            PackMeta meta = readPackMeta(pack.root, pack.name);
+            writePackMeta(targetRoot, pack.name, safe(meta.description), safe(meta.iconPath), PackOutputType.DATA);
+
+            statusMessage = "Converted to new quest format (config/boundless/questpacks/" + pack.name + ")";
+            statusColor = 0xA0FFA0;
+            markCurrentEditorSaved();
+            refreshLeftList();
+        } catch (IOException e) {
+            setError("Quest format conversion failed");
+        }
+    }
+
+    private void exportCurrentQuestPack() {
+        if (currentPack == null) return;
+        try {
+            if (!ensurePackWorkspace(currentPack)) {
+                setError("Failed to open pack");
+                return;
+            }
+            zipPack(currentPack);
+            statusMessage = "Questpack exported: " + currentPack.name + ".zip";
+            statusColor = 0xA0FFA0;
+        } catch (IOException e) {
+            setError("Questpack export failed");
+        }
+    }
+
+    private void openImportQuestPackDirectory() {
+        Path importRoot = modDataQuestPacksRoot();
+        try {
+            Files.createDirectories(importRoot);
+            Util.getPlatform().openFile(importRoot.toFile());
+            statusMessage = "Place questpacks in config/boundless/questpacks";
+            statusColor = 0xA0A0A0;
+        } catch (Exception e) {
+            setError("Failed to open import directory");
+        }
+    }
+
+    private boolean isPackConvertedToNewFormat(QuestPack pack) {
+        if (pack == null || pack.name == null || pack.name.isBlank()) return false;
+        return Files.isDirectory(modDataQuestPacksRoot().resolve(pack.name));
     }
 
     private void duplicateQuest() {
@@ -2318,6 +2430,9 @@ public final class QuestEditorScreen extends Screen {
 
     private boolean isPackEnabled(QuestPack pack) {
         if (pack == null) return false;
+        if (isModDataPack(pack)) {
+            return readModDataPackEnabled(pack);
+        }
         Minecraft mc = Minecraft.getInstance();
         PackRepository repo = mc.getResourcePackRepository();
         if (repo == null) return false;
@@ -2338,6 +2453,17 @@ public final class QuestEditorScreen extends Screen {
 
     private void setPackEnabled(QuestPack pack, boolean enabled) {
         if (pack == null) return;
+        if (isModDataPack(pack)) {
+            if (!writeModDataPackEnabled(pack, enabled)) {
+                setError("Failed to update pack state");
+                return;
+            }
+            QuestData.loadClient(true);
+            statusMessage = enabled ? ("Enabled " + pack.name) : ("Disabled " + pack.name);
+            statusColor = 0xA0FFA0;
+            refreshLeftList();
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         PackRepository repo = mc.getResourcePackRepository();
         if (repo == null) return;
@@ -2356,6 +2482,56 @@ public final class QuestEditorScreen extends Screen {
         statusMessage = enabled ? ("Enabled " + pack.name) : ("Disabled " + pack.name);
         statusColor = 0xA0FFA0;
         refreshLeftList();
+    }
+
+    private boolean isModDataPack(QuestPack pack) {
+        if (pack == null || pack.root == null) return false;
+        try {
+            Path modRoot = modDataQuestPacksRoot().toAbsolutePath().normalize();
+            Path root = pack.root.toAbsolutePath().normalize();
+            return root.startsWith(modRoot);
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    private boolean readModDataPackEnabled(QuestPack pack) {
+        Path packMeta = pack.root.resolve("pack.mcmeta");
+        if (!Files.exists(packMeta)) return true;
+        try (BufferedReader reader = Files.newBufferedReader(packMeta, StandardCharsets.UTF_8)) {
+            JsonElement parsed = JsonParser.parseReader(reader);
+            if (!(parsed instanceof JsonObject obj)) return true;
+            JsonObject boundless = obj.has("boundless") && obj.get("boundless").isJsonObject() ? obj.getAsJsonObject("boundless") : null;
+            if (boundless != null && boundless.has("enabled") && boundless.get("enabled").isJsonPrimitive()) {
+                return boundless.get("enabled").getAsBoolean();
+            }
+        } catch (Exception ignored) {
+        }
+        return true;
+    }
+
+    private boolean writeModDataPackEnabled(QuestPack pack, boolean enabled) {
+        Path packMeta = pack.root.resolve("pack.mcmeta");
+        try {
+            JsonObject obj = new JsonObject();
+            if (Files.exists(packMeta)) {
+                try (BufferedReader reader = Files.newBufferedReader(packMeta, StandardCharsets.UTF_8)) {
+                    JsonElement parsed = JsonParser.parseReader(reader);
+                    if (parsed instanceof JsonObject parsedObj) {
+                        obj = parsedObj.deepCopy();
+                    }
+                }
+            }
+            JsonObject boundless = obj.has("boundless") && obj.get("boundless").isJsonObject() ? obj.getAsJsonObject("boundless") : new JsonObject();
+            boundless.addProperty("enabled", enabled);
+            obj.add("boundless", boundless);
+            try (BufferedWriter writer = Files.newBufferedWriter(packMeta, StandardCharsets.UTF_8)) {
+                gson.toJson(obj, writer);
+            }
+            return true;
+        } catch (Exception ignored) {
+        }
+        return false;
     }
 
     private boolean ensurePackSelectedInOptions(Minecraft mc, String packId) {
@@ -2855,6 +3031,7 @@ public final class QuestEditorScreen extends Screen {
         int iconSpace = dependency ? DEP_ENTRY_ICON_SPACE : 0;
         int lockSpace = dependency ? (DEP_LOCK_SIZE + DEP_LOCK_GAP) : 0;
         int cursorY = y;
+        boolean lockPlaced = false;
         for (int i = 0; i < rows.size(); i++) {
             ScaledMultiLineEditBox box = rows.get(i);
             EntryRemoveButton removeButton = i < removeButtons.size() ? removeButtons.get(i) : null;
@@ -2872,7 +3049,7 @@ public final class QuestEditorScreen extends Screen {
                 removeButton.visible = inside;
                 removeButton.active = inside;
             }
-            if (dependency && i == 0 && questDependencyLockToggle != null) {
+            if (dependency && !lockPlaced && questDependencyLockToggle != null && inside) {
                 int lockX = x + width - DEP_LOCK_SIZE;
                 int lockY = cursorY;
                 questDependencyLockToggle.setX(lockX);
@@ -2880,10 +3057,11 @@ public final class QuestEditorScreen extends Screen {
                 questDependencyLockToggle.setSize(DEP_LOCK_SIZE, ENTRY_ROW_H);
                 questDependencyLockToggle.visible = inside;
                 questDependencyLockToggle.active = inside;
+                lockPlaced = true;
             }
             cursorY += ENTRY_ROW_H + ENTRY_ROW_GAP;
         }
-        if (dependency && questDependencyLockToggle != null && rows.isEmpty()) {
+        if (dependency && questDependencyLockToggle != null && !lockPlaced) {
             questDependencyLockToggle.visible = false;
             questDependencyLockToggle.active = false;
         }
@@ -3229,26 +3407,20 @@ public final class QuestEditorScreen extends Screen {
         return packDataPackToggle != null && packDataPackToggle.isOn() ? PackOutputType.DATA : PackOutputType.RESOURCE;
     }
 
-    private void updatePackOutputButtons() {
-        if (exportDataPackButton == null || openDataPackFolderButton == null) return;
-        PackOutputType currentType = currentEditedPackOutputType();
-        PackOutputType targetType = currentType == PackOutputType.DATA ? PackOutputType.RESOURCE : PackOutputType.DATA;
-        String duplicateLabel = targetType == PackOutputType.DATA ? "Duplicate as datapack" : "Duplicate as resource pack";
-        String duplicateTooltip = targetType == PackOutputType.DATA
-                ? "Duplicate this pack as a datapack."
-                : "Duplicate this pack as a resource pack.";
-        exportDataPackButton.setMessage(Component.literal(duplicateLabel));
-        exportDataPackButton.setTooltip(Tooltip.create(Component.literal(duplicateTooltip)));
-        openDataPackFolderButton.setMessage(Component.literal("Open directory"));
-    }
-
     private Path resourcePacksRoot() {
         return Minecraft.getInstance().gameDirectory.toPath()
                 .resolve("resourcepacks");
     }
 
     private Path packsRoot() {
-        return resourcePacksRoot().resolve("boundless");
+        return modDataQuestPacksRoot();
+    }
+
+    private Path modDataQuestPacksRoot() {
+        return Minecraft.getInstance().gameDirectory.toPath()
+                .resolve("config")
+                .resolve("boundless")
+                .resolve("questpacks");
     }
 
     private Path packZipPath(String packName) {
@@ -3258,6 +3430,11 @@ public final class QuestEditorScreen extends Screen {
     private boolean isInvalidPackFolderName(String name) {
         String value = safe(name).trim();
         return value.isBlank() || value.matches(".*[<>:\"/\\\\|?*].*");
+    }
+
+    private boolean isInvalidNamespace(String namespace) {
+        String value = safe(namespace).trim();
+        return value.isBlank() || !value.matches("[a-z0-9_.-]+");
     }
 
     private List<QuestPack> listPacks() {
@@ -3270,6 +3447,21 @@ public final class QuestEditorScreen extends Screen {
                 for (Path path : stream) {
                     if (!Files.isDirectory(path)) continue;
                     String name = path.getFileName().toString();
+                    String namespace = findNamespace(path);
+                    packs.add(new QuestPack(name, namespace, path));
+                    seen.add(name);
+                }
+            } catch (IOException ignored) {
+            }
+        }
+
+        Path legacyRoot = resourcePacksRoot().resolve("boundless");
+        if (Files.exists(legacyRoot)) {
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(legacyRoot)) {
+                for (Path path : stream) {
+                    if (!Files.isDirectory(path)) continue;
+                    String name = path.getFileName().toString();
+                    if (seen.contains(name)) continue;
                     String namespace = findNamespace(path);
                     packs.add(new QuestPack(name, namespace, path));
                     seen.add(name);
@@ -3878,7 +4070,6 @@ public final class QuestEditorScreen extends Screen {
     public void render(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
         updateLeftPaneLayout();
         if (editorType == EditorType.PACK_CREATE || editorType == EditorType.PACK_OPTIONS) {
-            updatePackOutputButtons();
         }
         gg.fill(0, 0, this.width, this.height, 0xA0000000);
         gg.blit(PANEL_TEX, leftX, topY, 0, 0, PANEL_W, PANEL_H, PANEL_W, PANEL_H);
@@ -3919,6 +4110,7 @@ public final class QuestEditorScreen extends Screen {
         if (deleteQuestButton != null && deleteQuestButton.visible) deleteQuestButton.render(gg, mouseX, mouseY, partialTick);
         if (questSearchBox != null && questSearchBox.visible) questSearchBox.render(gg, mouseX, mouseY, partialTick);
         if (createPackButton != null && createPackButton.visible) createPackButton.render(gg, mouseX, mouseY, partialTick);
+        if (importQuestPackButton != null && importQuestPackButton.visible) importQuestPackButton.render(gg, mouseX, mouseY, partialTick);
         renderIconOverlays(gg);
         if (leftList != null) leftList.renderHoverTooltipOnTop(gg);
         renderTabTooltip(gg, mouseX, mouseY);
@@ -3942,6 +4134,12 @@ public final class QuestEditorScreen extends Screen {
             createPackButton.setY(backButton.getY());
             createPackButton.visible = mode == Mode.PACK_LIST;
             createPackButton.active = mode == Mode.PACK_LIST;
+        }
+        if (importQuestPackButton != null && createPackButton != null) {
+            importQuestPackButton.setX(createPackButton.getX() + createPackButton.getWidth() + 2);
+            importQuestPackButton.setY(createPackButton.getY());
+            importQuestPackButton.visible = mode == Mode.PACK_LIST;
+            importQuestPackButton.active = mode == Mode.PACK_LIST;
         }
         layoutTabButtons();
     }
@@ -3980,6 +4178,10 @@ public final class QuestEditorScreen extends Screen {
         }
         if (questsTabButton != null && questsTabButton.visible && questsTabButton.isMouseOver(mouseX, mouseY)) {
             gg.renderTooltip(font, Component.literal(questsTabButton.tooltip()), mouseX, mouseY);
+            return;
+        }
+        if (importQuestPackButton != null && importQuestPackButton.visible && importQuestPackButton.isMouseOver(mouseX, mouseY)) {
+            gg.renderTooltip(font, Component.literal("Open import questpack directory"), mouseX, mouseY);
         }
     }
 
@@ -4237,14 +4439,19 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private String multiLineSuggestionPrefix(ScaledMultiLineEditBox field) {
+        if (field == null) return "";
         if (isDependencyEntryField(field)) {
             String value = safe(field.getValue());
+            if (value.isEmpty()) return "";
             int cursor = Math.max(0, Math.min(field.getCursorPosition(), value.length()));
             int lineStart = cursor <= 0 ? 0 : value.lastIndexOf('\n', Math.max(0, cursor - 1));
             lineStart = lineStart < 0 ? 0 : lineStart + 1;
             int lineEnd = value.indexOf('\n', cursor);
             if (lineEnd < 0) lineEnd = value.length();
-            return value.substring(lineStart, Math.max(lineStart, lineEnd)).trim().toLowerCase(Locale.ROOT);
+            lineStart = Math.max(0, Math.min(lineStart, value.length()));
+            lineEnd = Math.max(lineStart, Math.min(lineEnd, value.length()));
+            if (lineStart >= value.length()) return "";
+            return value.substring(lineStart, lineEnd).trim().toLowerCase(Locale.ROOT);
         }
         MultiLineEntryContext ctx = parseMultiLineEntryContext(field);
         if (ctx == null) return "";
@@ -4322,6 +4529,8 @@ public final class QuestEditorScreen extends Screen {
             lineStart = lineStart < 0 ? 0 : lineStart + 1;
             int lineEnd = value.indexOf('\n', cursor);
             if (lineEnd < 0) lineEnd = value.length();
+            lineStart = Math.max(0, Math.min(lineStart, value.length()));
+            lineEnd = Math.max(lineStart, Math.min(lineEnd, value.length()));
             String next = value.substring(0, lineStart) + suggestion + value.substring(lineEnd);
             field.setValue(next);
             field.setCursorPosition(lineStart + suggestion.length());
@@ -4963,7 +5172,9 @@ public final class QuestEditorScreen extends Screen {
         for (ScaledMultiLineEditBox box : dependencyEntryBoxes) {
             if (box == null || !box.visible || !box.active) continue;
             if (!box.isMouseOver(mouseX, mouseY)) continue;
-            return box.mouseClicked(mouseX, mouseY, button);
+            if (box.mouseClicked(mouseX, mouseY, button)) return true;
+            box.setFocused(true);
+            return true;
         }
         return false;
     }
@@ -4971,6 +5182,10 @@ public final class QuestEditorScreen extends Screen {
     private boolean clickToolbarButtons(double mouseX, double mouseY) {
         if (createPackButton != null && createPackButton.visible && createPackButton.active && createPackButton.isMouseOver(mouseX, mouseY)) {
             createPackButton.onPress();
+            return true;
+        }
+        if (importQuestPackButton != null && importQuestPackButton.visible && importQuestPackButton.active && importQuestPackButton.isMouseOver(mouseX, mouseY)) {
+            importQuestPackButton.onPress();
             return true;
         }
         if (categoriesTabButton != null && categoriesTabButton.visible && categoriesTabButton.active && categoriesTabButton.isMouseOver(mouseX, mouseY)) {
@@ -5009,6 +5224,11 @@ public final class QuestEditorScreen extends Screen {
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         suppressIdSuggestions = false;
+        for (ScaledMultiLineEditBox box : dependencyEntryBoxes) {
+            if (box != null && box.visible && box.active && box.isFocused() && box.keyPressed(keyCode, scanCode, modifiers)) {
+                return true;
+            }
+        }
         if (keyCode == GLFW.GLFW_KEY_TAB) {
             if (!activeIdSuggestions.isEmpty() && (idSuggestionField != null || idSuggestionMultiLineField != null)) {
                 String suggestion = activeIdSuggestions.get(0);
@@ -5035,6 +5255,11 @@ public final class QuestEditorScreen extends Screen {
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
         suppressIdSuggestions = false;
+        for (ScaledMultiLineEditBox box : dependencyEntryBoxes) {
+            if (box != null && box.visible && box.active && box.isFocused() && box.charTyped(codePoint, modifiers)) {
+                return true;
+            }
+        }
         return super.charTyped(codePoint, modifiers);
     }
 
@@ -5892,8 +6117,11 @@ public final class QuestEditorScreen extends Screen {
                 pushUndoState();
                 String filtered = this.truncateInsertionText(StringUtil.filterText(text, true));
                 StringView selected = this.getSelected();
-                this.value = new StringBuilder(this.value).replace(selected.beginIndex, selected.endIndex, filtered).toString();
-                this.cursor = selected.beginIndex + filtered.length();
+                int len = this.value.length();
+                int begin = Mth.clamp(selected.beginIndex, 0, len);
+                int end = Mth.clamp(selected.endIndex, begin, len);
+                this.value = new StringBuilder(this.value).replace(begin, end, filtered).toString();
+                this.cursor = begin + filtered.length();
                 this.selectCursor = this.cursor;
                 this.onValueChange();
             }
@@ -5951,7 +6179,10 @@ public final class QuestEditorScreen extends Screen {
         }
 
         public StringView getSelected() {
-            return new StringView(Math.min(this.selectCursor, this.cursor), Math.max(this.selectCursor, this.cursor));
+            int len = this.value.length();
+            int start = Mth.clamp(Math.min(this.selectCursor, this.cursor), 0, len);
+            int end = Mth.clamp(Math.max(this.selectCursor, this.cursor), start, len);
+            return new StringView(start, end);
         }
 
         public int getLineCount() {
@@ -6199,7 +6430,8 @@ public final class QuestEditorScreen extends Screen {
             if (this.value.charAt(index) != '/') return false;
             char code = Character.toLowerCase(this.value.charAt(index + 1));
             return code == 'w' || code == 'r' || code == 'g' || code == 'b'
-                    || code == 'y' || code == 'o' || code == 'a' || code == 'p' || code == 'x';
+                    || code == 'y' || code == 'o' || code == 'a' || code == 'p' || code == 'x'
+                    || code == 'l' || code == 'i' || code == 'e';
         }
 
         private void onValueChange() {
@@ -6286,6 +6518,7 @@ public final class QuestEditorScreen extends Screen {
         final String subtitle;
         final String icon;
         final ResourceLocation actionIcon;
+        final ResourceLocation rowTexture;
         final String actionTooltip;
         final String rowTooltip;
         final EditorEntryKind kind;
@@ -6293,27 +6526,32 @@ public final class QuestEditorScreen extends Screen {
         final boolean showMoveArrows;
 
         EditorEntry(String id, String label, String subtitle, String icon) {
-            this(id, label, subtitle, icon, null, "", "", EditorEntryKind.NORMAL, 0);
+            this(id, label, subtitle, icon, null, "", "", ROW_TEX, EditorEntryKind.NORMAL, 0);
         }
 
         EditorEntry(String id, String label, String subtitle, String icon, ResourceLocation actionIcon, String actionTooltip) {
-            this(id, label, subtitle, icon, actionIcon, actionTooltip, "", EditorEntryKind.NORMAL, 0);
+            this(id, label, subtitle, icon, actionIcon, actionTooltip, "", ROW_TEX, EditorEntryKind.NORMAL, 0);
         }
 
         EditorEntry(String id, String label, String subtitle, String icon, ResourceLocation actionIcon, String actionTooltip, String rowTooltip) {
-            this(id, label, subtitle, icon, actionIcon, actionTooltip, rowTooltip, EditorEntryKind.NORMAL, 0);
+            this(id, label, subtitle, icon, actionIcon, actionTooltip, rowTooltip, ROW_TEX, EditorEntryKind.NORMAL, 0);
         }
 
-        EditorEntry(String id, String label, String subtitle, String icon, ResourceLocation actionIcon, String actionTooltip, String rowTooltip, EditorEntryKind kind, int indent) {
-            this(id, label, subtitle, icon, actionIcon, actionTooltip, rowTooltip, kind, indent, false);
+        EditorEntry(String id, String label, String subtitle, String icon, ResourceLocation actionIcon, String actionTooltip, String rowTooltip, ResourceLocation rowTexture) {
+            this(id, label, subtitle, icon, actionIcon, actionTooltip, rowTooltip, rowTexture, EditorEntryKind.NORMAL, 0);
         }
 
-        EditorEntry(String id, String label, String subtitle, String icon, ResourceLocation actionIcon, String actionTooltip, String rowTooltip, EditorEntryKind kind, int indent, boolean showMoveArrows) {
+        EditorEntry(String id, String label, String subtitle, String icon, ResourceLocation actionIcon, String actionTooltip, String rowTooltip, ResourceLocation rowTexture, EditorEntryKind kind, int indent) {
+            this(id, label, subtitle, icon, actionIcon, actionTooltip, rowTooltip, rowTexture, kind, indent, false);
+        }
+
+        EditorEntry(String id, String label, String subtitle, String icon, ResourceLocation actionIcon, String actionTooltip, String rowTooltip, ResourceLocation rowTexture, EditorEntryKind kind, int indent, boolean showMoveArrows) {
             this.id = id;
             this.label = label;
             this.subtitle = subtitle;
             this.icon = icon == null ? "" : icon;
             this.actionIcon = actionIcon;
+            this.rowTexture = rowTexture == null ? ROW_TEX : rowTexture;
             this.actionTooltip = actionTooltip == null ? "" : actionTooltip;
             this.rowTooltip = rowTooltip == null ? "" : rowTooltip;
             this.kind = kind == null ? EditorEntryKind.NORMAL : kind;
@@ -6322,19 +6560,23 @@ public final class QuestEditorScreen extends Screen {
         }
 
         static EditorEntry movable(String id, String label, String subtitle, String icon) {
-            return new EditorEntry(id, label, subtitle, icon, null, "", "", EditorEntryKind.NORMAL, 0, true);
+            return new EditorEntry(id, label, subtitle, icon, null, "", "", ROW_TEX, EditorEntryKind.NORMAL, 0, true);
         }
 
         static EditorEntry quest(String id, String label, String subtitle, String icon) {
-            return new EditorEntry(id, label, subtitle, icon, null, "", "", EditorEntryKind.QUEST, 0, true);
+            return new EditorEntry(id, label, subtitle, icon, null, "", "", ROW_TEX, EditorEntryKind.QUEST, 0, true);
+        }
+
+        static EditorEntry quest(String id, String label, String subtitle, String icon, ResourceLocation rowTexture, String rowTooltip) {
+            return new EditorEntry(id, label, subtitle, icon, null, "", rowTooltip, rowTexture, EditorEntryKind.QUEST, 0, true);
         }
 
         static EditorEntry categoryHeader(String id, String label, boolean collapsed) {
-            return new EditorEntry(id, (collapsed ? "> " : "v ") + label, "", "", null, "", "", EditorEntryKind.CATEGORY_HEADER, 0);
+            return new EditorEntry(id, (collapsed ? "> " : "v ") + label, "", "", null, "", "", ROW_TEX, EditorEntryKind.CATEGORY_HEADER, 0);
         }
 
         static EditorEntry subCategoryHeader(String id, String label, boolean collapsed) {
-            return new EditorEntry(id, (collapsed ? "> " : "v ") + label, "", "", null, "", "", EditorEntryKind.SUBCATEGORY_HEADER, 10);
+            return new EditorEntry(id, (collapsed ? "> " : "v ") + label, "", "", null, "", "", ROW_TEX, EditorEntryKind.SUBCATEGORY_HEADER, 10);
         }
     }
 
@@ -6739,7 +6981,7 @@ public final class QuestEditorScreen extends Screen {
                     ItemStack iconStack = iconStackFromId(entry.icon);
 
                     if (!headerEntry) {
-                        gg.blit(ROW_TEX, getX(), top, 0, 0, width, ROW_H, width, ROW_H);
+                        gg.blit(entry.rowTexture, getX(), top, 0, 0, width, ROW_H, width, ROW_H);
                         if (!selectedId.isBlank() && selectedId.equals(entry.id)) {
                             gg.fill(getX() + 1, top + 1, getX() + width - 1, top + ROW_H - 1, 0x20FFFFFF);
                         }
@@ -6763,21 +7005,25 @@ public final class QuestEditorScreen extends Screen {
                         textX = iconX + textIconSize + 2;
                         int textH = (int) (Minecraft.getInstance().font.lineHeight * textScale);
                         int textY = top + (rowH - textH) / 2 + 1;
-                        String sym = entry.label != null && entry.label.startsWith("v ") ? "-" : "+";
-                        int symW = (int) (Minecraft.getInstance().font.width(sym) * textScale);
-                        int symX = getX() + width - symW - 2;
-                        int maxW = symX - textX - 2;
+                        boolean expanded = entry.label != null && entry.label.startsWith("v ");
+                        int arrowX = getX() + width - MOVE_ICON_SIZE - 2;
+                        int arrowY = top + (rowH - MOVE_ICON_SIZE) / 2;
+                        boolean hoverArrow = mouseX >= arrowX && mouseX <= arrowX + MOVE_ICON_SIZE
+                                && mouseY >= arrowY && mouseY <= arrowY + MOVE_ICON_SIZE;
+                        ResourceLocation arrowTex = expanded
+                                ? (hoverArrow ? MOVE_UP_HIGHLIGHTED_TEX : MOVE_UP_TEX)
+                                : (hoverArrow ? MOVE_DOWN_HIGHLIGHTED_TEX : MOVE_DOWN_TEX);
+                        int maxW = arrowX - textX - 2;
                         int maxWUnscaled = maxW > 0 ? (int) (maxW / textScale) : 0;
                         if (Minecraft.getInstance().font.width(name) > maxWUnscaled) {
                             name = Minecraft.getInstance().font.plainSubstrByWidth(name, Math.max(0, maxWUnscaled - Minecraft.getInstance().font.width("..."))) + "...";
                         }
                         if (entry.kind == EditorEntryKind.CATEGORY_HEADER) {
                             drawScaledComponent(gg, Component.literal(name).withStyle(style -> style.withBold(true)), textScale, textX, textY, 0xFFFFFF);
-                            drawScaledString(gg, sym, textScale, symX, textY, 0xFFFFFF);
                         } else {
                             drawScaledString(gg, name, textScale, textX, textY, 0xD0D0D0);
-                            drawScaledString(gg, sym, textScale, symX, textY, 0xD0D0D0);
                         }
+                        gg.blit(arrowTex, arrowX, arrowY, 0, 0, MOVE_ICON_SIZE, MOVE_ICON_SIZE, MOVE_ICON_SIZE, MOVE_ICON_SIZE);
                         yCursor += rowH + ROW_PAD;
                         continue;
                     }
@@ -7095,12 +7341,14 @@ public final class QuestEditorScreen extends Screen {
     private static final class TextInsertButton extends AbstractButton {
         private final String insertText;
         private final int fillColor;
+        private final float textScale;
         private final Consumer<String> onPress;
 
-        TextInsertButton(int x, int y, int width, String label, String insertText, int fillColor, Consumer<String> onPress) {
+        TextInsertButton(int x, int y, int width, String label, String insertText, int fillColor, float textScale, Consumer<String> onPress) {
             super(x, y, width, FORMAT_BAR_H, Component.literal(label));
             this.insertText = insertText == null ? "" : insertText;
             this.fillColor = fillColor;
+            this.textScale = textScale <= 0f ? 1f : textScale;
             this.onPress = onPress;
         }
 
@@ -7127,9 +7375,16 @@ public final class QuestEditorScreen extends Screen {
             if (!getMessage().getString().isBlank()) {
                 var font = Minecraft.getInstance().font;
                 int textColor = this.active ? 0xFFFFFFFF : 0xFF8A8A8A;
-                int textX = getX() + (this.width - font.width(getMessage())) / 2;
-                int textY = getY() + (this.height - font.lineHeight) / 2;
-                gg.drawString(font, getMessage(), textX, textY, textColor, false);
+                float scale = this.textScale;
+                int textWidth = Math.round(font.width(getMessage()) * scale);
+                int textHeight = Math.round(font.lineHeight * scale);
+                int textX = getX() + (this.width - textWidth) / 2;
+                int textY = getY() + (this.height - textHeight) / 2;
+                gg.pose().pushPose();
+                gg.pose().translate(textX, textY, 0.0f);
+                gg.pose().scale(scale, scale, 1.0f);
+                gg.drawString(font, getMessage(), 0, 0, textColor, false);
+                gg.pose().popPose();
             }
         }
 

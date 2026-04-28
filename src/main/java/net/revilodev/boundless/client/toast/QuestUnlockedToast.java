@@ -8,6 +8,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.revilodev.boundless.Config;
 import net.revilodev.boundless.quest.QuestTracker;
 
 public final class QuestUnlockedToast implements Toast {
@@ -23,6 +24,7 @@ public final class QuestUnlockedToast implements Toast {
     }
 
     public static void show(String questName, Item icon) {
+        if (!Config.enableQuestToasts()) return;
         if (QuestTracker.serverToastsDisabled()) return;
         Minecraft mc = Minecraft.getInstance();
         if (mc == null) return;

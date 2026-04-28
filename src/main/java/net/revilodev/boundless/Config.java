@@ -52,6 +52,9 @@ public final class Config {
     public static final ModConfigSpec.ConfigValue<Boolean> ENABLE_DESCRIPTION_COLORS =
             BUILDER.comment("If true, allows colored quest descriptions to render with Boundless color tokens.")
                     .define("enableDescriptionColors", false);
+    public static final ModConfigSpec.ConfigValue<Boolean> ENABLE_QUEST_TOASTS =
+            BUILDER.comment("If true, shows quest unlocked toasts.")
+                    .define("enableQuestToasts", true);
     static {
         BUILDER.pop();
         BUILDER.push("Functionality");
@@ -146,6 +149,10 @@ public final class Config {
         return ENABLE_DESCRIPTION_COLORS.get();
     }
 
+    public static boolean enableQuestToasts() {
+        return ENABLE_QUEST_TOASTS.get();
+    }
+
     public static boolean disableQuestPinning() {
         return DISABLE_QUEST_PINNING.get();
     }
@@ -174,7 +181,7 @@ public final class Config {
     @SubscribeEvent
     public static void onLoad(ModConfigEvent.Loading e) {
         if (e.getConfig().getSpec() == SPEC)
-            BoundlessMod.LOGGER.info("[Boundless] Config loaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, filterMode={}, disableCategories={}, builtinPack={}, hideWidgetIcons={}, searchBox={}, descColors={}, disablePinning={}, autoClaim={}, questScrolls={}, datapackOnlyOnServer={}, disableBook={}, spawnBook={}",
+            BoundlessMod.LOGGER.info("[Boundless] Config loaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, filterMode={}, disableCategories={}, builtinPack={}, hideWidgetIcons={}, searchBox={}, descColors={}, questToasts={}, disablePinning={}, autoClaim={}, questScrolls={}, datapackOnlyOnServer={}, disableBook={}, spawnBook={}",
                     disabledCategories(),
                     pinnedQuestHudPosition(),
                     hideQuestBookInInventory(),
@@ -185,6 +192,7 @@ public final class Config {
                     hideQuestWidgetIcons(),
                     enableQuestSearchBox(),
                     enableDescriptionColors(),
+                    enableQuestToasts(),
                     disableQuestPinning(),
                     autoClaimQuestRewards(),
                     enableQuestScrolls(),
@@ -196,7 +204,7 @@ public final class Config {
     @SubscribeEvent
     public static void onReload(ModConfigEvent.Reloading e) {
         if (e.getConfig().getSpec() == SPEC)
-            BoundlessMod.LOGGER.info("[Boundless] Config reloaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, filterMode={}, disableCategories={}, builtinPack={}, hideWidgetIcons={}, searchBox={}, descColors={}, disablePinning={}, autoClaim={}, questScrolls={}, datapackOnlyOnServer={}, disableBook={}, spawnBook={}",
+            BoundlessMod.LOGGER.info("[Boundless] Config reloaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, filterMode={}, disableCategories={}, builtinPack={}, hideWidgetIcons={}, searchBox={}, descColors={}, questToasts={}, disablePinning={}, autoClaim={}, questScrolls={}, datapackOnlyOnServer={}, disableBook={}, spawnBook={}",
                     disabledCategories(),
                     pinnedQuestHudPosition(),
                     hideQuestBookInInventory(),
@@ -207,6 +215,7 @@ public final class Config {
                     hideQuestWidgetIcons(),
                     enableQuestSearchBox(),
                     enableDescriptionColors(),
+                    enableQuestToasts(),
                     disableQuestPinning(),
                     autoClaimQuestRewards(),
                     enableQuestScrolls(),

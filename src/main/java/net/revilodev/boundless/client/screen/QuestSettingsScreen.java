@@ -71,6 +71,7 @@ public final class QuestSettingsScreen extends Screen {
     private ConfigRow uiHideQuestWidgetIconsRow;
     private ConfigRow uiEnableSearchBoxRow;
     private ConfigRow uiEnableDescriptionColorsRow;
+    private ConfigRow uiEnableQuestToastsRow;
     private ConfigRow functionalityDisablePinningRow;
     private ConfigRow functionalityAutoClaimRow;
     private ConfigRow functionalityQuestScrollsRow;
@@ -95,6 +96,7 @@ public final class QuestSettingsScreen extends Screen {
     private int uiHideQuestWidgetIconsBaseY;
     private int uiEnableSearchBoxBaseY;
     private int uiEnableDescriptionColorsBaseY;
+    private int uiEnableQuestToastsBaseY;
     private int functionalityDisablePinningBaseY;
     private int functionalityAutoClaimBaseY;
     private int functionalityQuestScrollsBaseY;
@@ -109,6 +111,7 @@ public final class QuestSettingsScreen extends Screen {
     private boolean hideQuestWidgetIcons;
     private boolean enableQuestSearchBox;
     private boolean enableDescriptionColors;
+    private boolean enableQuestToasts;
     private boolean disableQuestPinning;
     private boolean autoClaimQuestRewards;
     private boolean enableQuestScrolls;
@@ -165,7 +168,8 @@ public final class QuestSettingsScreen extends Screen {
         uiHideQuestWidgetIconsBaseY = uiRow1 + rowGap * 5;
         uiEnableSearchBoxBaseY = uiRow1 + rowGap * 6;
         uiEnableDescriptionColorsBaseY = uiRow1 + rowGap * 7;
-        functionalityHeaderBaseY = uiRow1 + rowGap * 8 + 4;
+        uiEnableQuestToastsBaseY = uiRow1 + rowGap * 8;
+        functionalityHeaderBaseY = uiRow1 + rowGap * 9 + 4;
         functionalityDisablePinningBaseY = functionalityHeaderBaseY + 10;
         functionalityAutoClaimBaseY = functionalityDisablePinningBaseY + rowGap;
         functionalityQuestScrollsBaseY = functionalityAutoClaimBaseY + rowGap;
@@ -207,6 +211,10 @@ public final class QuestSettingsScreen extends Screen {
                 "Allow Boundless color tokens to tint quest descriptions.",
                 () -> enableDescriptionColors ? "On" : "Off",
                 () -> enableDescriptionColors = !enableDescriptionColors);
+        uiEnableQuestToastsRow = new ConfigRow(px, uiEnableQuestToastsBaseY, pw, "Enable Quest Toasts",
+                "Show toast popups when quests are unlocked.",
+                () -> enableQuestToasts ? "On" : "Off",
+                () -> enableQuestToasts = !enableQuestToasts);
 
         functionalityDisablePinningRow = new ConfigRow(px, functionalityDisablePinningBaseY, pw, "Disable Quest Pinning",
                 "Disable pin buttons and pinned quest HUD.",
@@ -241,6 +249,7 @@ public final class QuestSettingsScreen extends Screen {
         addRenderableWidget(uiHideQuestWidgetIconsRow);
         addRenderableWidget(uiEnableSearchBoxRow);
         addRenderableWidget(uiEnableDescriptionColorsRow);
+        addRenderableWidget(uiEnableQuestToastsRow);
         addRenderableWidget(functionalityDisablePinningRow);
         addRenderableWidget(functionalityAutoClaimRow);
         addRenderableWidget(functionalityQuestScrollsRow);
@@ -299,6 +308,8 @@ public final class QuestSettingsScreen extends Screen {
         uiEnableSearchBoxRow.active = config;
         uiEnableDescriptionColorsRow.visible = config;
         uiEnableDescriptionColorsRow.active = config;
+        uiEnableQuestToastsRow.visible = config;
+        uiEnableQuestToastsRow.active = config;
         functionalityDisablePinningRow.visible = config;
         functionalityDisablePinningRow.active = config;
         functionalityAutoClaimRow.visible = config;
@@ -335,6 +346,7 @@ public final class QuestSettingsScreen extends Screen {
         hideQuestWidgetIcons = Config.hideQuestWidgetIcons();
         enableQuestSearchBox = Config.enableQuestSearchBox();
         enableDescriptionColors = Config.enableDescriptionColors();
+        enableQuestToasts = Config.enableQuestToasts();
         disableQuestPinning = Config.disableQuestPinning();
         autoClaimQuestRewards = Config.autoClaimQuestRewards();
         enableQuestScrolls = Config.enableQuestScrolls();
@@ -377,6 +389,7 @@ public final class QuestSettingsScreen extends Screen {
         Config.HIDE_QUEST_WIDGET_ICONS.set(hideQuestWidgetIcons);
         Config.ENABLE_QUEST_SEARCH_BOX.set(enableQuestSearchBox);
         Config.ENABLE_DESCRIPTION_COLORS.set(enableDescriptionColors);
+        Config.ENABLE_QUEST_TOASTS.set(enableQuestToasts);
         Config.DISABLE_QUEST_PINNING.set(disableQuestPinning);
         Config.AUTO_CLAIM_QUEST_REWARDS.set(autoClaimQuestRewards);
         Config.ENABLE_QUEST_SCROLLS.set(enableQuestScrolls);
@@ -531,6 +544,7 @@ public final class QuestSettingsScreen extends Screen {
         layoutRow(uiHideQuestWidgetIconsRow, uiHideQuestWidgetIconsBaseY, top, bottom);
         layoutRow(uiEnableSearchBoxRow, uiEnableSearchBoxBaseY, top, bottom);
         layoutRow(uiEnableDescriptionColorsRow, uiEnableDescriptionColorsBaseY, top, bottom);
+        layoutRow(uiEnableQuestToastsRow, uiEnableQuestToastsBaseY, top, bottom);
         layoutRow(functionalityDisablePinningRow, functionalityDisablePinningBaseY, top, bottom);
         layoutRow(functionalityAutoClaimRow, functionalityAutoClaimBaseY, top, bottom);
         layoutRow(functionalityQuestScrollsRow, functionalityQuestScrollsBaseY, top, bottom);

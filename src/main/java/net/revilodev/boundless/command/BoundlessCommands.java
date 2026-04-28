@@ -1,5 +1,8 @@
 package net.revilodev.boundless.command;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.CommandSourceStack;
@@ -12,10 +15,21 @@ import net.revilodev.boundless.network.BoundlessNetwork;
 import net.revilodev.boundless.quest.QuestData;
 import net.revilodev.boundless.quest.QuestTracker;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 public final class BoundlessCommands {
+    private static final Path INSTANCE_QUEST_PACKS_ROOT =
+            net.neoforged.fml.loading.FMLPaths.GAMEDIR.get().resolve("config").resolve("boundless").resolve("questpacks");
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("boundless")
@@ -88,8 +102,25 @@ public final class BoundlessCommands {
                                             () -> Component.literal("Quest Toasts Are Currently: " + (disabled ? "Disabled" : "Enabled")),
                                             false);
                                     return 1;
-                                }))));
-    }
+                                })))
+                .then(Commands.literal("questpack")
+                        .then(Commands.literal("enable")
+                                .then(Commands.argument("id", StringArgumentType.word())
+                                        .suggests((ctx, builder) -> {
+                                            listInstanceQuestPacks().keySet().forEach(builder::suggest);
+                                            return builder.buildFuture();
+                                        })
+                                        .executes(ctx -> setQuestPackEnabled(ctx.getSource(), StringArgumentType.getString(ctx, "id"), true))))
+                        .then(Commands.literal("disable")
+                                .then(Commands.argument("id", StringArgumentType.word())
+                                        .suggests((ctx, builder) -> {
+                                            listInstanceQuestPacks().keySet().forEach(builder::suggest);
+                                            return builder.buildFuture();
+                                        })
+                                        .executes(ctx -> setQuestPackEnabled(ctx.getSource(), StringArgumentType.getString(ctx, "id"), false))))
+                        .then(Commands.literal("list")
+                                .executes(ctx -> listQuestPacks(ctx.getSource())))));
+                }
 
     private static List<ServerPlayer> selfOrEmpty(CommandSourceStack source) {
         ServerPlayer player = source.getPlayer();
@@ -160,5 +191,103 @@ public final class BoundlessCommands {
         }
         source.sendSuccess(() -> Component.literal("Completed " + q.id + " for " + targets.size() + " player(s)."), false);
         return targets.size();
+    }
+
+    private static int setQuestPackEnabled(CommandSourceStack source, String id, boolean enabled) {
+        String key = id == null ? "" : id.trim();
+        if (key.isBlank()) {
+            source.sendFailure(Component.literal("Questpack id required."));
+            return 0;
+        }
+
+        Path packRoot = INSTANCE_QUEST_PACKS_ROOT.resolve(key);
+        if (!Files.isDirectory(packRoot)) {
+            source.sendFailure(Component.literal("Unknown questpack: " + key));
+            return 0;
+        }
+        if (!writeQuestPackEnabled(packRoot, enabled)) {
+            source.sendFailure(Component.literal("Failed to update questpack: " + key));
+            return 0;
+        }
+
+        MinecraftServer server = source.getServer();
+        QuestData.loadServer(server, true);
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            BoundlessNetwork.syncPlayer(p);
+        }
+        source.sendSuccess(() -> Component.literal("Questpack " + key + " " + (enabled ? "enabled" : "disabled") + "."), true);
+        return 1;
+    }
+
+    private static int listQuestPacks(CommandSourceStack source) {
+        Map<String, Boolean> packs = listInstanceQuestPacks();
+        if (packs.isEmpty()) {
+            source.sendSuccess(() -> Component.literal("No instance questpacks found."), false);
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Questpacks:"), false);
+        packs.forEach((id, enabled) ->
+                source.sendSuccess(() -> Component.literal("- " + id + " [" + (enabled ? "enabled" : "disabled") + "]"), false));
+        return packs.size();
+    }
+
+    private static Map<String, Boolean> listInstanceQuestPacks() {
+        Map<String, Boolean> out = new LinkedHashMap<>();
+        if (!Files.isDirectory(INSTANCE_QUEST_PACKS_ROOT)) return out;
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(INSTANCE_QUEST_PACKS_ROOT)) {
+            for (Path path : stream) {
+                if (!Files.isDirectory(path)) continue;
+                String id = path.getFileName() == null ? "" : path.getFileName().toString();
+                if (id.isBlank()) continue;
+                out.put(id, readQuestPackEnabled(path));
+            }
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    private static boolean readQuestPackEnabled(Path packRoot) {
+        Path metaPath = packRoot.resolve("pack.mcmeta");
+        if (!Files.exists(metaPath)) return true;
+        try (BufferedReader reader = Files.newBufferedReader(metaPath, StandardCharsets.UTF_8)) {
+            JsonElement parsed = JsonParser.parseReader(reader);
+            if (!(parsed instanceof JsonObject root)) return true;
+            if (!root.has("boundless") || !root.get("boundless").isJsonObject()) return true;
+            JsonObject boundless = root.getAsJsonObject("boundless");
+            if (!boundless.has("enabled")) return true;
+            JsonElement enabled = boundless.get("enabled");
+            if (enabled == null || !enabled.isJsonPrimitive()) return true;
+            if (enabled.getAsJsonPrimitive().isBoolean()) return enabled.getAsBoolean();
+            return Boolean.parseBoolean(enabled.getAsString());
+        } catch (Exception ignored) {
+            return true;
+        }
+    }
+
+    private static boolean writeQuestPackEnabled(Path packRoot, boolean enabled) {
+        Path metaPath = packRoot.resolve("pack.mcmeta");
+        try {
+            JsonObject root;
+            if (Files.exists(metaPath)) {
+                try (BufferedReader reader = Files.newBufferedReader(metaPath, StandardCharsets.UTF_8)) {
+                    JsonElement parsed = JsonParser.parseReader(reader);
+                    root = parsed instanceof JsonObject obj ? obj : new JsonObject();
+                }
+            } else {
+                root = new JsonObject();
+            }
+            JsonObject boundless = root.has("boundless") && root.get("boundless").isJsonObject()
+                    ? root.getAsJsonObject("boundless")
+                    : new JsonObject();
+            boundless.addProperty("enabled", enabled);
+            root.add("boundless", boundless);
+            Files.createDirectories(packRoot);
+            try (BufferedWriter writer = Files.newBufferedWriter(metaPath, StandardCharsets.UTF_8)) {
+                writer.write(root.toString());
+            }
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 }

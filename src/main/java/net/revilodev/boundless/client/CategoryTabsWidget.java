@@ -23,16 +23,17 @@ public final class CategoryTabsWidget extends AbstractWidget {
     private static final ResourceLocation TAB_SELECTED =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/tab_selected.png");
     private static final ResourceLocation MOVE_DOWN =
-            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/move_down.png");
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/move_down.png");
     private static final ResourceLocation MOVE_UP =
-            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/move_up.png");
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/move_up.png");
     private static final ResourceLocation MOVE_DOWN_HIGHLIGHTED =
-            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/move_down-highlighted.png");
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/move_down_highlighted.png");
     private static final ResourceLocation MOVE_UP_HIGHLIGHTED =
-            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/move_up-highlighted.png");
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/move_up_highlighted.png");
     private static final int PAGE_SIZE = 5;
     private static final int CONTROL_ICON_BASE = 16;
-    private static final int CONTROL_ICON = CONTROL_ICON_BASE;
+    private static final float CONTROL_ICON_SCALE = 2.5f;
+    private static final int CONTROL_ICON = (int) (CONTROL_ICON_BASE * CONTROL_ICON_SCALE);
     private static final int CONTROL_GAP = 2;
 
     private final Minecraft mc = Minecraft.getInstance();
@@ -254,8 +255,8 @@ public final class CategoryTabsWidget extends AbstractWidget {
         int downY = controlsY + CONTROL_ICON + CONTROL_GAP;
         boolean hoverUp = isOverUp(mouseX, mouseY, x, y);
         boolean hoverDown = isOverDown(mouseX, mouseY, x, y);
-        gg.blit(hoverUp ? MOVE_UP_HIGHLIGHTED : MOVE_UP, iconX, controlsY, 0, 0, CONTROL_ICON, CONTROL_ICON, CONTROL_ICON_BASE, CONTROL_ICON_BASE);
-        gg.blit(hoverDown ? MOVE_DOWN_HIGHLIGHTED : MOVE_DOWN, iconX, downY, 0, 0, CONTROL_ICON, CONTROL_ICON, CONTROL_ICON_BASE, CONTROL_ICON_BASE);
+        drawScaledIcon(gg, hoverUp ? MOVE_UP_HIGHLIGHTED : MOVE_UP, iconX, controlsY);
+        drawScaledIcon(gg, hoverDown ? MOVE_DOWN_HIGHLIGHTED : MOVE_DOWN, iconX, downY);
 
         String text = (pageIndex + 1) + "/" + (maxPageIndex() + 1);
         int textX = iconX + (CONTROL_ICON / 2) - (int) ((mc.font.width(text) * 0.8f) / 2f);
@@ -294,6 +295,14 @@ public final class CategoryTabsWidget extends AbstractWidget {
         gg.pose().scale(scale, scale, 1f);
         float inv = 1f / scale;
         gg.drawString(mc.font, text, (int) (x * inv), (int) (y * inv), color, false);
+        gg.pose().popPose();
+    }
+
+    private void drawScaledIcon(GuiGraphics gg, ResourceLocation tex, int x, int y) {
+        gg.pose().pushPose();
+        gg.pose().translate(x, y, 0.0F);
+        gg.pose().scale(CONTROL_ICON_SCALE, CONTROL_ICON_SCALE, 1.0F);
+        gg.blit(tex, 0, 0, 0, 0, CONTROL_ICON_BASE, CONTROL_ICON_BASE, CONTROL_ICON_BASE, CONTROL_ICON_BASE);
         gg.pose().popPose();
     }
 

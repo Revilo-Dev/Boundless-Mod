@@ -15,6 +15,7 @@ import net.minecraft.world.item.Item;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.fml.loading.FMLPaths;
 import net.revilodev.boundless.Config;
 
 import java.io.BufferedReader;
@@ -22,6 +23,9 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 
 public final class QuestData {
@@ -34,6 +38,8 @@ public final class QuestData {
     private static final String PATH_SUBCATEGORIES_ALT = "quests/sub_categories";
     private static final String PATH_SUBCATEGORY = "quests/subcategory";
     private static final String PATH_SUBCATEGORY_ALT = "quests/sub-category";
+    private static final Path INSTANCE_QUEST_PACKS_ROOT =
+            FMLPaths.GAMEDIR.get().resolve("config").resolve("boundless").resolve("questpacks");
 
     private static final Map<String, Quest> QUESTS = new LinkedHashMap<>();
     private static final Map<String, Category> CATEGORIES = new LinkedHashMap<>();
@@ -425,6 +431,7 @@ public final class QuestData {
         if (FMLEnvironment.dist == Dist.CLIENT && shouldScanSelectedResourcePacksData()) {
             scanSelectedResourcePacksData();
         }
+        loadModQuestPacksFromInstance();
 
         ensureSubCategoriesFromQuests();
 
@@ -456,8 +463,137 @@ public final class QuestData {
         } catch (Throwable ignored) {}
     }
 
+    private static void loadModQuestPacksFromInstance() {
+        if (FMLEnvironment.dist == Dist.CLIENT && !shouldLoadInstanceQuestPacksClient()) return;
+        if (!Files.isDirectory(INSTANCE_QUEST_PACKS_ROOT)) return;
+
+        try (DirectoryStream<Path> packs = Files.newDirectoryStream(INSTANCE_QUEST_PACKS_ROOT)) {
+            for (Path packRoot : packs) {
+                if (!Files.isDirectory(packRoot)) continue;
+                if (!isInstancePackEnabled(packRoot)) continue;
+                loadSingleModQuestPack(packRoot);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static boolean isInstancePackEnabled(Path packRoot) {
+        if (packRoot == null) return false;
+        Path packMeta = packRoot.resolve("pack.mcmeta");
+        if (!Files.exists(packMeta)) return true;
+        try (Reader reader = Files.newBufferedReader(packMeta, StandardCharsets.UTF_8)) {
+            JsonObject root = safeObject(reader);
+            if (root == null || !root.has("boundless") || !root.get("boundless").isJsonObject()) return true;
+            JsonObject boundless = root.getAsJsonObject("boundless");
+            if (!boundless.has("enabled")) return true;
+            JsonElement enabled = boundless.get("enabled");
+            if (enabled == null || !enabled.isJsonPrimitive()) return true;
+            JsonPrimitive p = enabled.getAsJsonPrimitive();
+            if (p.isBoolean()) return p.getAsBoolean();
+            return Boolean.parseBoolean(p.getAsString());
+        } catch (Exception ignored) {
+            return true;
+        }
+    }
+
+    private static void loadSingleModQuestPack(Path packRoot) {
+        Path dataRoot = packRoot.resolve("data");
+        if (!Files.isDirectory(dataRoot)) return;
+
+        try (DirectoryStream<Path> namespaces = Files.newDirectoryStream(dataRoot)) {
+            for (Path namespaceDir : namespaces) {
+                if (!Files.isDirectory(namespaceDir)) continue;
+                String ns = namespaceDir.getFileName() == null ? "" : namespaceDir.getFileName().toString();
+                if (shouldSkipNamespace(ns)) continue;
+
+                Path questsRoot = namespaceDir.resolve("quests");
+                if (!Files.isDirectory(questsRoot)) continue;
+
+                loadCategoriesFromPath(questsRoot.resolve("categories"), ns);
+                loadSubCategoriesFromPath(questsRoot.resolve("subcategories"), ns);
+                loadSubCategoriesFromPath(questsRoot.resolve("sub_category"), ns);
+                loadSubCategoriesFromPath(questsRoot.resolve("subcategory"), ns);
+                loadSubCategoriesFromPath(questsRoot.resolve("sub-category"), ns);
+                loadQuestsFromPath(questsRoot, ns);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void loadCategoriesFromPath(Path categoriesDir, String namespace) {
+        if (!Files.isDirectory(categoriesDir)) return;
+        try (DirectoryStream<Path> files = Files.newDirectoryStream(categoriesDir, "*.json")) {
+            for (Path file : files) {
+                try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                    JsonObject obj = safeObject(reader);
+                    if (obj == null) continue;
+                    String id = optString(obj, "id");
+                    if (id == null || id.isBlank()) continue;
+                    String icon = optString(obj, "icon");
+                    String cname = optString(obj, "name");
+                    int order = parseIntFlexible(obj, "order", 0);
+                    boolean excludeFromAll = parseBoolFlexible(obj, "exclude_from_all", false);
+                    String dependency = optString(obj, "dependency");
+                    boolean autoComplete = parseBoolFlexible(obj, "auto_complete",
+                            parseBoolFlexible(obj, "autoComplete", false));
+                    CATEGORIES.put(id, new Category(id, icon, cname, order, excludeFromAll, dependency, autoComplete));
+                } catch (Exception ignored) {
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void loadSubCategoriesFromPath(Path subDir, String namespace) {
+        if (!Files.isDirectory(subDir)) return;
+        try (DirectoryStream<Path> files = Files.newDirectoryStream(subDir, "*.json")) {
+            for (Path file : files) {
+                try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                    JsonObject obj = safeObject(reader);
+                    if (obj == null) continue;
+                    String relPath = "quests/" + subDir.getFileName() + "/" + file.getFileName();
+                    readSubCategoryObject(obj, relPath);
+                } catch (Exception ignored) {
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void loadQuestsFromPath(Path questsRoot, String namespace) {
+        if (!Files.isDirectory(questsRoot)) return;
+        try (var stream = Files.walk(questsRoot)) {
+            stream.filter(Files::isRegularFile)
+                    .filter(path -> path.toString().toLowerCase(Locale.ROOT).endsWith(".json"))
+                    .forEach(path -> {
+                        try {
+                            String rel = questsRoot.relativize(path).toString().replace('\\', '/');
+                            if (rel.startsWith("categories/")) return;
+                            if (isSubCategoryPath("quests/" + rel)) return;
+                            ResourceLocation loc = ResourceLocation.fromNamespaceAndPath(namespace, "quests/" + rel);
+                            if (shouldIgnoreQuestJson(loc)) return;
+                            try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+                                JsonObject obj = safeObject(reader);
+                                if (obj == null) return;
+                                Quest q = parseQuestObject(obj, loc);
+                                if (q != null && !isQuestDisabled(q)) QUESTS.put(q.id, q);
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    });
+        } catch (Exception ignored) {
+        }
+    }
+
     @OnlyIn(Dist.CLIENT)
     private static boolean shouldScanSelectedResourcePacksData() {
+        if (!Config.datapackQuestPacksOnlyOnServer()) return true;
+        Minecraft mc = Minecraft.getInstance();
+        return mc != null && mc.hasSingleplayerServer();
+    }
+
+    @OnlyIn(Dist.CLIENT)
+    private static boolean shouldLoadInstanceQuestPacksClient() {
         if (!Config.datapackQuestPacksOnlyOnServer()) return true;
         Minecraft mc = Minecraft.getInstance();
         return mc != null && mc.hasSingleplayerServer();
