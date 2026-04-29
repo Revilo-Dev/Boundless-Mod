@@ -23,18 +23,19 @@ public final class CategoryTabsWidget extends AbstractWidget {
     private static final ResourceLocation TAB_SELECTED =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/tab_selected.png");
     private static final ResourceLocation MOVE_DOWN =
-            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/move_down.png");
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/arrow_down.png");
     private static final ResourceLocation MOVE_UP =
-            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/move_up.png");
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/arrow_up.png");
     private static final ResourceLocation MOVE_DOWN_HIGHLIGHTED =
-            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/move_down_highlighted.png");
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/arrow_down-highlighted.png");
     private static final ResourceLocation MOVE_UP_HIGHLIGHTED =
-            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/move_up_highlighted.png");
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/arrow_up-highlighted.png");
     private static final int PAGE_SIZE = 5;
     private static final int CONTROL_ICON_BASE = 16;
-    private static final float CONTROL_ICON_SCALE = 2.5f;
+    private static final float CONTROL_ICON_SCALE = 1.0f;
     private static final int CONTROL_ICON = (int) (CONTROL_ICON_BASE * CONTROL_ICON_SCALE);
-    private static final int CONTROL_GAP = 2;
+    private static final int CONTROL_GAP = 3;
+    private static final int CONTROL_X_SHIFT = -2;
 
     private final Minecraft mc = Minecraft.getInstance();
     private final Consumer<String> onSelect;
@@ -251,7 +252,7 @@ public final class CategoryTabsWidget extends AbstractWidget {
     private void renderPageControls(GuiGraphics gg, int mouseX, int mouseY, int x, int y) {
         if (categories.size() <= PAGE_SIZE) return;
         int controlsY = y + 1;
-        int iconX = tabRenderX() + (cellW - CONTROL_ICON) / 2;
+        int iconX = controlsIconX();
         int downY = controlsY + CONTROL_ICON + CONTROL_GAP;
         boolean hoverUp = isOverUp(mouseX, mouseY, x, y);
         boolean hoverDown = isOverDown(mouseX, mouseY, x, y);
@@ -276,17 +277,21 @@ public final class CategoryTabsWidget extends AbstractWidget {
 
     private boolean isOverUp(double mouseX, double mouseY, int x, int y) {
         int controlsY = y + 1;
-        int iconX = tabRenderX() + (cellW - CONTROL_ICON) / 2;
+        int iconX = controlsIconX();
         return mouseX >= iconX && mouseX < iconX + CONTROL_ICON
                 && mouseY >= controlsY && mouseY < controlsY + CONTROL_ICON;
     }
 
     private boolean isOverDown(double mouseX, double mouseY, int x, int y) {
         int controlsY = y + 1;
-        int iconX = tabRenderX() + (cellW - CONTROL_ICON) / 2;
+        int iconX = controlsIconX();
         int downY = controlsY + CONTROL_ICON + CONTROL_GAP;
         return mouseX >= iconX && mouseX < iconX + CONTROL_ICON
                 && mouseY >= downY && mouseY < downY + CONTROL_ICON;
+    }
+
+    private int controlsIconX() {
+        return tabRenderX() + (cellW - CONTROL_ICON) / 2 + CONTROL_X_SHIFT;
     }
 
     private void drawScaledString(GuiGraphics gg, String text, float scale, int x, int y, int color) {

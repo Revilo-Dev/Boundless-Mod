@@ -82,6 +82,25 @@ public final class BoundlessCommands {
                                                 ctx.getSource(),
                                                 EntityArgument.getPlayers(ctx, "targets"),
                                                 StringArgumentType.getString(ctx, "id"))))))
+                .then(Commands.literal("redeem")
+                        .then(Commands.literal("all")
+                                .executes(ctx -> redeemAll(ctx.getSource(), selfOrEmpty(ctx.getSource())))
+                                .then(Commands.argument("targets", EntityArgument.players())
+                                        .executes(ctx -> redeemAll(ctx.getSource(), EntityArgument.getPlayers(ctx, "targets")))))
+                        .then(Commands.argument("id", StringArgumentType.string())
+                                .suggests((ctx, builder) -> {
+                                    for (QuestData.Quest q : QuestData.all()) builder.suggest(q.id);
+                                    return builder.buildFuture();
+                                })
+                                .executes(ctx -> redeemQuest(
+                                        ctx.getSource(),
+                                        selfOrEmpty(ctx.getSource()),
+                                        StringArgumentType.getString(ctx, "id")))
+                                .then(Commands.argument("targets", EntityArgument.players())
+                                        .executes(ctx -> redeemQuest(
+                                                ctx.getSource(),
+                                                EntityArgument.getPlayers(ctx, "targets"),
+                                                StringArgumentType.getString(ctx, "id"))))))
                 .then(Commands.literal("toasts")
                         .then(Commands.literal("enable")
                                 .executes(ctx -> {
@@ -191,6 +210,52 @@ public final class BoundlessCommands {
         }
         source.sendSuccess(() -> Component.literal("Completed " + q.id + " for " + targets.size() + " player(s)."), false);
         return targets.size();
+    }
+
+    private static int redeemAll(CommandSourceStack source, Collection<ServerPlayer> targets) {
+        if (targets.isEmpty()) {
+            source.sendFailure(Component.literal("No target players."));
+            return 0;
+        }
+        int redeemedCount = 0;
+        for (ServerPlayer player : targets) {
+            for (QuestData.Quest q : QuestData.allServer(source.getServer())) {
+                QuestTracker.forceCompleteWithoutRewards(q, player);
+                if (QuestTracker.serverRedeem(q, player)) {
+                    BoundlessNetwork.sendStatus(player, q.id, QuestTracker.Status.REDEEMED.name());
+                    BoundlessNetwork.sendProgressMeta(player, q.id);
+                    redeemedCount++;
+                }
+            }
+        }
+        int finalRedeemedCount = redeemedCount;
+        source.sendSuccess(() -> Component.literal("Redeemed " + finalRedeemedCount + " quest(s) across " + targets.size() + " player(s)."), false);
+        return redeemedCount;
+    }
+
+    private static int redeemQuest(CommandSourceStack source, Collection<ServerPlayer> targets, String id) {
+        if (targets.isEmpty()) {
+            source.sendFailure(Component.literal("No target players."));
+            return 0;
+        }
+        var opt = QuestData.byIdServer(source.getServer(), id);
+        if (opt.isEmpty()) {
+            source.sendFailure(Component.literal(id + " Invalid"));
+            return 0;
+        }
+        QuestData.Quest q = opt.get();
+        int redeemedPlayers = 0;
+        for (ServerPlayer player : targets) {
+            QuestTracker.forceCompleteWithoutRewards(q, player);
+            if (QuestTracker.serverRedeem(q, player)) {
+                BoundlessNetwork.sendStatus(player, q.id, QuestTracker.Status.REDEEMED.name());
+                BoundlessNetwork.sendProgressMeta(player, q.id);
+                redeemedPlayers++;
+            }
+        }
+        int finalRedeemedPlayers = redeemedPlayers;
+        source.sendSuccess(() -> Component.literal("Redeemed " + q.id + " for " + finalRedeemedPlayers + " player(s)."), false);
+        return redeemedPlayers;
     }
 
     private static int setQuestPackEnabled(CommandSourceStack source, String id, boolean enabled) {

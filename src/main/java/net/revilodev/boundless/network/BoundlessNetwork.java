@@ -357,6 +357,7 @@ public final class BoundlessNetwork {
             o.addProperty("order", c.order);
             o.addProperty("excludeFromAll", c.excludeFromAll);
             o.addProperty("dependency", c.dependency);
+            o.addProperty("autoComplete", c.autoComplete);
             cats.add(o);
         }
         root.add("categories", cats);
@@ -571,6 +572,16 @@ public final class BoundlessNetwork {
         ctx.enqueueWork(() -> {
             ServerPlayer sp = (ServerPlayer) ctx.player();
             if (sp == null || p.questId() == null || p.questId().isBlank() || p.targetId() == null || p.targetId().isBlank()) return;
+            QuestData.Quest quest = QuestData.byIdServer(sp.server, p.questId()).orElse(null);
+            if (quest == null || quest.completion == null || quest.completion.targets == null) return;
+            boolean validFieldTarget = false;
+            for (QuestData.Target t : quest.completion.targets) {
+                if (t == null || !t.isFieldInput()) continue;
+                if (!p.targetId().equals(t.id)) continue;
+                validFieldTarget = true;
+                break;
+            }
+            if (!validFieldTarget) return;
             String key = p.questId() + ":field:" + p.targetId();
             QuestTracker.setFieldInputProgress(sp, key, p.value());
         });

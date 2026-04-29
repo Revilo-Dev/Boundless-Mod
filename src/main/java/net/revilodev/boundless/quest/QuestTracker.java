@@ -781,10 +781,10 @@ public final class QuestTracker {
 
     public static void forceCompleteWithoutRewards(QuestData.Quest q, ServerPlayer player) {
         if (q == null || player == null) return;
-        markQuestClaimed(player, q);
-        clearQuestCycle(player, q);
-        setServerStatus(player, q.id, Status.REDEEMED);
-        BoundlessNetwork.sendStatus(player, q.id, Status.REDEEMED.name());
+        Status current = getServerStatus(player, q.id);
+        if (current == Status.REDEEMED || current == Status.REJECTED) return;
+        setServerStatus(player, q.id, Status.COMPLETED);
+        BoundlessNetwork.sendStatus(player, q.id, Status.COMPLETED.name());
     }
 
     public static boolean restartRepeatable(QuestData.Quest q, ServerPlayer player) {

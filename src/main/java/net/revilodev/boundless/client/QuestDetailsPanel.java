@@ -43,7 +43,7 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
     private static final int LINE_ITEM_ROW = 22;
     private static final int BOTTOM_PADDING = 12;
-    private static final int CONTENT_BOTTOM_MARGIN = 10;
+    private static final int CONTENT_BOTTOM_MARGIN = 6;
     private static final int HEADER_HEIGHT = 19;
     private static final int DESC_CHAR_LIMIT = 180;
     private static final Pattern ITEM_ID_PATTERN = Pattern.compile("\\b[a-z0-9_.-]+:[a-z0-9_./-]+\\b");
@@ -1099,6 +1099,29 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (!this.visible || !this.active) return false;
+
+        if (button == 0) {
+            EditBox clicked = null;
+            for (EditBox box : inputBoxes.values()) {
+                if (!box.visible || !box.active) continue;
+                boolean inside = mouseX >= box.getX() && mouseX <= box.getX() + box.getWidth()
+                        && mouseY >= box.getY() && mouseY <= box.getY() + box.getHeight();
+                if (inside) {
+                    clicked = box;
+                    break;
+                }
+            }
+            if (clicked != null) {
+                for (EditBox box : inputBoxes.values()) {
+                    box.setFocused(box == clicked);
+                }
+                clicked.mouseClicked(mouseX, mouseY, button);
+                return true;
+            }
+            for (EditBox box : inputBoxes.values()) {
+                box.setFocused(false);
+            }
+        }
 
         for (EditBox box : inputBoxes.values()) {
             if (!box.visible || !box.active) continue;

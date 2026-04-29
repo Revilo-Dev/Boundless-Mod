@@ -38,6 +38,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.revilodev.boundless.Config;
 import net.revilodev.boundless.client.QuestPanelClient;
+import net.revilodev.boundless.compat.LevelUpCompat;
 import net.revilodev.boundless.quest.QuestData;
 import org.lwjgl.glfw.GLFW;
 
@@ -159,6 +160,8 @@ public final class QuestEditorScreen extends Screen {
     private static final int FORMAT_BAR_H = 9;
     private static final int FORMAT_BTN_GAP = 1;
     private static final int MOVE_ICON_SIZE = 14;
+    private static final int MOVE_ICON_TEX_SIZE = 32;
+    private static final int CATEGORY_ARROW_SIZE = 32;
     private static final int MOVE_ICON_INSET_RIGHT = 3;
     private static final int MOVE_ICON_TOP_OFFSET = 1;
     private static final int MOVE_ICON_BOTTOM_OFFSET = 13;
@@ -194,6 +197,7 @@ public final class QuestEditorScreen extends Screen {
     private static final float ENTRY_INPUT_TEXT_SCALE = 0.4f;
     private static final int ENTRY_REMOVE_BTN_W = 10;
     private static final int EDITOR_SUBHEADER_H = 12;
+    private static final int EDITOR_SUBHEADER_GAP = 3;
 
     private static final String ENTRY_CREATE_PACK = "__create_pack__";
     private static final String ENTRY_BUILTIN_PACK = "__builtin_pack__";
@@ -288,6 +292,7 @@ public final class QuestEditorScreen extends Screen {
     private final List<ScaledMultiLineEditBox> completionEntryBoxes = new ArrayList<>();
     private final List<ScaledMultiLineEditBox> rewardEntryBoxes = new ArrayList<>();
     private final List<EntryRemoveButton> dependencyEntryRemoveButtons = new ArrayList<>();
+    private final List<LockToggleButton> dependencyEntryLockButtons = new ArrayList<>();
     private final List<EntryRemoveButton> completionEntryRemoveButtons = new ArrayList<>();
     private final List<EntryRemoveButton> rewardEntryRemoveButtons = new ArrayList<>();
     private Button convertQuestFormatButton;
@@ -634,7 +639,7 @@ public final class QuestEditorScreen extends Screen {
         out.add(new EditorEntry(ENTRY_NEW, "Create New Sub", "", ""));
         if (currentPack == null) return out;
         for (NamedEntry entry : listSubCategoryEntries(currentPack)) {
-            out.add(EditorEntry.movable(entry.id, entry.name, entry.id, entry.icon));
+            out.add(EditorEntry.normal(entry.id, entry.name, entry.id, entry.icon));
         }
         return out;
     }
@@ -1127,7 +1132,7 @@ public final class QuestEditorScreen extends Screen {
         questCategoryBox.setValue(safe(data.category));
         questSubCategoryBox.setValue(safe(data.subCategory));
         setEntryRowsFromRaw(EntryRowKind.DEPENDENCY, safe(data.dependencies));
-        questDependencyLockToggle.setState(parseBool(data.lockAfterDependency, false));
+        setDependencyLockState(parseBool(data.lockAfterDependency, false));
         questOptionalToggle.setState(parseBool(data.optional, false));
         questRepeatableToggle.setState(parseBool(data.repeatable, false));
         questAutoCompleteToggle.setState(parseBool(data.autoComplete, false));
@@ -1392,7 +1397,7 @@ public final class QuestEditorScreen extends Screen {
         obj.addProperty("repeatable", questRepeatableToggle.isOn());
         obj.addProperty("auto_complete", questAutoCompleteToggle.isOn());
         obj.addProperty("hiddenUnderDependency", questHiddenUnderDependencyToggle.isOn());
-        obj.addProperty("lock_after_dependency", questDependencyLockToggle.isOn());
+        obj.addProperty("lock_after_dependency", dependencyLockState());
         if (loadedQuestType != null && !loadedQuestType.isBlank()) {
             obj.addProperty("type", loadedQuestType);
         }
@@ -2783,6 +2788,10 @@ public final class QuestEditorScreen extends Screen {
             questDependencyLockToggle.visible = false;
             questDependencyLockToggle.active = false;
         }
+        for (LockToggleButton button : dependencyEntryLockButtons) {
+            button.visible = false;
+            button.active = false;
+        }
         for (ScaledMultiLineEditBox box : dependencyEntryBoxes) {
             box.visible = false;
             box.active = false;
@@ -2882,6 +2891,12 @@ public final class QuestEditorScreen extends Screen {
                 removeWidget(button);
             }
             removeButtons.clear();
+            if (kind == EntryRowKind.DEPENDENCY) {
+                for (LockToggleButton button : dependencyEntryLockButtons) {
+                    removeWidget(button);
+                }
+                dependencyEntryLockButtons.clear();
+            }
             List<String> normalized = new ArrayList<>();
             if (lines != null) {
                 for (String line : lines) {
@@ -2897,6 +2912,7 @@ public final class QuestEditorScreen extends Screen {
             }
             ensureTrailingEmptyRow(kind);
             syncEntryRemoveButtons(kind);
+            if (kind == EntryRowKind.DEPENDENCY) syncDependencyEntryLockButtons();
         } finally {
             syncingEntryRows = false;
         }
@@ -2940,6 +2956,7 @@ public final class QuestEditorScreen extends Screen {
             rows.remove(rows.size() - 2);
         }
         syncEntryRemoveButtons(kind);
+        if (kind == EntryRowKind.DEPENDENCY) syncDependencyEntryLockButtons();
     }
 
     private void syncEntryRemoveButtons(EntryRowKind kind) {
@@ -2955,6 +2972,33 @@ public final class QuestEditorScreen extends Screen {
         while (buttons.size() > rows.size()) {
             EntryRemoveButton last = buttons.remove(buttons.size() - 1);
             removeWidget(last);
+        }
+    }
+
+    private void syncDependencyEntryLockButtons() {
+        while (dependencyEntryLockButtons.size() < dependencyEntryBoxes.size()) {
+            LockToggleButton button = createDependencyLockToggle(dependencyLockState());
+            dependencyEntryLockButtons.add(button);
+        }
+        while (dependencyEntryLockButtons.size() > dependencyEntryBoxes.size()) {
+            LockToggleButton last = dependencyEntryLockButtons.remove(dependencyEntryLockButtons.size() - 1);
+            removeWidget(last);
+        }
+        boolean state = dependencyLockState();
+        for (LockToggleButton button : dependencyEntryLockButtons) {
+            button.setState(state);
+        }
+    }
+
+    private boolean dependencyLockState() {
+        if (!dependencyEntryLockButtons.isEmpty()) return dependencyEntryLockButtons.get(0).isOn();
+        return questDependencyLockToggle != null && questDependencyLockToggle.isOn();
+    }
+
+    private void setDependencyLockState(boolean state) {
+        if (questDependencyLockToggle != null) questDependencyLockToggle.setState(state);
+        for (LockToggleButton button : dependencyEntryLockButtons) {
+            button.setState(state);
         }
     }
 
@@ -3031,10 +3075,11 @@ public final class QuestEditorScreen extends Screen {
         int iconSpace = dependency ? DEP_ENTRY_ICON_SPACE : 0;
         int lockSpace = dependency ? (DEP_LOCK_SIZE + DEP_LOCK_GAP) : 0;
         int cursorY = y;
-        boolean lockPlaced = false;
+        List<LockToggleButton> lockButtons = dependency ? dependencyEntryLockButtons : List.of();
         for (int i = 0; i < rows.size(); i++) {
             ScaledMultiLineEditBox box = rows.get(i);
             EntryRemoveButton removeButton = i < removeButtons.size() ? removeButtons.get(i) : null;
+            LockToggleButton lockButton = dependency && i < lockButtons.size() ? lockButtons.get(i) : null;
             box.setX(x + iconSpace);
             box.setY(cursorY);
             box.setWidth(Math.max(10, width - ENTRY_REMOVE_BTN_W - 2 - lockSpace - iconSpace));
@@ -3049,21 +3094,23 @@ public final class QuestEditorScreen extends Screen {
                 removeButton.visible = inside;
                 removeButton.active = inside;
             }
-            if (dependency && !lockPlaced && questDependencyLockToggle != null && inside) {
+            if (dependency && lockButton != null) {
                 int lockX = x + width - DEP_LOCK_SIZE;
                 int lockY = cursorY;
-                questDependencyLockToggle.setX(lockX);
-                questDependencyLockToggle.setY(lockY);
-                questDependencyLockToggle.setSize(DEP_LOCK_SIZE, ENTRY_ROW_H);
-                questDependencyLockToggle.visible = inside;
-                questDependencyLockToggle.active = inside;
-                lockPlaced = true;
+                lockButton.setX(lockX);
+                lockButton.setY(lockY);
+                lockButton.setSize(DEP_LOCK_SIZE, ENTRY_ROW_H);
+                lockButton.visible = inside;
+                lockButton.active = inside;
             }
             cursorY += ENTRY_ROW_H + ENTRY_ROW_GAP;
         }
-        if (dependency && questDependencyLockToggle != null && !lockPlaced) {
-            questDependencyLockToggle.visible = false;
-            questDependencyLockToggle.active = false;
+        if (dependency) {
+            for (int i = rows.size(); i < lockButtons.size(); i++) {
+                LockToggleButton lockButton = lockButtons.get(i);
+                lockButton.visible = false;
+                lockButton.active = false;
+            }
         }
         return Math.max(ENTRY_ROW_H, cursorY - y - ENTRY_ROW_GAP);
     }
@@ -3241,7 +3288,7 @@ public final class QuestEditorScreen extends Screen {
                     + "|" + safe(questCategoryBox == null ? "" : questCategoryBox.getValue())
                     + "|" + safe(questSubCategoryBox == null ? "" : questSubCategoryBox.getValue())
                     + "|" + safe(questDependenciesBox == null ? "" : questDependenciesBox.getValue())
-                    + "|" + (questDependencyLockToggle != null && questDependencyLockToggle.isOn())
+                    + "|" + dependencyLockState()
                     + "|" + (questOptionalToggle != null && questOptionalToggle.isOn())
                     + "|" + (questRepeatableToggle != null && questRepeatableToggle.isOn())
                     + "|" + (questAutoCompleteToggle != null && questAutoCompleteToggle.isOn())
@@ -3756,7 +3803,7 @@ public final class QuestEditorScreen extends Screen {
         state.questCategory = safe(questCategoryBox == null ? "" : questCategoryBox.getValue());
         state.questSubCategory = safe(questSubCategoryBox == null ? "" : questSubCategoryBox.getValue());
         state.questDependencies = safe(questDependenciesBox == null ? "" : questDependenciesBox.getValue());
-        state.questLockAfterDependency = questDependencyLockToggle != null && questDependencyLockToggle.isOn();
+        state.questLockAfterDependency = dependencyLockState();
         state.questOptional = questOptionalToggle != null && questOptionalToggle.isOn();
         state.questRepeatable = questRepeatableToggle != null && questRepeatableToggle.isOn();
         state.questAutoComplete = questAutoCompleteToggle != null && questAutoCompleteToggle.isOn();
@@ -4181,7 +4228,7 @@ public final class QuestEditorScreen extends Screen {
             return;
         }
         if (importQuestPackButton != null && importQuestPackButton.visible && importQuestPackButton.isMouseOver(mouseX, mouseY)) {
-            gg.renderTooltip(font, Component.literal("Open import questpack directory"), mouseX, mouseY);
+            gg.renderTooltip(font, Component.literal("Import Questpacks"), mouseX, mouseY);
         }
     }
 
@@ -4410,7 +4457,9 @@ public final class QuestEditorScreen extends Screen {
         if (ctx == null) return List.of();
         if (!ctx.hasTypeSeparator) {
             return isCompletionEntryField(field)
-                    ? List.of("collect", "submit", "kill", "achieve", "effect", "xp", "levelup")
+                    ? (LevelUpCompat.isAvailable()
+                        ? List.of("collect", "submit", "kill", "achieve", "effect", "xp", "levelup", "field")
+                        : List.of("collect", "submit", "kill", "achieve", "effect", "xp", "field"))
                     : List.of("item", "xp", "command", "loot");
         }
         return switch (ctx.type) {
@@ -4419,8 +4468,9 @@ public final class QuestEditorScreen extends Screen {
             case "effect" -> effectSuggestions();
             case "achieve", "advancement" -> advancementSuggestions();
             case "loot", "loottable" -> lootTableSuggestions();
-            case "xp", "exp" -> List.of("points", "levels", "levelup");
-            case "levelup" -> List.of("level");
+            case "xp", "exp" -> List.of("points", "levels");
+            case "levelup" -> LevelUpCompat.isAvailable() ? List.of("level") : List.of();
+            case "field", "input" -> List.of("\"expected text\" \"input hint text\"");
             case "icon" -> itemSuggestions();
             default -> List.of();
         };
@@ -4704,12 +4754,16 @@ public final class QuestEditorScreen extends Screen {
                     }
                 }
             }
-            if (dependencyEntriesField && questDependencyLockToggle != null && questDependencyLockToggle.visible
-                    && questDependencyLockToggle.isMouseOver(mouseX, mouseY)) {
-                String lockTooltip = questDependencyLockToggle.isOn()
-                        ? "Quest is locked after dependency completed"
-                        : "quest is locked until dependency completed";
-                gg.renderTooltip(font, Component.literal(lockTooltip), mouseX, mouseY);
+            if (dependencyEntriesField) {
+                for (LockToggleButton lockButton : dependencyEntryLockButtons) {
+                    if (lockButton == null || !lockButton.visible) continue;
+                    if (!lockButton.isMouseOver(mouseX, mouseY)) continue;
+                    String lockTooltip = dependencyLockState()
+                            ? "Quest is locked after dependency completed"
+                            : "quest is locked until dependency completed";
+                    gg.renderTooltip(font, Component.literal(lockTooltip), mouseX, mouseY);
+                    break;
+                }
             }
             yCursor += font.lineHeight + FIELD_LABEL_GAP + widgetHeight + FIELD_ROW_GAP;
             if (field.widget == questDescriptionBox) {
@@ -4876,18 +4930,21 @@ public final class QuestEditorScreen extends Screen {
 
             if (inside) {
                 float scale = 0.55f;
-                int labelW = (int) Math.ceil(font.width(titles[i]) * scale);
+                int maxUnscaledWidth = Math.max(1, (int) Math.floor(segmentWidth / scale));
+                String clippedTitle = font.plainSubstrByWidth(titles[i], maxUnscaledWidth);
+                int labelW = (int) Math.ceil(font.width(clippedTitle) * scale);
                 gg.pose().pushPose();
                 gg.pose().scale(scale, scale, 1f);
                 float inv = 1f / scale;
-                gg.drawString(font, titles[i], (int) ((segmentX + (segmentWidth - labelW) / 2) * inv), (int) (y * inv), 0xFFFFFF, false);
+                gg.drawString(font, clippedTitle, (int) ((segmentX + (segmentWidth - labelW) / 2) * inv), (int) (y * inv), 0xFFFFFF, false);
                 gg.pose().popPose();
             }
 
             boolean hovered = mouseX >= segmentX && mouseX <= segmentX + segmentWidth
                     && mouseY >= y && mouseY <= y + totalHeight;
             if (hovered) {
-                gg.renderComponentTooltip(font, List.of(Component.literal(tooltips[i][0]), Component.literal(tooltips[i][1])), mouseX, mouseY);
+                int tooltipY = Math.max(py + 2, y - 10);
+                gg.renderComponentTooltip(font, List.of(Component.literal(tooltips[i][0]), Component.literal(tooltips[i][1])), mouseX, tooltipY);
             }
         }
         return totalHeight;
@@ -5165,9 +5222,12 @@ public final class QuestEditorScreen extends Screen {
             if (!removeButton.isMouseOver(mouseX, mouseY)) continue;
             return removeButton.mouseClicked(mouseX, mouseY, button);
         }
-        if (questDependencyLockToggle != null && questDependencyLockToggle.visible && questDependencyLockToggle.active
-                && questDependencyLockToggle.isMouseOver(mouseX, mouseY)) {
-            return questDependencyLockToggle.mouseClicked(mouseX, mouseY, button);
+        for (LockToggleButton lockButton : dependencyEntryLockButtons) {
+            if (lockButton == null || !lockButton.visible || !lockButton.active) continue;
+            if (!lockButton.isMouseOver(mouseX, mouseY)) continue;
+            if (!lockButton.mouseClicked(mouseX, mouseY, button)) return false;
+            setDependencyLockState(lockButton.isOn());
+            return true;
         }
         for (ScaledMultiLineEditBox box : dependencyEntryBoxes) {
             if (box == null || !box.visible || !box.active) continue;
@@ -5739,6 +5799,7 @@ public final class QuestEditorScreen extends Screen {
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
             if (!this.visible || !this.active) return false;
             if (this.withinContentAreaPoint(mouseX, mouseY) && button == 0) {
+                this.setFocused(true);
                 this.textField.setSelecting(Screen.hasShiftDown());
                 this.seekCursorScreen(mouseX, mouseY);
                 return true;
@@ -6563,6 +6624,10 @@ public final class QuestEditorScreen extends Screen {
             return new EditorEntry(id, label, subtitle, icon, null, "", "", ROW_TEX, EditorEntryKind.NORMAL, 0, true);
         }
 
+        static EditorEntry normal(String id, String label, String subtitle, String icon) {
+            return new EditorEntry(id, label, subtitle, icon, null, "", "", ROW_TEX, EditorEntryKind.NORMAL, 0, false);
+        }
+
         static EditorEntry quest(String id, String label, String subtitle, String icon) {
             return new EditorEntry(id, label, subtitle, icon, null, "", "", ROW_TEX, EditorEntryKind.QUEST, 0, true);
         }
@@ -6572,11 +6637,11 @@ public final class QuestEditorScreen extends Screen {
         }
 
         static EditorEntry categoryHeader(String id, String label, boolean collapsed) {
-            return new EditorEntry(id, (collapsed ? "> " : "v ") + label, "", "", null, "", "", ROW_TEX, EditorEntryKind.CATEGORY_HEADER, 0);
+            return new EditorEntry(id, (collapsed ? "+ " : "- ") + label, "", "", null, "", "", ROW_TEX, EditorEntryKind.CATEGORY_HEADER, 0);
         }
 
         static EditorEntry subCategoryHeader(String id, String label, boolean collapsed) {
-            return new EditorEntry(id, (collapsed ? "> " : "v ") + label, "", "", null, "", "", ROW_TEX, EditorEntryKind.SUBCATEGORY_HEADER, 10);
+            return new EditorEntry(id, (collapsed ? "+ " : "- ") + label, "", "", null, "", "", ROW_TEX, EditorEntryKind.SUBCATEGORY_HEADER, 10);
         }
     }
 
@@ -6959,10 +7024,11 @@ public final class QuestEditorScreen extends Screen {
                 boolean headerEntry = entry.kind == EditorEntryKind.CATEGORY_HEADER || entry.kind == EditorEntryKind.SUBCATEGORY_HEADER;
                 int top = yCursor;
                 int rowH = headerEntry ? EDITOR_SUBHEADER_H : ROW_H;
+                int rowGap = headerEntry ? EDITOR_SUBHEADER_GAP : ROW_PAD;
 
                 if (top > getY() + height) break;
                 if (top + rowH < getY()) {
-                    yCursor += rowH + ROW_PAD;
+                    yCursor += rowH + rowGap;
                     continue;
                 }
 
@@ -7005,15 +7071,7 @@ public final class QuestEditorScreen extends Screen {
                         textX = iconX + textIconSize + 2;
                         int textH = (int) (Minecraft.getInstance().font.lineHeight * textScale);
                         int textY = top + (rowH - textH) / 2 + 1;
-                        boolean expanded = entry.label != null && entry.label.startsWith("v ");
-                        int arrowX = getX() + width - MOVE_ICON_SIZE - 2;
-                        int arrowY = top + (rowH - MOVE_ICON_SIZE) / 2;
-                        boolean hoverArrow = mouseX >= arrowX && mouseX <= arrowX + MOVE_ICON_SIZE
-                                && mouseY >= arrowY && mouseY <= arrowY + MOVE_ICON_SIZE;
-                        ResourceLocation arrowTex = expanded
-                                ? (hoverArrow ? MOVE_UP_HIGHLIGHTED_TEX : MOVE_UP_TEX)
-                                : (hoverArrow ? MOVE_DOWN_HIGHLIGHTED_TEX : MOVE_DOWN_TEX);
-                        int maxW = arrowX - textX - 2;
+                        int maxW = (getX() + width - 2) - textX - 2;
                         int maxWUnscaled = maxW > 0 ? (int) (maxW / textScale) : 0;
                         if (Minecraft.getInstance().font.width(name) > maxWUnscaled) {
                             name = Minecraft.getInstance().font.plainSubstrByWidth(name, Math.max(0, maxWUnscaled - Minecraft.getInstance().font.width("..."))) + "...";
@@ -7023,8 +7081,7 @@ public final class QuestEditorScreen extends Screen {
                         } else {
                             drawScaledString(gg, name, textScale, textX, textY, 0xD0D0D0);
                         }
-                        gg.blit(arrowTex, arrowX, arrowY, 0, 0, MOVE_ICON_SIZE, MOVE_ICON_SIZE, MOVE_ICON_SIZE, MOVE_ICON_SIZE);
-                        yCursor += rowH + ROW_PAD;
+                        yCursor += rowH + rowGap;
                         continue;
                     }
 
@@ -7073,7 +7130,7 @@ public final class QuestEditorScreen extends Screen {
                     }
                 }
 
-                yCursor += rowH + ROW_PAD;
+                yCursor += rowH + rowGap;
             }
 
             gg.disableScissor();
@@ -7081,7 +7138,7 @@ public final class QuestEditorScreen extends Screen {
             int contentHeight = 0;
             for (EditorEntry entry : entries) {
                 boolean headerEntry = entry.kind == EditorEntryKind.CATEGORY_HEADER || entry.kind == EditorEntryKind.SUBCATEGORY_HEADER;
-                contentHeight += (headerEntry ? EDITOR_SUBHEADER_H : ROW_H) + ROW_PAD;
+                contentHeight += (headerEntry ? EDITOR_SUBHEADER_H : ROW_H) + (headerEntry ? EDITOR_SUBHEADER_GAP : ROW_PAD);
             }
             if (contentHeight > height) {
                 float ratio = (float) height / (float) contentHeight;
@@ -7103,8 +7160,9 @@ public final class QuestEditorScreen extends Screen {
             for (EditorEntry entry : entries) {
                 boolean headerEntry = entry.kind == EditorEntryKind.CATEGORY_HEADER || entry.kind == EditorEntryKind.SUBCATEGORY_HEADER;
                 int rowH = headerEntry ? EDITOR_SUBHEADER_H : ROW_H;
-                if (localY < yCursor || localY >= yCursor + rowH + ROW_PAD) {
-                    yCursor += rowH + ROW_PAD;
+                int rowGap = headerEntry ? EDITOR_SUBHEADER_GAP : ROW_PAD;
+                if (localY < yCursor || localY >= yCursor + rowH + rowGap) {
+                    yCursor += rowH + rowGap;
                     continue;
                 }
                 int top = getY() - (int) scrollY + yCursor;
@@ -7146,7 +7204,7 @@ public final class QuestEditorScreen extends Screen {
             int contentHeight = 0;
             for (EditorEntry entry : entries) {
                 boolean headerEntry = entry.kind == EditorEntryKind.CATEGORY_HEADER || entry.kind == EditorEntryKind.SUBCATEGORY_HEADER;
-                contentHeight += (headerEntry ? EDITOR_SUBHEADER_H : ROW_H) + ROW_PAD;
+                contentHeight += (headerEntry ? EDITOR_SUBHEADER_H : ROW_H) + (headerEntry ? EDITOR_SUBHEADER_GAP : ROW_PAD);
             }
             if (contentHeight <= height) return false;
             scrollY = Math.max(0f, Math.min(scrollY - (float) (delta * 12), contentHeight - height));
