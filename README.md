@@ -1,258 +1,235 @@
 # Boundless
 
-Boundless is a data-driven questing mod for Minecraft modpacks. It adds quest books, categories, sub-categories, completion tracking, rewards, optional quests, repeatable quests, quest scrolls, and an in-game editor for building or adjusting quest packs.
+Boundless is a data-driven questing mod for NeoForge with an in-game quest editor and runtime config system.
 
-The mod is built around simple JSON quest data and a client/server sync layer. Pack authors can ship quests inside data packs or resource packs, and players can browse, complete, redeem, repeat, pin, and filter quests from the in-game UI.
+This README documents the **editor**, **config**, and **quest-pack authoring** features in the current codebase (`src/main`).
 
-## What The Mod Does
+## Quick Access
 
-Boundless provides:
+- Open quest book keybind: `[` (default), configurable in controls.
+- Inventory quest button: shown unless disabled by config.
+- Standalone quest screen: available from quest book item/keybind.
+- Settings + Editor screen: available to players with permission level `2` (operators).
 
-- A quest book UI that can open in-game and as a standalone screen
-- Category and sub-category organisation for large quest trees
-- Multiple quest objective types
-- Multiple reward types
-- Dependency-based quest progression
-- Optional and repeatable quest support
-- Quest pinning and quest scroll creation
-- In-game quest editing and quest pack management
-- Client and server sync for progress, claim counts, kill counts, and quest metadata
+## Editor Overview
 
-## Core Concepts
+The in-game editor (`QuestEditorScreen`) is a pack-author workflow for creating and maintaining quest packs without leaving Minecraft.
 
-### Categories
+Main areas:
 
-Categories are the top-level organisation for quests. They define the main sections of the quest UI and can have:
+1. **Quest Pack List**
+2. **Pack Create / Pack Options**
+3. **Category Editor**
+4. **Sub-Category Editor**
+5. **Quest Editor**
 
-- An ID
-- A display name
-- An icon
-- An order
-- An optional dependency
-- An option to exclude them from the combined "all" view
+Core editor actions:
 
-Categories are useful for separating progression into themes such as early game, automation, magic, exploration, or bossing.
+- Create new quest pack
+- Import quest pack (zip)
+- Enable/disable packs
+- Duplicate entries
+- Delete entries (with confirm arm)
+- Reorder entries
+- Save edits to disk
+- Export quest pack (zip)
+- Open pack directory
+- Convert pack to new format
 
-### Sub-Categories
+The editor also includes:
 
-Sub-categories sit inside a category and group related quests together. They are useful when one category becomes too large and needs more structure. A sub-category can have:
+- ID sanitizing and validation
+- Suggestion lists for IDs/registry values
+- Dynamic row editors for dependencies/completion/rewards
+- Lock toggles for dependency behavior
+- Unsaved state handling while navigating
 
-- An ID
-- A parent category
-- A display name
-- An icon
-- An order
-- A default open state
-- An explicit quest list
+## Quest Pack Storage and Paths
 
-### Quests
+Instance quest packs are managed under:
 
-A quest can contain:
+- `config/boundless/questpacks/`
 
-- A unique ID
-- A title
-- An icon
-- A description
-- A category
-- An optional sub-category
-- Dependencies on other quests
-- Flags such as `optional`, `repeatable`, and `hiddenUnderDependency`
-- Completion targets
-- Rewards
+Boundless also loads from datapack/resource-pack quest JSON paths:
 
-## Supported Objective Types
+- `data/<namespace>/quests/*.json`
+- `data/<namespace>/quests/categories/*.json`
+- `data/<namespace>/quests/subcategories/*.json`
+- plus compatibility aliases:
+  - `sub_category`
+  - `subcategory`
+  - `sub-category`
 
-Boundless supports several completion target types:
+Built-in quest pack loading can be disabled via config.
 
-- `item`: collect and keep items in inventory
-- `submit`: hand in items from inventory
-- `entity`: kill entities
-- `effect`: gain or have a potion/effect
-- `advancement`: complete a Minecraft advancement
-- `stat`: reach a stat value
-- `xp`: hold or submit XP points or levels
+## Config File
 
-### Collection vs Submission
+Boundless registers a common config:
 
-Collection targets only require the player to possess the required item or resource. Submission targets consume the required items or XP during claim.
+- `boundless-common.toml`
 
-Legacy submission-style quests are also supported through quest type handling, so older quest data can still behave correctly.
+It is grouped into `UI`, `Functionality`, and `Gameplay`.
 
-## Rewards
+### UI
 
-Quests can grant several reward types:
+- `disabledQuestCategories` (`List<String>`)
+  - Completely hides quests in matching category IDs.
+- `pinnedQuestHudPosition` (`top_left | top_right | bottom_left | bottom_right`)
+- `hideQuestBookInInventory` (`boolean`)
+- `hideCategoryHeader` (`boolean`)
+- `filterDisplayMode` (`tabs | buttons | hidden`)
+- `disableCategories` (`boolean`)
+- `enableBuiltinQuestPack` (`boolean`)
+- `hideQuestWidgetIcons` (`boolean`)
+- `enableQuestSearchBox` (`boolean`)
+- `enableDescriptionColors` (`boolean`)
+- `enableQuestToasts` (`boolean`)
 
-- Item rewards
-- Command rewards
-- Function rewards
-- Loot table rewards
-- XP rewards
+### Functionality
 
-If an item reward cannot be resolved from its item ID, it is skipped instead of crashing the claim flow. This keeps malformed reward data from blocking other rewards or the final redeem state.
+- `disableQuestPinning` (`boolean`)
+- `autoClaimQuestRewards` (`boolean`)
+- `enableQuestScrolls` (`boolean`)
+- `datapackQuestPacksOnlyOnServer` (`boolean`)
 
-## Progression Rules
+### Gameplay
 
-### Dependencies
+- `disableQuestBook` (`boolean`)
+- `spawnWithQuestBook` (`boolean`)
 
-Quests can depend on other quests. A dependency is considered satisfied when the required quest has been claimed before.
+## In-Game Settings Screen
 
-### Optional Quests
+`QuestSettingsScreen` provides an operator-facing UI for most runtime options.
 
-Optional quests can be rejected. Rejected quests are hidden from normal progression checks.
+Config screen sections:
 
-### Repeatable Quests
+1. **UI**
+2. **Functionality**
+3. **Gameplay**
 
-Repeatable quests can be completed, redeemed, and then restarted for another cycle.
+Editable from the screen:
 
-### Hidden Under Dependency
-
-When enabled, a quest stays hidden until all of its dependencies have been satisfied.
-
-## Quest Book UI
-
-Players can interact with Boundless through the quest book UI. Depending on config and screen mode, the interface can show:
-
-- Category filters
-- Pull-tab style filters or button-based filters
-- Quest lists
-- Category and sub-category grouping
-- Quest detail panels
-- Reward previews
-- Dependency previews
-- Settings access
-
-The quest details panel shows:
-
-- Quest name and icon
-- Description
-- Required dependencies
-- Completion objectives and live progress
-- Reward previews
-- Completion, repeat, reject, pin, and quest scroll actions where applicable
-
-## Quest Scrolls
-
-Quest scroll support is optional and controlled by config. When enabled, a player can create a quest scroll for a quest they have already claimed, provided a scroll has not already been created for that quest.
-
-This is useful for:
-
-- Packaging progress milestones into portable items
-- Handing quest markers to other players
-- Custom pack-specific progression systems
-
-## Filters And Display Modes
-
-The mod supports multiple filter display modes:
-
-- `tabs`: classic pull-tab filters
-- `buttons`: legacy square filter buttons
-- `hidden`: hides filters while leaving settings access available
-
-This allows a pack author or player to choose the layout that best fits the rest of their UI.
-
-## Built-In Quest Pack And External Packs
-
-Boundless can load quest content from its built-in quest pack and from other enabled packs. Pack management in the editor allows enabling or disabling quest packs without removing their files.
-
-This is useful for:
-
-- Shipping a default quest pack with the mod
-- Layering modpack-specific quest packs on top
-- Turning packs on or off while testing
-- Keeping example or legacy packs available but disabled
-
-## In-Game Editor
-
-The quest editor is intended to make pack maintenance easier without leaving the game. It supports:
-
-- Creating new packs
-- Browsing packs
-- Enabling and disabling packs
-- Editing categories
-- Editing sub-categories
-- Editing quests
-- Grouping quests by category and sub-category
-- Collapsing groups to reduce scrolling
-
-The editor is aimed at pack creators who need fast iteration while testing progression.
-
-## Config And Settings
-
-The settings UI includes grouped config sections such as functionality, gameplay, and UI. Depending on your current build, settings may include options for:
-
-- Built-in quest pack enable state
-- Quest book availability
-- Quest scroll support
-- Quest pinning
-- Auto-claim behavior
+- Pinned quest HUD position
+- Hide quest book button in inventory
+- Hide category header
 - Filter display mode
-- Category visibility
+- Disable categories
+- Hide quest widget icons
+- Enable quest search box
+- Enable description colors
+- Enable quest toasts
+- Disable quest pinning
+- Auto-claim rewards
+- Enable quest scrolls
+- Disable quest book
+- Spawn with quest book
 
-These settings affect both player-facing behavior and pack-author workflows.
+Saved via `Config.SPEC.save()` and immediately applied to open UI panels.
 
-## Client And Server Behaviour
+## Command Reference
 
-Boundless tracks progression on both sides:
+Root command: `/boundless` (requires permission level `2`)
 
-- Server-side progress is authoritative in multiplayer
-- Client-side cached progress is used for singleplayer and UI responsiveness
-- Status updates, kill counts, and claim metadata are synced across the network
+- `/boundless reload`
+  - Reloads quest data and re-syncs players.
+- `/boundless reset all [targets]`
+- `/boundless reset <quest_id> [targets]`
+- `/boundless complete all [targets]`
+- `/boundless complete <quest_id> [targets]`
+- `/boundless redeem all [targets]`
+- `/boundless redeem <quest_id> [targets]`
+- `/boundless toasts enable|disable|status`
+- `/boundless questpack list`
+- `/boundless questpack enable <id>`
+- `/boundless questpack disable <id>`
 
-The mod is designed so malformed sync state or malformed identifiers should degrade safely instead of crashing the UI or blocking normal play.
+## Quest JSON Model
 
-## Authoring Quests
+### Category
 
-Quest content is defined through JSON resources. In practice, an author usually creates:
+Typical fields:
 
-1. Categories
-2. Sub-categories
-3. Quests
-4. Completion targets
-5. Rewards
+- `id` (required)
+- `name`
+- `icon`
+- `order`
+- `exclude_from_all`
+- `dependency`
+- `auto_complete` / `autoComplete`
 
-Recommended authoring approach:
+### Sub-Category
 
-1. Start with category layout first.
-2. Add a few short, testable quests.
-3. Verify dependencies and reward claims in-game.
-4. Add sub-categories once a category becomes crowded.
-5. Use repeatable and optional flags deliberately instead of everywhere.
+Typical fields:
 
-## Tips For Pack Authors
+- `id`
+- `category`
+- `name`
+- `icon`
+- `order`
+- `defaultOpen`
+- `quests` (list of quest IDs)
 
-- Keep quest IDs stable once a pack is in use.
-- Prefer clear dependency chains over hidden implicit progression.
-- Use sub-categories to keep large categories manageable.
-- Treat submission quests carefully, especially for expensive items or XP costs.
-- Validate reward item IDs and icons before shipping.
-- Test both singleplayer and dedicated server flows.
-- Check how the UI behaves at multiple GUI scales.
+### Quest
 
-## Typical Player Flow
+Typical fields:
 
-1. Open the quest book.
-2. Browse a category or filter group.
-3. Read the quest details.
-4. Meet the objective requirements.
-5. Claim the quest.
-6. Receive item, loot, command, function, or XP rewards.
-7. Repeat or reject quests when allowed.
+- `id` (required)
+- `name`
+- `icon`
+- `description`
+- `category`
+- `subCategory`
+- `dependencies` (`List<String>`)
+- `lock_after_dependency` / `lockAfterDependency`
+- `optional`
+- `repeatable`
+- `auto_complete` / `autoComplete`
+- `hiddenUnderDependency`
+- `type`
+- `completion`
+- `rewards`
 
-## Compatibility Notes
+### Completion Target Kinds
 
-- Boundless relies on valid Minecraft resource identifiers for item, entity, effect, advancement, and loot references.
-- Invalid IDs should now fail safely in the UI and reward previews, but they still represent broken content that should be fixed in the quest data.
-- Multiplayer quest progress depends on the server's quest data and sync state being current.
+Boundless supports:
 
-## Development Notes
+- `item`
+- `submit`
+- `entity`
+- `effect`
+- `advancement`
+- `stat`
+- `xp`
+- `levelup_level`
+- `field`
 
-This repository contains both gameplay code and editor/UI code. When changing the mod:
+### Reward Types
 
-- Keep claim and submission logic conservative and failure-tolerant
-- Treat network payload decoding as untrusted input
-- Avoid client crashes from malformed resource IDs
-- Prefer data validation and graceful fallback over hard failure in UI paths
+- Item rewards (`items`)
+- Command rewards (`command`/`commands`)
+- Function rewards (`functions`)
+- Loot table rewards (`lootTables`)
+- XP rewards (`expType` + `expAmount`)
 
-## Summary
+## Quest Pack Enable/Disable Metadata
 
-Boundless is intended to be a full questing toolkit for modpacks rather than a simple checklist overlay. It provides structured progression, rich rewards, editor tooling, and configurable UI behavior so both players and pack authors can shape the quest experience to fit the pack.
+Quest pack enabled state is persisted in the pack `pack.mcmeta`:
+
+- `boundless.enabled: true|false`
+
+This is used by both command-based and editor-based pack toggling.
+
+## Permission and Multiplayer Notes
+
+- Settings/editor access is intentionally operator-gated (`hasPermissions(2)`).
+- Server-side quest data is authoritative in multiplayer.
+- On login/reload, quest data and player state sync through Boundless network payloads.
+
+## Notes for Pack Authors
+
+1. Keep quest IDs stable once published.
+2. Validate all registry IDs (`item`, `entity`, `effect`, `advancement`, `loot table`).
+3. Use clear dependency chains and only enable `hiddenUnderDependency` where needed.
+4. Test both singleplayer and dedicated server behavior.
+5. Use `/boundless reload` after data changes during iteration.
+
