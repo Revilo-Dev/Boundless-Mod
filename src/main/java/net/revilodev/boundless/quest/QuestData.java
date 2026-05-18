@@ -13,7 +13,6 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.util.GsonHelper;
 import net.minecraft.world.item.Item;
 import net.neoforged.api.distmarker.Dist;
-import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.fml.loading.FMLPaths;
 import net.revilodev.boundless.Config;
@@ -428,9 +427,6 @@ public final class QuestData {
             } catch (Exception ignored) {}
         }
 
-        if (FMLEnvironment.dist == Dist.CLIENT && shouldScanSelectedResourcePacksData()) {
-            scanSelectedResourcePacksData();
-        }
         loadModQuestPacksFromInstance();
 
         ensureSubCategoriesFromQuests();
@@ -441,30 +437,7 @@ public final class QuestData {
         }
     }
 
-    private static void scanSelectedResourcePacksData() {
-        try {
-            var repo = Minecraft.getInstance().getResourcePackRepository();
-            var selected = repo.getSelectedPacks();
-
-            for (var pack : selected) {
-                try (PackResources res = pack.open()) {
-                    Set<String> namespaces = res.getNamespaces(PackType.SERVER_DATA);
-                    for (String ns : namespaces) {
-                        if (shouldSkipNamespace(ns)) continue;
-                        listDataCategoriesFromPack(res, ns);
-                        listDataSubCategoriesFromPack(res, ns, PATH_SUBCATEGORIES);
-                        listDataSubCategoriesFromPack(res, ns, PATH_SUBCATEGORIES_ALT);
-                        listDataSubCategoriesFromPack(res, ns, PATH_SUBCATEGORY);
-                        listDataSubCategoriesFromPack(res, ns, PATH_SUBCATEGORY_ALT);
-                        listDataQuestsFromPack(res, ns);
-                    }
-                } catch (Throwable ignored) {}
-            }
-        } catch (Throwable ignored) {}
-    }
-
     private static void loadModQuestPacksFromInstance() {
-        if (FMLEnvironment.dist == Dist.CLIENT && !shouldLoadInstanceQuestPacksClient()) return;
         if (!Files.isDirectory(INSTANCE_QUEST_PACKS_ROOT)) return;
 
         try (DirectoryStream<Path> packs = Files.newDirectoryStream(INSTANCE_QUEST_PACKS_ROOT)) {
@@ -583,20 +556,6 @@ public final class QuestData {
                     });
         } catch (Exception ignored) {
         }
-    }
-
-    @OnlyIn(Dist.CLIENT)
-    private static boolean shouldScanSelectedResourcePacksData() {
-        if (!Config.datapackQuestPacksOnlyOnServer()) return true;
-        Minecraft mc = Minecraft.getInstance();
-        return mc != null && mc.hasSingleplayerServer();
-    }
-
-    @OnlyIn(Dist.CLIENT)
-    private static boolean shouldLoadInstanceQuestPacksClient() {
-        if (!Config.datapackQuestPacksOnlyOnServer()) return true;
-        Minecraft mc = Minecraft.getInstance();
-        return mc != null && mc.hasSingleplayerServer();
     }
 
     private static int listDataCategoriesFromPack(PackResources res, String ns) {

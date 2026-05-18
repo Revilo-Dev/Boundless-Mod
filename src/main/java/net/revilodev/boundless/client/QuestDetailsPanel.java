@@ -358,11 +358,8 @@ public final class QuestDetailsPanel extends AbstractWidget {
             boolean printedSubmitHeader = false;
             boolean printedKillHeader = false;
 
-            boolean legacySubmission = "submission".equalsIgnoreCase(quest.type) || "submit".equalsIgnoreCase(quest.type);
-
             for (QuestData.Target t : quest.completion.targets) {
-
-                boolean isSubmitTarget = t.isSubmit() || (legacySubmission && t.isItem());
+                boolean isSubmitTarget = t.isSubmit();
                 boolean isItemLike = t.isItem() || t.isSubmit();
 
                 if (t.isXp()) {

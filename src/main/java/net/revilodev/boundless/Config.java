@@ -68,9 +68,6 @@ public final class Config {
     public static final ModConfigSpec.ConfigValue<Boolean> ENABLE_QUEST_SCROLLS =
             BUILDER.comment("If true, quest completion scrolls can be created and used.")
                     .define("enableQuestScrolls", true);
-    public static final ModConfigSpec.ConfigValue<Boolean> DATAPACK_QUEST_PACKS_ONLY_ON_SERVER =
-            BUILDER.comment("If true, multiplayer clients only use quest packs synced from the server datapacks.")
-                    .define("datapackQuestPacksOnlyOnServer", true);
     static {
         BUILDER.pop();
         BUILDER.push("Gameplay");
@@ -165,10 +162,6 @@ public final class Config {
         return ENABLE_QUEST_SCROLLS.get();
     }
 
-    public static boolean datapackQuestPacksOnlyOnServer() {
-        return DATAPACK_QUEST_PACKS_ONLY_ON_SERVER.get();
-    }
-
     public static boolean disableQuestBook() {
         return DISABLE_QUEST_BOOK.get();
     }
@@ -181,7 +174,7 @@ public final class Config {
     @SubscribeEvent
     public static void onLoad(ModConfigEvent.Loading e) {
         if (e.getConfig().getSpec() == SPEC)
-            BoundlessMod.LOGGER.info("[Boundless] Config loaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, filterMode={}, disableCategories={}, builtinPack={}, hideWidgetIcons={}, searchBox={}, descColors={}, questToasts={}, disablePinning={}, autoClaim={}, questScrolls={}, datapackOnlyOnServer={}, disableBook={}, spawnBook={}",
+            BoundlessMod.LOGGER.info("[Boundless] Config loaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, filterMode={}, disableCategories={}, builtinPack={}, hideWidgetIcons={}, searchBox={}, descColors={}, questToasts={}, disablePinning={}, autoClaim={}, questScrolls={}, disableBook={}, spawnBook={}",
                     disabledCategories(),
                     pinnedQuestHudPosition(),
                     hideQuestBookInInventory(),
@@ -196,7 +189,6 @@ public final class Config {
                     disableQuestPinning(),
                     autoClaimQuestRewards(),
                     enableQuestScrolls(),
-                    datapackQuestPacksOnlyOnServer(),
                     disableQuestBook(),
                     spawnWithQuestBook());
     }
@@ -204,7 +196,7 @@ public final class Config {
     @SubscribeEvent
     public static void onReload(ModConfigEvent.Reloading e) {
         if (e.getConfig().getSpec() == SPEC)
-            BoundlessMod.LOGGER.info("[Boundless] Config reloaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, filterMode={}, disableCategories={}, builtinPack={}, hideWidgetIcons={}, searchBox={}, descColors={}, questToasts={}, disablePinning={}, autoClaim={}, questScrolls={}, datapackOnlyOnServer={}, disableBook={}, spawnBook={}",
+            BoundlessMod.LOGGER.info("[Boundless] Config reloaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, filterMode={}, disableCategories={}, builtinPack={}, hideWidgetIcons={}, searchBox={}, descColors={}, questToasts={}, disablePinning={}, autoClaim={}, questScrolls={}, disableBook={}, spawnBook={}",
                     disabledCategories(),
                     pinnedQuestHudPosition(),
                     hideQuestBookInInventory(),
@@ -219,7 +211,6 @@ public final class Config {
                     disableQuestPinning(),
                     autoClaimQuestRewards(),
                     enableQuestScrolls(),
-                    datapackQuestPacksOnlyOnServer(),
                     disableQuestBook(),
                     spawnWithQuestBook());
     }

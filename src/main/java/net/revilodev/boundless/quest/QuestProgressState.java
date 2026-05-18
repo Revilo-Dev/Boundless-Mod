@@ -53,9 +53,6 @@ public final class QuestProgressState extends SavedData {
             return (status == null || status.isBlank()) && claimCount <= 0 && !scrollRedeemed && !scrollCreated;
         }
 
-        private static QuestProgress fromLegacyStatus(String status) {
-            return new QuestProgress(status, 0, false, false);
-        }
     }
 
     private QuestProgressState() {
@@ -75,11 +72,6 @@ public final class QuestProgressState extends SavedData {
             CompoundTag inner = tag.getCompound(playerKey);
             Map<String, QuestProgress> m = new HashMap<>();
             for (String questId : inner.getAllKeys()) {
-                if (inner.contains(questId, Tag.TAG_STRING)) {
-                    QuestProgress progress = QuestProgress.fromLegacyStatus(inner.getString(questId));
-                    if (!progress.isEmpty()) m.put(questId, progress);
-                    continue;
-                }
                 if (!inner.contains(questId, Tag.TAG_COMPOUND)) continue;
                 CompoundTag progressTag = inner.getCompound(questId);
                 QuestProgress progress = new QuestProgress(

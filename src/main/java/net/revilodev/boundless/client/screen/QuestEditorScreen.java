@@ -8,7 +8,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.Util;
-import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -29,9 +28,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
+import net.minecraft.SharedConstants;
 import net.minecraft.util.StringUtil;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
@@ -53,6 +52,8 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -68,10 +69,6 @@ import java.util.Deque;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
-import java.util.zip.ZipInputStream;
-import java.util.zip.ZipOutputStream;
 
 @OnlyIn(Dist.CLIENT)
 public final class QuestEditorScreen extends Screen {
@@ -268,7 +265,6 @@ public final class QuestEditorScreen extends Screen {
     private EditBox packNamespaceBox;
     private EditBox packIconPathBox;
     private ScaledMultiLineEditBox packDescriptionBox;
-    private ToggleButton packDataPackToggle;
 
     private EditBox catIdBox;
     private EditBox catNameBox;
@@ -310,7 +306,6 @@ public final class QuestEditorScreen extends Screen {
     private final Map<ScaledMultiLineEditBox, String> entryTypeByBox = new HashMap<>();
     private final Map<ScaledMultiLineEditBox, String> selectedItemIdByBox = new HashMap<>();
     private static final String LEGACY_PACK_TOOLTIP = "Downgrade to update 8 to convert this pack to a questpack, resource / data packs are no longer supported!";
-    private Button openDataPackFolderButton;
     private boolean syncingEntryRows = false;
     private boolean entryRowsDirty = false;
     private final List<TextInsertButton> descriptionFormatButtons = new ArrayList<>();
@@ -437,7 +432,6 @@ public final class QuestEditorScreen extends Screen {
         packNamespaceBox = createBox("Namespace", BOX_H);
         packIconPathBox = createBox("Pack icon path", BOX_H);
         packDescriptionBox = createMultiLineBox("Pack description", BOX_H_TALL, false);
-        packDataPackToggle = createToggle(false);
 
         catIdBox = createBox("Category id", BOX_H);
         catNameBox = createBox("Category name", BOX_H);
@@ -478,12 +472,6 @@ public final class QuestEditorScreen extends Screen {
         attachIdSanitizer(questIdBox, false);
         attachIdSanitizer(questCategoryBox, false);
         attachIdSanitizer(questSubCategoryBox, false);
-        openDataPackFolderButton = Button.builder(Component.literal("Open directory"), button -> openPackDirectory())
-                .bounds(0, 0, 125, 20)
-                .build();
-        openDataPackFolderButton.visible = false;
-        openDataPackFolderButton.active = false;
-        addRenderableWidget(openDataPackFolderButton);
     }
 
     private void initDescriptionFormatterButtons() {
@@ -607,9 +595,9 @@ public final class QuestEditorScreen extends Screen {
             String subtitle = pack.namespace.isBlank() ? "No namespace" : pack.namespace;
             boolean legacy = pack.legacy;
             boolean changed = stagedPacks.containsKey(pack.name);
-            boolean enabled = !legacy && isPackEnabled(pack);
+            boolean enabled = !legacy;
             ResourceLocation actionIcon = enabled ? BUILTIN_PACK_ENABLED_TEX : BUILTIN_PACK_DISABLED_TEX;
-            String actionTooltip = legacy ? "Legacy Pack" : (enabled ? "Enabled" : "Disabled");
+            String actionTooltip = legacy ? "Legacy Pack" : "Enabled";
             ResourceLocation rowTexture = legacy ? PACK_ACTION_NEEDED_TEX : (changed ? PACK_CHANGED_TEX : ROW_TEX);
             out.add(new EditorEntry(
                     pack.name,
@@ -792,8 +780,8 @@ public final class QuestEditorScreen extends Screen {
             statusColor = 0xFFD080;
             return;
         }
-        boolean next = !isPackEnabled(pack);
-        setPackEnabled(pack, next);
+        statusMessage = "Pack toggling has been removed";
+        statusColor = 0xFFD080;
     }
 
     private void handleEntryMoveAction(EditorEntry entry, MoveDirection direction) {
@@ -1213,8 +1201,6 @@ public final class QuestEditorScreen extends Screen {
     private void savePackCreate() {
         String name = safe(packNameBox.getValue()).trim();
         String namespace = safe(packNamespaceBox.getValue()).trim().toLowerCase(Locale.ROOT);
-        PackOutputType type = PackOutputType.RESOURCE;
-
         if (name.isBlank() || namespace.isBlank()) {
             setError("Pack name and namespace required");
             return;
@@ -1237,7 +1223,7 @@ public final class QuestEditorScreen extends Screen {
         try {
             Files.createDirectories(root.getParent());
             Files.createDirectories(root);
-            writePackMeta(root, name, "Boundless Quest Pack: " + name, "", type);
+            writePackMeta(root, name, "Boundless Quest Pack: " + name, "");
             try {
                 writePackIcon(root, "");
             } catch (IOException ignored) {
@@ -1256,7 +1242,6 @@ public final class QuestEditorScreen extends Screen {
         if (currentPack == null) return;
 
         String requestedName = safe(packNameBox.getValue()).trim();
-        PackOutputType type = PackOutputType.RESOURCE;
         if (requestedName.isBlank()) {
             setError("Pack name required");
             return;
@@ -1283,7 +1268,7 @@ public final class QuestEditorScreen extends Screen {
             }
             String description = "Boundless Quest Pack: " + requestedName;
             String iconPath = "";
-            writePackMeta(newRoot, requestedName, description, iconPath, type);
+            writePackMeta(newRoot, requestedName, description, iconPath);
             writePackIcon(newRoot, iconPath);
             currentPack = new QuestPack(requestedName, currentPack.namespace, newRoot);
             currentPack.ensureDirs();
@@ -1471,15 +1456,6 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private void duplicateCurrentPackAsIs() {
-        duplicateCurrentPack(currentEditedPackOutputType());
-    }
-
-    private void duplicateCurrentPackToAlternateType() {
-        PackOutputType currentType = currentEditedPackOutputType();
-        duplicateCurrentPack(currentType == PackOutputType.DATA ? PackOutputType.RESOURCE : PackOutputType.DATA);
-    }
-
-    private void duplicateCurrentPack(PackOutputType targetType) {
         if (currentPack == null) return;
         try {
             if (!ensurePackWorkspace(currentPack)) {
@@ -1490,12 +1466,12 @@ public final class QuestEditorScreen extends Screen {
             String duplicateName = nextAvailablePackName(currentPack.name);
             Path target = packsRoot().resolve(duplicateName);
             mirrorDirectory(currentPack.root, target);
-            writePackMeta(target, duplicateName, safe(meta.description), safe(meta.iconPath), targetType);
+            writePackMeta(target, duplicateName, safe(meta.description), safe(meta.iconPath));
             QuestPack duplicated = new QuestPack(duplicateName, currentPack.namespace, target);
             duplicated.ensureDirs();
             currentPack = duplicated;
             selectedEntryId = duplicated.name;
-            stagePackChange(duplicated, targetType == currentEditedPackOutputType() ? "Pack duplicated" : "Pack duplicated as alternate type");
+            stagePackChange(duplicated, "Pack duplicated");
             refreshLeftList();
             leftList.setSelectedId(selectedEntryId);
             showPackOptions(duplicated);
@@ -2265,17 +2241,15 @@ public final class QuestEditorScreen extends Screen {
             stashPendingInitState(state);
         }
         boolean mirrored = mirrorCurrentPackDirectorySafe();
-        boolean zipped = zipCurrentPackSafe();
-        ensurePackSelected();
-        Minecraft.getInstance().reloadResourcePacks().thenRun(() -> Minecraft.getInstance().execute(() -> {
+        Minecraft.getInstance().execute(() -> {
             if (pendingState != null) {
                 ScreenState restore = pendingState;
                 pendingState = null;
                 restoreState(restore);
             }
             QuestData.loadClient(true);
-        }));
-        return mirrored || zipped;
+        });
+        return mirrored;
     }
 
     private void stageCurrentPackChange(String message) {
@@ -2315,46 +2289,27 @@ public final class QuestEditorScreen extends Screen {
             if (pack == null) continue;
             currentPack = pack;
             changed |= mirrorCurrentPackDirectorySafe();
-            changed |= zipCurrentPackSafe();
             if (selectedPack == null) {
                 selectedPack = pack;
             }
         }
 
         currentPack = selectedPack;
-        if (selectedPack != null && !stagedDeletedPackNames.contains(selectedPack.name)) {
-            ensurePackSelected();
-        }
         stagedPacks.clear();
         stagedDeletedPackNames.clear();
         if (!changed) return;
 
-        mc.reloadResourcePacks().thenRun(() ->
-                mc.execute(() -> QuestData.loadClient(true)));
+        mc.execute(() -> QuestData.loadClient(true));
     }
 
     private boolean deleteAppliedPackArtifactsSafe(String packName) {
-        if (packName == null || packName.isBlank()) return false;
-        boolean changed = false;
-        try {
-            Path mirroredDir = resourcePacksRoot().resolve(packName);
-            if (Files.exists(mirroredDir)) {
-                deleteDirectory(mirroredDir);
-                changed = true;
-            }
-            Path zipPath = packZipPath(packName);
-            if (Files.deleteIfExists(zipPath)) {
-                changed = true;
-            }
-        } catch (IOException ignored) {
-        }
-        return changed;
+        return false;
     }
 
     private boolean mirrorCurrentPackDirectorySafe() {
         if (currentPack == null || currentPack.root == null) return false;
         try {
-            Path targetRoot = resourcePacksRoot().resolve(currentPack.name);
+            Path targetRoot = packsRoot().resolve(currentPack.name);
             mirrorDirectory(currentPack.root, targetRoot);
             return true;
         } catch (IOException ignored) {
@@ -2386,326 +2341,6 @@ public final class QuestEditorScreen extends Screen {
                 }
             }
         }
-    }
-
-    private void ensurePackSelected() {
-        if (currentPack == null || currentPack.name == null || currentPack.name.isBlank()) return;
-        Minecraft mc = Minecraft.getInstance();
-        PackRepository repo = mc.getResourcePackRepository();
-        if (repo == null) return;
-        try {
-            repo.reload();
-        } catch (Exception ignored) {
-        }
-
-        String packId = findPackId(repo, currentPack);
-        if (packId == null || packId.isBlank()) return;
-        applyPackSelectionToRepo(repo, packId);
-        if (ensurePackSelectedInOptions(mc, packId)) {
-            invokeOptionsSave(mc.options);
-        }
-    }
-
-    private boolean isPackEnabled(QuestPack pack) {
-        if (pack == null) return false;
-        if (isModDataPack(pack)) {
-            return readModDataPackEnabled(pack);
-        }
-        Minecraft mc = Minecraft.getInstance();
-        PackRepository repo = mc.getResourcePackRepository();
-        if (repo == null) return false;
-        try {
-            repo.reload();
-        } catch (Exception ignored) {
-        }
-        String packId = findPackId(repo, pack);
-        if (packId == null || packId.isBlank()) return false;
-        var selected = repo.getSelectedPacks();
-        if (selected == null) return false;
-        for (Object p : selected) {
-            String id = packIdOf(p);
-            if (packId.equals(id)) return true;
-        }
-        return false;
-    }
-
-    private void setPackEnabled(QuestPack pack, boolean enabled) {
-        if (pack == null) return;
-        if (isModDataPack(pack)) {
-            if (!writeModDataPackEnabled(pack, enabled)) {
-                setError("Failed to update pack state");
-                return;
-            }
-            QuestData.loadClient(true);
-            statusMessage = enabled ? ("Enabled " + pack.name) : ("Disabled " + pack.name);
-            statusColor = 0xA0FFA0;
-            refreshLeftList();
-            return;
-        }
-        Minecraft mc = Minecraft.getInstance();
-        PackRepository repo = mc.getResourcePackRepository();
-        if (repo == null) return;
-        try {
-            repo.reload();
-        } catch (Exception ignored) {
-        }
-        String packId = findPackId(repo, pack);
-        if (packId == null || packId.isBlank()) return;
-        applyPackSelectionToRepo(repo, packId, enabled);
-        if (setPackSelectedInOptions(mc, packId, enabled)) {
-            invokeOptionsSave(mc.options);
-        }
-        mc.reloadResourcePacks().thenRun(() ->
-                mc.execute(() -> QuestData.loadClient(true)));
-        statusMessage = enabled ? ("Enabled " + pack.name) : ("Disabled " + pack.name);
-        statusColor = 0xA0FFA0;
-        refreshLeftList();
-    }
-
-    private boolean isModDataPack(QuestPack pack) {
-        if (pack == null || pack.root == null) return false;
-        try {
-            Path modRoot = modDataQuestPacksRoot().toAbsolutePath().normalize();
-            Path root = pack.root.toAbsolutePath().normalize();
-            return root.startsWith(modRoot);
-        } catch (Exception ignored) {
-        }
-        return false;
-    }
-
-    private boolean readModDataPackEnabled(QuestPack pack) {
-        Path packMeta = pack.root.resolve("pack.mcmeta");
-        if (!Files.exists(packMeta)) return true;
-        try (BufferedReader reader = Files.newBufferedReader(packMeta, StandardCharsets.UTF_8)) {
-            JsonElement parsed = JsonParser.parseReader(reader);
-            if (!(parsed instanceof JsonObject obj)) return true;
-            JsonObject boundless = obj.has("boundless") && obj.get("boundless").isJsonObject() ? obj.getAsJsonObject("boundless") : null;
-            if (boundless != null && boundless.has("enabled") && boundless.get("enabled").isJsonPrimitive()) {
-                return boundless.get("enabled").getAsBoolean();
-            }
-        } catch (Exception ignored) {
-        }
-        return true;
-    }
-
-    private boolean writeModDataPackEnabled(QuestPack pack, boolean enabled) {
-        Path packMeta = pack.root.resolve("pack.mcmeta");
-        try {
-            JsonObject obj = new JsonObject();
-            if (Files.exists(packMeta)) {
-                try (BufferedReader reader = Files.newBufferedReader(packMeta, StandardCharsets.UTF_8)) {
-                    JsonElement parsed = JsonParser.parseReader(reader);
-                    if (parsed instanceof JsonObject parsedObj) {
-                        obj = parsedObj.deepCopy();
-                    }
-                }
-            }
-            JsonObject boundless = obj.has("boundless") && obj.get("boundless").isJsonObject() ? obj.getAsJsonObject("boundless") : new JsonObject();
-            boundless.addProperty("enabled", enabled);
-            obj.add("boundless", boundless);
-            try (BufferedWriter writer = Files.newBufferedWriter(packMeta, StandardCharsets.UTF_8)) {
-                gson.toJson(obj, writer);
-            }
-            return true;
-        } catch (Exception ignored) {
-        }
-        return false;
-    }
-
-    private boolean ensurePackSelectedInOptions(Minecraft mc, String packId) {
-        return setPackSelectedInOptions(mc, packId, true);
-    }
-
-    private boolean setPackSelectedInOptions(Minecraft mc, String packId, boolean enabled) {
-        if (mc == null || mc.options == null || packId == null || packId.isBlank()) return false;
-        Object options = mc.options;
-        List<String> selected = getOptionsList(options, "resourcePacks");
-        if (selected == null) return false;
-        if (enabled) {
-            if (!selected.contains(packId)) {
-                return addOptionEntry(options, "resourcePacks", selected, packId);
-            }
-            return false;
-        }
-        return removeOptionEntry(options, "resourcePacks", selected, packId);
-    }
-
-    private boolean addOptionEntry(Object options, String fieldName, List<String> current, String entry) {
-        if (current == null || entry == null) return false;
-        try {
-            current.add(preferredPackInsertIndex(current), entry);
-            return true;
-        } catch (UnsupportedOperationException ignored) {
-        }
-        List<String> copy = new ArrayList<>(current);
-        if (copy.contains(entry)) return false;
-        copy.add(preferredPackInsertIndex(copy), entry);
-        setOptionsList(options, fieldName, copy);
-        return true;
-    }
-
-    private boolean removeOptionEntry(Object options, String fieldName, List<String> current, String entry) {
-        if (current == null || entry == null) return false;
-        try {
-            return current.remove(entry);
-        } catch (UnsupportedOperationException ignored) {
-        }
-        if (!current.contains(entry)) return false;
-        List<String> copy = new ArrayList<>(current);
-        if (!copy.remove(entry)) return false;
-        setOptionsList(options, fieldName, copy);
-        return true;
-    }
-
-    private int preferredPackInsertIndex(List<String> selected) {
-        if (selected == null || selected.isEmpty()) return 0;
-        int idx = 0;
-        for (String id : selected) {
-            if (!"vanilla".equals(id) && !"mod_resources".equals(id)) {
-                break;
-            }
-            idx++;
-        }
-        return Math.max(0, Math.min(idx, selected.size()));
-    }
-
-    private List<String> getOptionsList(Object options, String fieldName) {
-        if (options == null || fieldName == null || fieldName.isBlank()) return null;
-        try {
-            Field field = options.getClass().getDeclaredField(fieldName);
-            field.setAccessible(true);
-            Object value = field.get(options);
-            if (value instanceof List<?> list) {
-                @SuppressWarnings("unchecked")
-                List<String> out = (List<String>) list;
-                return out;
-            }
-        } catch (Exception ignored) {
-        }
-        return null;
-    }
-
-    private void setOptionsList(Object options, String fieldName, List<String> next) {
-        if (options == null || fieldName == null || fieldName.isBlank()) return;
-        try {
-            Field field = options.getClass().getDeclaredField(fieldName);
-            field.setAccessible(true);
-            field.set(options, next);
-        } catch (Exception ignored) {
-        }
-    }
-
-    private void invokeOptionsSave(Object options) {
-        if (options == null) return;
-        try {
-            Method save = options.getClass().getMethod("save");
-            save.invoke(options);
-        } catch (Exception ignored) {
-        }
-    }
-
-    private void applyPackSelectionToRepo(PackRepository repo, String packId) {
-        applyPackSelectionToRepo(repo, packId, true);
-    }
-
-    private void applyPackSelectionToRepo(PackRepository repo, String packId, boolean enabled) {
-        if (repo == null || packId == null || packId.isBlank()) return;
-        List<String> selectedIds = new ArrayList<>();
-        var selected = repo.getSelectedPacks();
-        if (selected != null) {
-            for (Object p : selected) {
-                String id = packIdOf(p);
-                if (id != null && !id.isBlank() && !selectedIds.contains(id)) {
-                    selectedIds.add(id);
-                }
-            }
-        }
-        if (enabled && !selectedIds.contains(packId)) {
-            selectedIds.add(packId);
-        } else if (!enabled) {
-            selectedIds.remove(packId);
-        }
-        for (Method method : repo.getClass().getMethods()) {
-            if (!"setSelected".equals(method.getName())) continue;
-            Class<?>[] params = method.getParameterTypes();
-            if (params.length != 1) continue;
-            if (params[0].isAssignableFrom(selectedIds.getClass())) {
-                try {
-                    method.invoke(repo, selectedIds);
-                    return;
-                } catch (Exception ignored) {
-                }
-            }
-        }
-    }
-
-    private String findPackId(PackRepository repo, QuestPack pack) {
-        if (repo == null || pack == null) return null;
-        String name = safe(pack.name).trim();
-        if (name.isBlank()) return null;
-        String nameLower = name.toLowerCase(Locale.ROOT);
-        String[] candidates = new String[] {
-                "file/" + name,
-                "file/" + name + ".zip",
-                name,
-                name + ".zip"
-        };
-
-        String expectedDescription = "Boundless Quest Pack: " + name;
-        String fallback = null;
-        var available = repo.getAvailablePacks();
-        if (available == null) return null;
-        for (Object p : available) {
-            String id = packIdOf(p);
-            if (id == null || id.isBlank()) continue;
-            for (String candidate : candidates) {
-                if (id.equals(candidate)) return id;
-            }
-            String idLower = id.toLowerCase(Locale.ROOT);
-            if (idLower.equals(nameLower) || idLower.endsWith("/" + nameLower)
-                    || idLower.endsWith("/" + nameLower + ".zip") || idLower.endsWith(nameLower + ".zip")) {
-                fallback = id;
-            }
-        }
-
-        if (fallback != null) return fallback;
-        for (Object p : available) {
-            String id = packIdOf(p);
-            if (id == null || id.isBlank()) continue;
-            String description = packDescriptionOf(p);
-            String title = packTitleOf(p);
-            if ((description != null && description.contains(expectedDescription))
-                    || (title != null && title.contains(expectedDescription))) {
-                return id;
-            }
-        }
-
-        for (Object p : available) {
-            String id = packIdOf(p);
-            if (id == null || id.isBlank()) continue;
-            if (id.toLowerCase(Locale.ROOT).contains(nameLower)) return id;
-        }
-        return null;
-    }
-
-    private String packIdOf(Object pack) {
-        return invokeString(pack, "getId", "id");
-    }
-
-    private String packTitleOf(Object pack) {
-        Object result = invokeObject(pack, "getTitle", "title");
-        if (result instanceof Component component) {
-            return component.getString();
-        }
-        return result instanceof String s ? s : null;
-    }
-
-    private String packDescriptionOf(Object pack) {
-        Object result = invokeObject(pack, "getDescription", "description");
-        if (result instanceof Component component) {
-            return component.getString();
-        }
-        return result instanceof String s ? s : null;
     }
 
     private String invokeString(Object target, String... methods) {
@@ -3394,10 +3029,8 @@ public final class QuestEditorScreen extends Screen {
     private String currentEditorStateSignature() {
         return switch (editorType) {
             case PACK_CREATE -> "pack|" + safe(packNameBox == null ? "" : packNameBox.getValue())
-                    + "|" + safe(packNamespaceBox == null ? "" : packNamespaceBox.getValue())
-                    + "|" + (packDataPackToggle != null && packDataPackToggle.isOn());
+                    + "|" + safe(packNamespaceBox == null ? "" : packNamespaceBox.getValue());
             case PACK_OPTIONS -> "pack-options|" + safe(packNameBox == null ? "" : packNameBox.getValue())
-                    + "|" + (packDataPackToggle != null && packDataPackToggle.isOn())
                     + "|" + safe(packIconPathBox == null ? "" : packIconPathBox.getValue())
                     + "|" + safe(packDescriptionBox == null ? "" : packDescriptionBox.getValue());
             case CATEGORY -> "category|" + safe(catIdBox == null ? "" : catIdBox.getValue())
@@ -3580,10 +3213,6 @@ public final class QuestEditorScreen extends Screen {
         return String.format(Locale.ROOT, "%02d", max + 1);
     }
 
-    private PackOutputType currentEditedPackOutputType() {
-        return packDataPackToggle != null && packDataPackToggle.isOn() ? PackOutputType.DATA : PackOutputType.RESOURCE;
-    }
-
     private Path resourcePacksRoot() {
         return Minecraft.getInstance().gameDirectory.toPath()
                 .resolve("resourcepacks");
@@ -3598,10 +3227,6 @@ public final class QuestEditorScreen extends Screen {
                 .resolve("config")
                 .resolve("boundless")
                 .resolve("questpacks");
-    }
-
-    private Path packZipPath(String packName) {
-        return resourcePacksRoot().resolve(packName + ".zip");
     }
 
     private boolean isInvalidPackFolderName(String name) {
@@ -3679,17 +3304,7 @@ public final class QuestEditorScreen extends Screen {
         if (pack == null) return false;
         Path root = pack.root;
         if (Files.isDirectory(root)) return true;
-        if (Files.exists(root)) return false;
-
-        Path zip = packZipPath(pack.name);
-        if (!Files.exists(zip)) return false;
-
-        try {
-            unzipPack(zip, root);
-            return true;
-        } catch (IOException ignored) {
-        }
-        return false;
+        return !Files.exists(root);
     }
 
     private String findNamespace(Path root) {
@@ -3736,38 +3351,25 @@ public final class QuestEditorScreen extends Screen {
             if (pack != null && pack.has("description") && pack.get("description").isJsonPrimitive()) {
                 meta.description = safe(pack.get("description").getAsString());
             }
-            if (pack != null && pack.has("pack_format") && pack.get("pack_format").isJsonPrimitive()) {
-                int format = pack.get("pack_format").getAsInt();
-                if (format == SharedConstants.DATA_PACK_FORMAT) {
-                    meta.type = PackOutputType.DATA;
-                } else if (format == SharedConstants.RESOURCE_PACK_FORMAT) {
-                    meta.type = PackOutputType.RESOURCE;
-                }
-            }
             JsonObject boundless = obj.has("boundless") && obj.get("boundless").isJsonObject() ? obj.getAsJsonObject("boundless") : null;
             if (boundless != null && boundless.has("icon_path") && boundless.get("icon_path").isJsonPrimitive()) {
                 meta.iconPath = safe(boundless.get("icon_path").getAsString());
-            }
-            if (boundless != null && boundless.has("pack_type") && boundless.get("pack_type").isJsonPrimitive()) {
-                meta.type = PackOutputType.fromId(boundless.get("pack_type").getAsString());
             }
         } catch (Exception ignored) {
         }
         return meta;
     }
 
-    private void writePackMeta(Path root, String name, String description, String iconPath, PackOutputType type) throws IOException {
+    private void writePackMeta(Path root, String name, String description, String iconPath) throws IOException {
         JsonObject pack = new JsonObject();
         JsonObject body = new JsonObject();
-        PackOutputType resolvedType = type == null ? PackOutputType.RESOURCE : type;
-        body.addProperty("pack_format", resolvedType.packFormat());
+        body.addProperty("pack_format", 0);
         body.addProperty("description", description);
         pack.add("pack", body);
         JsonObject boundless = new JsonObject();
         if (iconPath != null && !iconPath.isBlank()) {
             boundless.addProperty("icon_path", iconPath);
         }
-        boundless.addProperty("pack_type", resolvedType.id());
         pack.add("boundless", boundless);
 
         Path meta = root.resolve("pack.mcmeta");
@@ -3790,86 +3392,6 @@ public final class QuestEditorScreen extends Screen {
         }
         try (var in = Minecraft.getInstance().getResourceManager().open(GENERATED_PACK_ICON)) {
             Files.copy(in, iconPath, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    private boolean zipCurrentPackSafe() {
-        if (currentPack == null) return true;
-        try {
-            zipPack(currentPack);
-            return true;
-        } catch (IOException ignored) {
-        }
-        return false;
-    }
-
-    private void zipPack(QuestPack pack) throws IOException {
-        if (pack == null || pack.root == null) return;
-        if (!Files.isDirectory(pack.root)) throw new IOException("Pack folder missing");
-
-        Path zipPath = packZipPath(pack.name);
-        Files.createDirectories(zipPath.getParent());
-
-        Path tmp = zipPath.resolveSibling(zipPath.getFileName().toString() + ".tmp");
-        Files.deleteIfExists(tmp);
-
-        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(tmp))) {
-            try (var walk = Files.walk(pack.root)) {
-                walk.forEach(path -> {
-                    String entryName = pack.root.relativize(path).toString().replace('\\', '/');
-                    if (entryName.isEmpty()) return;
-                    try {
-                        if (Files.isDirectory(path)) {
-                            if (!entryName.endsWith("/")) entryName += "/";
-                            zos.putNextEntry(new ZipEntry(entryName));
-                            zos.closeEntry();
-                            return;
-                        }
-                        ZipEntry entry = new ZipEntry(entryName);
-                        zos.putNextEntry(entry);
-                        Files.copy(path, zos);
-                        zos.closeEntry();
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
-                    }
-                });
-            }
-        } catch (UncheckedIOException e) {
-            throw e.getCause();
-        }
-
-        Files.move(tmp, zipPath, StandardCopyOption.REPLACE_EXISTING);
-    }
-
-    private void unzipPack(Path zipPath, Path destRoot) throws IOException {
-        if (zipPath == null || destRoot == null) return;
-        if (Files.exists(destRoot) && !Files.isDirectory(destRoot)) {
-            throw new IOException("Destination is not a directory");
-        }
-
-        Path safeRoot = destRoot.toAbsolutePath().normalize();
-        Files.createDirectories(safeRoot);
-
-        try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zipPath))) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                String rawName = entry.getName();
-                if (rawName == null || rawName.isBlank()) continue;
-                String cleanName = rawName.replace('\\', '/');
-                while (cleanName.startsWith("/")) cleanName = cleanName.substring(1);
-
-                Path out = safeRoot.resolve(cleanName).normalize();
-                if (!out.startsWith(safeRoot)) continue;
-
-                if (entry.isDirectory()) {
-                    Files.createDirectories(out);
-                    continue;
-                }
-
-                Path parent = out.getParent();
-                if (parent != null) Files.createDirectories(parent);
-                Files.copy(zis, out, StandardCopyOption.REPLACE_EXISTING);
-            }
         }
     }
 
@@ -3912,7 +3434,6 @@ public final class QuestEditorScreen extends Screen {
         state.packNamespace = safe(packNamespaceBox == null ? "" : packNamespaceBox.getValue());
         state.packIconPath = safe(packIconPathBox == null ? "" : packIconPathBox.getValue());
         state.packDescription = safe(packDescriptionBox == null ? "" : packDescriptionBox.getValue());
-        state.packDataPack = packDataPackToggle != null && packDataPackToggle.isOn();
 
         state.catId = safe(catIdBox == null ? "" : catIdBox.getValue());
         state.catName = safe(catNameBox == null ? "" : catNameBox.getValue());
@@ -3976,12 +3497,10 @@ public final class QuestEditorScreen extends Screen {
                 showPackCreate();
                 packNameBox.setValue(state.packName);
                 packNamespaceBox.setValue(state.packNamespace);
-                packDataPackToggle.setState(state.packDataPack);
             }
             case PACK_OPTIONS -> {
                 if (currentPack != null) {
                     showPackOptions(currentPack);
-                    packDataPackToggle.setState(state.packDataPack);
                     packNameBox.setValue(state.packName);
                     packIconPathBox.setValue(state.packIconPath);
                     packDescriptionBox.setValue(state.packDescription);
@@ -7280,34 +6799,6 @@ public final class QuestEditorScreen extends Screen {
     private static final class PackMeta {
         String description = "";
         String iconPath = "";
-        PackOutputType type = PackOutputType.RESOURCE;
-    }
-
-    private enum PackOutputType {
-        RESOURCE("resource", SharedConstants.RESOURCE_PACK_FORMAT),
-        DATA("data", SharedConstants.DATA_PACK_FORMAT);
-
-        private final String id;
-        private final int packFormat;
-
-        PackOutputType(String id, int packFormat) {
-            this.id = id;
-            this.packFormat = packFormat;
-        }
-
-        String id() {
-            return id;
-        }
-
-        int packFormat() {
-            return packFormat;
-        }
-
-        static PackOutputType fromId(String raw) {
-            if (raw == null || raw.isBlank()) return RESOURCE;
-            String value = raw.trim().toLowerCase(Locale.ROOT);
-            return "data".equals(value) || "datapack".equals(value) ? DATA : RESOURCE;
-        }
     }
 
     private static final class CategoryData {
@@ -7371,7 +6862,6 @@ public final class QuestEditorScreen extends Screen {
         String packNamespace = "";
         String packIconPath = "";
         String packDescription = "";
-        boolean packDataPack = false;
 
         String catId = "";
         String catName = "";
