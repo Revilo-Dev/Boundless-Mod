@@ -21,6 +21,7 @@ import net.minecraft.client.gui.components.Whence;
 import net.minecraft.client.gui.narration.NarratedElementType;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.ClickEvent;
@@ -32,7 +33,12 @@ import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 import net.minecraft.SharedConstants;
 import net.minecraft.util.StringUtil;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.SpawnEggItem;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MobCategory;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import net.revilodev.boundless.Config;
@@ -54,6 +60,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -92,14 +99,20 @@ public final class QuestEditorScreen extends Screen {
             ResourceLocation.withDefaultNamespace("widget/button_highlighted");
     private static final ResourceLocation TOGGLE_TEX_OFF =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/x_button.png");
+    private static final ResourceLocation TOGGLE_TEX_OFF_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/x_button-hovered.png");
     private static final ResourceLocation TOGGLE_TEX_ON =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/complete_filter.png");
     private static final ResourceLocation DUPLICATE_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/duplicate_button.png");
+    private static final ResourceLocation DUPLICATE_TEX_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/duplicate_button-hovered.png");
     private static final ResourceLocation DELETE_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/reject_filter.png");
     private static final ResourceLocation DELETE_CONFIRM_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/are_you_sure_button.png");
+    private static final ResourceLocation DELETE_CONFIRM_TEX_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/are_you_sure_button-hovered.png");
     private static final ResourceLocation MOVE_UP_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/move_up.png");
     private static final ResourceLocation MOVE_DOWN_TEX =
@@ -171,6 +184,8 @@ public final class QuestEditorScreen extends Screen {
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/pack.png");
     private static final ResourceLocation IMPORT_PACK_BUTTON_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/import-button.png");
+    private static final ResourceLocation IMPORT_PACK_BUTTON_TEX_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/import-button-hovered.png");
     private static final ResourceLocation PACK_ACTION_NEEDED_TEX =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/editor/quest_widget-action-needed.png");
     private static final ResourceLocation PACK_CHANGED_TEX =
@@ -246,6 +261,7 @@ public final class QuestEditorScreen extends Screen {
 
     private EditorListWidget leftList;
     private ActionButton saveButton;
+    private ActionButton exportPackButton;
     private IconButton duplicateButton;
     private IconButton deleteQuestButton;
 
@@ -305,6 +321,7 @@ public final class QuestEditorScreen extends Screen {
     private final List<EntryItemPickerButton> rewardEntryItemPickerButtons = new ArrayList<>();
     private final Map<ScaledMultiLineEditBox, String> entryTypeByBox = new HashMap<>();
     private final Map<ScaledMultiLineEditBox, String> selectedItemIdByBox = new HashMap<>();
+    private final Map<ScaledMultiLineEditBox, String> selectedItemComponentsByBox = new HashMap<>();
     private static final String LEGACY_PACK_TOOLTIP = "Downgrade to update 8 to convert this pack to a questpack, resource / data packs are no longer supported!";
     private boolean syncingEntryRows = false;
     private boolean entryRowsDirty = false;
@@ -351,6 +368,7 @@ public final class QuestEditorScreen extends Screen {
     private EntryRowKind itemPickerKind;
     private int itemPickerRow = -1;
     private ItemPickerTab itemPickerTab = ItemPickerTab.CREATIVE;
+    private PickerMode pickerMode = PickerMode.ITEMS;
     private int itemPickerPage = 0;
     private EditBox itemPickerSearchBox;
 
@@ -382,11 +400,16 @@ public final class QuestEditorScreen extends Screen {
         saveButton = new ActionButton(saveX, barY, 68, 20,
                 Component.literal("Save"), this::saveCurrent);
         addRenderableWidget(saveButton);
+        exportPackButton = new ActionButton(saveX - 70, barY, 68, 20,
+                Component.literal("Export"), this::exportCurrentPack);
+        exportPackButton.visible = false;
+        exportPackButton.active = false;
+        addRenderableWidget(exportPackButton);
 
         int deleteQuestX = saveX - SMALL_BTN_GAP - SMALL_BTN_SIZE;
         int duplicateX = deleteQuestX - SMALL_BTN_GAP - SMALL_BTN_SIZE;
-        duplicateButton = new IconButton(duplicateX, barY, SMALL_BTN_SIZE, DUPLICATE_TEX, this::duplicateCurrent);
-        deleteQuestButton = new IconButton(deleteQuestX, barY, SMALL_BTN_SIZE, DELETE_TEX, this::handleDeleteButtonPress);
+        duplicateButton = new IconButton(duplicateX, barY, SMALL_BTN_SIZE, DUPLICATE_TEX, DUPLICATE_TEX_HOVER, this::duplicateCurrent);
+        deleteQuestButton = new IconButton(deleteQuestX, barY, SMALL_BTN_SIZE, DELETE_TEX, DELETE_CONFIRM_TEX_HOVER, this::handleDeleteButtonPress);
         addRenderableWidget(duplicateButton);
         addRenderableWidget(deleteQuestButton);
 
@@ -396,7 +419,7 @@ public final class QuestEditorScreen extends Screen {
                 .bounds(pxLeft + 2 + backButton.getWidth() + BOTTOM_CREATE_GAP + CREATE_PACK_BUTTON_OFFSET_X, barY, 72, 20)
                 .build();
         addRenderableWidget(createPackButton);
-        importQuestPackButton = new IconButton(createPackButton.getX() + createPackButton.getWidth() + 2, barY, SMALL_BTN_SIZE, IMPORT_PACK_BUTTON_TEX, this::openImportQuestPackDirectory);
+        importQuestPackButton = new IconButton(createPackButton.getX() + createPackButton.getWidth() + 2, barY, SMALL_BTN_SIZE, IMPORT_PACK_BUTTON_TEX, IMPORT_PACK_BUTTON_TEX_HOVER, this::openImportQuestPackDirectory);
         addRenderableWidget(importQuestPackButton);
         categoriesTabButton = new EditorTabButton("Categories", "boundless:quest_book", Mode.CATEGORY_LIST);
         subCategoriesTabButton = new EditorTabButton("Sub-categories", "minecraft:book", Mode.SUBCATEGORY_LIST);
@@ -636,7 +659,7 @@ public final class QuestEditorScreen extends Screen {
         out.add(new EditorEntry(ENTRY_NEW, "Create New Sub", "", ""));
         if (currentPack == null) return out;
         for (NamedEntry entry : listSubCategoryEntries(currentPack)) {
-            out.add(EditorEntry.normal(entry.id, entry.name, entry.id, entry.icon));
+            out.add(EditorEntry.movable(entry.id, entry.name, entry.id, entry.icon));
         }
         return out;
     }
@@ -1076,6 +1099,10 @@ public final class QuestEditorScreen extends Screen {
         saveButton.setMessage(Component.literal("Save"));
         saveButton.visible = true;
         saveButton.active = true;
+        if (exportPackButton != null) {
+            exportPackButton.visible = true;
+            exportPackButton.active = true;
+        }
         markCurrentEditorLoaded(true);
         updateBackButtonVisibility();
     }
@@ -1697,7 +1724,11 @@ public final class QuestEditorScreen extends Screen {
 
     private void updateDeleteButtonTexture() {
         if (deleteQuestButton != null) {
-            deleteQuestButton.setTexture(deleteConfirmArmed ? DELETE_CONFIRM_TEX : DELETE_TEX);
+            if (deleteConfirmArmed) {
+                deleteQuestButton.setTextures(DELETE_CONFIRM_TEX, DELETE_CONFIRM_TEX_HOVER);
+            } else {
+                deleteQuestButton.setTextures(DELETE_TEX, DELETE_CONFIRM_TEX_HOVER);
+            }
         }
     }
 
@@ -2343,6 +2374,48 @@ public final class QuestEditorScreen extends Screen {
         }
     }
 
+    private void exportCurrentPack() {
+        if (currentPack == null || currentPack.root == null || !Files.isDirectory(currentPack.root)) {
+            setError("No questpack to export");
+            return;
+        }
+        Path exportRoot = Minecraft.getInstance().gameDirectory.toPath()
+                .resolve("config")
+                .resolve("boundless")
+                .resolve("exports");
+        try {
+            Files.createDirectories(exportRoot);
+            String base = safe(currentPack.name).isBlank() ? "questpack" : currentPack.name;
+            Path zipPath = exportRoot.resolve(base + ".zip");
+            int suffix = 1;
+            while (Files.exists(zipPath)) {
+                zipPath = exportRoot.resolve(base + "-" + suffix + ".zip");
+                suffix++;
+            }
+            zipDirectory(currentPack.root, zipPath);
+            statusMessage = "Exported: " + zipPath.getFileName();
+            statusColor = 0xA0FFA0;
+            Util.getPlatform().openFile(exportRoot.toFile());
+        } catch (Exception e) {
+            setError("Failed to export questpack");
+        }
+    }
+
+    private void zipDirectory(Path sourceRoot, Path zipPath) throws IOException {
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zipPath))) {
+            try (var walk = Files.walk(sourceRoot)) {
+                for (Path src : (Iterable<Path>) walk::iterator) {
+                    if (Files.isDirectory(src)) continue;
+                    Path rel = sourceRoot.relativize(src);
+                    String entryName = rel.toString().replace('\\', '/');
+                    zos.putNextEntry(new ZipEntry(entryName));
+                    Files.copy(src, zos);
+                    zos.closeEntry();
+                }
+            }
+        }
+    }
+
     private String invokeString(Object target, String... methods) {
         Object result = invokeObject(target, methods);
         return result instanceof String s ? s : null;
@@ -2372,6 +2445,10 @@ public final class QuestEditorScreen extends Screen {
         setActiveFields(List.of());
         saveButton.visible = false;
         saveButton.active = false;
+        if (exportPackButton != null) {
+            exportPackButton.visible = false;
+            exportPackButton.active = false;
+        }
         updateBackButtonVisibility();
     }
 
@@ -2509,6 +2586,7 @@ public final class QuestEditorScreen extends Screen {
         try {
             for (ScaledMultiLineEditBox box : target) {
                 selectedItemIdByBox.remove(box);
+                selectedItemComponentsByBox.remove(box);
                 entryTypeByBox.remove(box);
                 removeWidget(box);
             }
@@ -2542,11 +2620,22 @@ public final class QuestEditorScreen extends Screen {
                     ParsedEntry parsed = parseEntry(line);
                     String normalizedType = normalizeRowType(kind, parsed == null ? "" : parsed.type);
                     entryTypeByBox.put(box, normalizedType);
-                    if (parsed != null && isItemPickerType(kind, normalizedType)) {
-                        String itemId = normalizeNamespacedId(parsed.id, false);
+                    if (parsed != null && hasRowBrowser(kind, normalizedType)) {
+                        String parsedId = safe(parsed.id).trim();
+                        String itemId = parsedId;
+                        String components = "";
+                        int compStart = parsedId.indexOf('[');
+                        if (compStart > 0) {
+                            itemId = parsedId.substring(0, compStart).trim();
+                            components = parsedId.substring(compStart).trim();
+                        }
+                        itemId = normalizeNamespacedId(itemId, false);
                         selectedItemIdByBox.put(box, itemId);
-                        box.setValue(displayNameForItem(itemId) + " " + Math.max(1, parsed.count));
+                        if (!components.isBlank()) selectedItemComponentsByBox.put(box, components);
+                        else selectedItemComponentsByBox.remove(box);
+                        box.setValue(displayNameForItem(itemId) + (components.isBlank() ? "" : " " + components) + " " + Math.max(1, parsed.count));
                     } else {
+                        selectedItemComponentsByBox.remove(box);
                         box.setValue(line);
                     }
                 } else {
@@ -2687,6 +2776,7 @@ public final class QuestEditorScreen extends Screen {
 
         ScaledMultiLineEditBox removed = rows.remove(idx);
         selectedItemIdByBox.remove(removed);
+        selectedItemComponentsByBox.remove(removed);
         entryTypeByBox.remove(removed);
         removeWidget(removed);
         EntryRemoveButton removedButton = buttons.remove(idx);
@@ -2725,11 +2815,12 @@ public final class QuestEditorScreen extends Screen {
         if (kind == EntryRowKind.DEPENDENCY) return raw;
         String type = effectiveRowType(kind, box);
         if (raw.isBlank()) return "";
-        if (isItemPickerType(kind, type)) {
+        if (hasRowBrowser(kind, type)) {
             String itemId = safe(selectedItemIdByBox.get(box)).trim();
+            String components = safe(selectedItemComponentsByBox.get(box)).trim();
             ParsedEntry parsedRaw = parseEntry(raw);
             int count = parsedRaw == null ? 1 : Math.max(1, parsedRaw.count);
-            if (!itemId.isBlank()) return type + ": " + itemId + " " + count;
+            if (!itemId.isBlank()) return type + ": " + itemId + (components.isBlank() ? "" : components) + " " + count;
         }
         ParsedEntry parsed = parseEntry(raw);
         String body;
@@ -2827,7 +2918,7 @@ public final class QuestEditorScreen extends Screen {
             LockToggleButton lockButton = dependency && i < lockButtons.size() ? lockButtons.get(i) : null;
             EntryTypeButton typeButton = typed && i < typeButtons.size() ? typeButtons.get(i) : null;
             EntryItemPickerButton pickerButton = typed && i < pickerButtons.size() ? pickerButtons.get(i) : null;
-            boolean canPickItem = typed && isItemPickerType(kind, effectiveRowType(kind, box));
+            boolean canPickItem = typed && hasRowBrowser(kind, effectiveRowType(kind, box));
             int pickerSpace = canPickItem ? (ENTRY_ITEM_PICK_BTN_W + 2) : 0;
             box.setX(x + iconSpace + typeSpace);
             box.setY(cursorY);
@@ -3240,6 +3331,7 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private List<QuestPack> listPacks() {
+        migrateLegacyResourcePackQuestPacks();
         List<QuestPack> packs = new ArrayList<>();
         Set<String> seen = new HashSet<>();
 
@@ -3251,21 +3343,6 @@ public final class QuestEditorScreen extends Screen {
                     String name = path.getFileName().toString();
                     String namespace = findNamespace(path);
                     packs.add(new QuestPack(name, namespace, path, false));
-                    seen.add(name);
-                }
-            } catch (IOException ignored) {
-            }
-        }
-
-        Path legacyRoot = resourcePacksRoot().resolve("boundless");
-        if (Files.exists(legacyRoot)) {
-            try (DirectoryStream<Path> stream = Files.newDirectoryStream(legacyRoot)) {
-                for (Path path : stream) {
-                    if (!Files.isDirectory(path)) continue;
-                    String name = path.getFileName().toString();
-                    if (seen.contains(name)) continue;
-                    String namespace = findNamespace(path);
-                    packs.add(new QuestPack(name, namespace, path, true));
                     seen.add(name);
                 }
             } catch (IOException ignored) {
@@ -3291,6 +3368,24 @@ public final class QuestEditorScreen extends Screen {
 
         packs.sort(Comparator.comparing(a -> a.name.toLowerCase(Locale.ROOT)));
         return packs;
+    }
+
+    private void migrateLegacyResourcePackQuestPacks() {
+        Path legacyRoot = resourcePacksRoot().resolve("boundless");
+        if (!Files.isDirectory(legacyRoot)) return;
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(legacyRoot)) {
+            for (Path path : stream) {
+                if (!Files.isDirectory(path)) continue;
+                String namespace = findNamespace(path);
+                if (namespace.isBlank()) continue;
+                Path questsDir = path.resolve("data").resolve(namespace).resolve("quests");
+                if (!Files.isDirectory(questsDir)) continue;
+                Path target = packsRoot().resolve(path.getFileName().toString());
+                if (Files.exists(target)) continue;
+                mirrorDirectory(path, target);
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private QuestPack findPackByName(String name) {
@@ -3778,12 +3873,14 @@ public final class QuestEditorScreen extends Screen {
         boolean leftVisible = leftList != null && leftList.visible;
         boolean backVisible = backButton != null && backButton.visible;
         boolean saveVisible = saveButton != null && saveButton.visible;
+        boolean exportVisible = exportPackButton != null && exportPackButton.visible;
         boolean duplicateVisible = duplicateButton != null && duplicateButton.visible;
         boolean deleteQuestVisible = deleteQuestButton != null && deleteQuestButton.visible;
         boolean questSearchVisible = questSearchBox != null && questSearchBox.visible;
         if (leftList != null) leftList.visible = false;
         if (backButton != null) backButton.visible = false;
         if (saveButton != null) saveButton.visible = false;
+        if (exportPackButton != null) exportPackButton.visible = false;
         if (duplicateButton != null) duplicateButton.visible = false;
         if (deleteQuestButton != null) deleteQuestButton.visible = false;
         if (questSearchBox != null) questSearchBox.visible = false;
@@ -3795,6 +3892,7 @@ public final class QuestEditorScreen extends Screen {
         if (leftList != null) leftList.visible = leftVisible;
         if (backButton != null) backButton.visible = backVisible;
         if (saveButton != null) saveButton.visible = saveVisible;
+        if (exportPackButton != null) exportPackButton.visible = exportVisible;
         if (duplicateButton != null) duplicateButton.visible = duplicateVisible;
         if (deleteQuestButton != null) deleteQuestButton.visible = deleteQuestVisible;
         if (questSearchBox != null) questSearchBox.visible = questSearchVisible;
@@ -3802,6 +3900,7 @@ public final class QuestEditorScreen extends Screen {
         if (leftList != null && leftList.visible) leftList.render(gg, mouseX, mouseY, partialTick);
         if (backButton != null && backButton.visible) backButton.render(gg, mouseX, mouseY, partialTick);
         if (saveButton != null && saveButton.visible) saveButton.render(gg, mouseX, mouseY, partialTick);
+        if (exportPackButton != null && exportPackButton.visible) exportPackButton.render(gg, mouseX, mouseY, partialTick);
         if (duplicateButton != null && duplicateButton.visible) duplicateButton.render(gg, mouseX, mouseY, partialTick);
         if (deleteQuestButton != null && deleteQuestButton.visible) deleteQuestButton.render(gg, mouseX, mouseY, partialTick);
         if (questSearchBox != null && questSearchBox.visible) questSearchBox.render(gg, mouseX, mouseY, partialTick);
@@ -4106,7 +4205,7 @@ public final class QuestEditorScreen extends Screen {
         }
         EntryRowKind rowKind = rowKindForField(field);
         if ((rowKind == EntryRowKind.COMPLETION || rowKind == EntryRowKind.REWARD)
-                && isItemPickerType(rowKind, effectiveRowType(rowKind, field))) {
+                && hasRowBrowser(rowKind, effectiveRowType(rowKind, field))) {
             return List.of();
         }
         MultiLineEntryContext ctx = parseMultiLineEntryContext(field);
@@ -4439,6 +4538,17 @@ public final class QuestEditorScreen extends Screen {
                 }
             }
             yCursor += font.lineHeight + FIELD_LABEL_GAP + widgetHeight + FIELD_ROW_GAP;
+            if (editorType == EditorType.PACK_OPTIONS && field.widget == packNamespaceBox && exportPackButton != null) {
+                int exportX = boxX;
+                int exportY = yCursor;
+                exportPackButton.setX(exportX);
+                exportPackButton.setY(exportY);
+                exportPackButton.setWidth(pw - 4);
+                exportPackButton.setHeight(20);
+                exportPackButton.visible = true;
+                exportPackButton.active = true;
+                yCursor += exportPackButton.getHeight() + FIELD_ROW_GAP;
+            }
             if (field.widget == questDescriptionBox) {
                 yCursor += FORMAT_BAR_GAP + FORMAT_BAR_H;
             }
@@ -4538,6 +4648,9 @@ public final class QuestEditorScreen extends Screen {
         int total = 0;
         for (FormField field : activeFields) {
             total += font.lineHeight + FIELD_LABEL_GAP + fieldHeight(field) + FIELD_ROW_GAP;
+            if (editorType == EditorType.PACK_OPTIONS && field.widget == packNamespaceBox) {
+                total += 20 + FIELD_ROW_GAP;
+            }
         }
         return total;
     }
@@ -4821,6 +4934,11 @@ public final class QuestEditorScreen extends Screen {
             deleteQuestButton.visible = showQuestActions;
             deleteQuestButton.active = showQuestActions;
         }
+        if (exportPackButton != null) {
+            boolean showExport = editorType == EditorType.PACK_OPTIONS && currentPack != null;
+            exportPackButton.visible = showExport;
+            exportPackButton.active = showExport;
+        }
 
         if (questSearchBox != null) {
             questSearchBox.visible = mode == Mode.QUEST_LIST;
@@ -5002,6 +5120,10 @@ public final class QuestEditorScreen extends Screen {
             saveButton.onPress();
             return true;
         }
+        if (exportPackButton != null && exportPackButton.visible && exportPackButton.active && exportPackButton.isMouseOver(mouseX, mouseY)) {
+            exportPackButton.onPress();
+            return true;
+        }
         if (backButton != null && backButton.visible && backButton.active && backButton.isMouseOver(mouseX, mouseY)) {
             backButton.onPress();
             return true;
@@ -5095,9 +5217,19 @@ public final class QuestEditorScreen extends Screen {
         return super.charTyped(codePoint, modifiers);
     }
 
-    private boolean isItemPickerType(EntryRowKind kind, String type) {
-        if (kind == EntryRowKind.COMPLETION) return "collect".equals(type) || "submit".equals(type);
-        return kind == EntryRowKind.REWARD && "item".equals(type);
+    private PickerMode pickerModeForType(EntryRowKind kind, String type) {
+        if (kind == EntryRowKind.REWARD && "item".equals(type)) return PickerMode.ITEMS;
+        if (kind != EntryRowKind.COMPLETION) return PickerMode.NONE;
+        return switch (type) {
+            case "collect", "submit" -> PickerMode.ITEMS;
+            case "kill", "entity" -> PickerMode.MOBS;
+            case "effect" -> PickerMode.EFFECTS;
+            default -> PickerMode.NONE;
+        };
+    }
+
+    private boolean hasRowBrowser(EntryRowKind kind, String type) {
+        return pickerModeForType(kind, type) != PickerMode.NONE;
     }
 
     private void openTypeMenu(EntryRowKind kind, int row, int x, int y, int w) {
@@ -5178,8 +5310,9 @@ public final class QuestEditorScreen extends Screen {
         ScaledMultiLineEditBox box = rows.get(row);
         String normalized = normalizeRowType(kind, type);
         entryTypeByBox.put(box, normalized);
-        if (!isItemPickerType(kind, normalized)) {
+        if (pickerModeForType(kind, normalized) == PickerMode.NONE) {
             selectedItemIdByBox.remove(box);
+            selectedItemComponentsByBox.remove(box);
         }
         entryRowsDirty = true;
         syncEntryBackingValues();
@@ -5191,8 +5324,12 @@ public final class QuestEditorScreen extends Screen {
 
     private void openItemPicker(EntryRowKind kind, int row) {
         if (row < 0 || row >= entryRows(kind).size()) return;
+        String type = effectiveRowType(kind, entryRows(kind).get(row));
+        PickerMode mode = pickerModeForType(kind, type);
+        if (mode == PickerMode.NONE) return;
         itemPickerKind = kind;
         itemPickerRow = row;
+        pickerMode = mode;
         itemPickerPage = 0;
         if (itemPickerSearchBox == null) {
             itemPickerSearchBox = new EditBox(font, 0, 0, ITEM_PICKER_W - 12, 14, Component.literal("Search"));
@@ -5232,7 +5369,7 @@ public final class QuestEditorScreen extends Screen {
             closeItemPicker();
             return true;
         }
-        if (mouseY >= y + 18 && mouseY <= y + 30) {
+        if (pickerMode == PickerMode.ITEMS && mouseY >= y + 18 && mouseY <= y + 30) {
             itemPickerTab = mouseX < x + ITEM_PICKER_W / 2 ? ItemPickerTab.CREATIVE : ItemPickerTab.INVENTORY;
             itemPickerPage = 0;
             return true;
@@ -5244,11 +5381,16 @@ public final class QuestEditorScreen extends Screen {
             int col = (int) ((mouseX - gridX) / ITEM_PICKER_CELL);
             int row = (int) ((mouseY - gridY) / ITEM_PICKER_CELL);
             int idx = row * ITEM_PICKER_COLS + col;
-            List<ItemStack> items = itemPickerItems();
+            List<ItemStack> items = itemPickerDisplayItems();
             int start = itemPickerPage * (ITEM_PICKER_COLS * ITEM_PICKER_ROWS);
             int at = start + idx;
             if (at >= 0 && at < items.size()) {
-                applyPickedItem(items.get(at));
+                if (pickerMode == PickerMode.MOBS) {
+                    List<String> mobIds = mobPickerIds();
+                    if (at < mobIds.size()) applyPickedMob(mobIds.get(at));
+                } else {
+                    applyPickedItem(items.get(at));
+                }
                 closeItemPicker();
             }
             return true;
@@ -5262,7 +5404,7 @@ public final class QuestEditorScreen extends Screen {
         int y = (height - ITEM_PICKER_H) / 2;
         if (mouseX < x || mouseX > x + ITEM_PICKER_W || mouseY < y || mouseY > y + ITEM_PICKER_H) return false;
         int pageSize = ITEM_PICKER_COLS * ITEM_PICKER_ROWS;
-        int maxPage = Math.max(0, (itemPickerItems().size() - 1) / pageSize);
+        int maxPage = Math.max(0, (itemPickerDisplayItems().size() - 1) / pageSize);
         itemPickerPage = Mth.clamp(itemPickerPage - (delta > 0 ? 1 : -1), 0, maxPage);
         return true;
     }
@@ -5276,11 +5418,17 @@ public final class QuestEditorScreen extends Screen {
         gg.fill(x, y + ITEM_PICKER_H - 1, x + ITEM_PICKER_W, y + ITEM_PICKER_H, 0xFFFFFFFF);
         gg.fill(x, y, x + 1, y + ITEM_PICKER_H, 0xFFFFFFFF);
         gg.fill(x + ITEM_PICKER_W - 1, y, x + ITEM_PICKER_W, y + ITEM_PICKER_H, 0xFFFFFFFF);
-        String title = "Item Browser";
+        String title = switch (pickerMode) {
+            case EFFECTS -> "Effect Browser";
+            case MOBS -> "Mob Browser";
+            default -> "Item Browser";
+        };
         gg.drawString(font, title, x + (ITEM_PICKER_W - font.width(title)) / 2, y + 4, 0xFFFFFFFF, false);
         gg.drawString(font, "X", x + ITEM_PICKER_W - 10, y + 3, 0xFFFFFF00, false);
-        renderPickerTab(gg, mouseX, mouseY, x + 4, y + 12, ITEM_PICKER_W / 2 - 6, "All Items", itemPickerTab == ItemPickerTab.CREATIVE);
-        renderPickerTab(gg, mouseX, mouseY, x + ITEM_PICKER_W / 2 + 1, y + 12, ITEM_PICKER_W / 2 - 5, "Inventory", itemPickerTab == ItemPickerTab.INVENTORY);
+        if (pickerMode == PickerMode.ITEMS) {
+            renderPickerTab(gg, mouseX, mouseY, x + 4, y + 12, ITEM_PICKER_W / 2 - 6, "All Items", itemPickerTab == ItemPickerTab.CREATIVE);
+            renderPickerTab(gg, mouseX, mouseY, x + ITEM_PICKER_W / 2 + 1, y + 12, ITEM_PICKER_W / 2 - 5, "Inventory", itemPickerTab == ItemPickerTab.INVENTORY);
+        }
         if (itemPickerSearchBox != null) {
             itemPickerSearchBox.setX(x + 4);
             itemPickerSearchBox.setY(y + ITEM_PICKER_H - 16);
@@ -5288,11 +5436,13 @@ public final class QuestEditorScreen extends Screen {
             itemPickerSearchBox.setTextColor(0xFFFFFF00);
             itemPickerSearchBox.visible = true;
         }
-        List<ItemStack> items = itemPickerItems();
+        List<ItemStack> items = itemPickerDisplayItems();
+        List<String> mobIds = pickerMode == PickerMode.MOBS ? mobPickerIds() : List.of();
         int gridX = x + 5;
         int gridY = y + 24;
         int start = itemPickerPage * (ITEM_PICKER_COLS * ITEM_PICKER_ROWS);
         ItemStack hovered = ItemStack.EMPTY;
+        int hoveredIndex = -1;
         for (int i = 0; i < ITEM_PICKER_COLS * ITEM_PICKER_ROWS; i++) {
             int at = start + i;
             int col = i % ITEM_PICKER_COLS;
@@ -5304,11 +5454,30 @@ public final class QuestEditorScreen extends Screen {
             gg.fill(sx, sy, sx + 16, sy + 16, 0xFF111111);
             if (at < items.size()) {
                 ItemStack stack = items.get(at);
-                gg.renderItem(stack, sx, sy);
-                if (cellHover) hovered = stack;
+                if (pickerMode == PickerMode.EFFECTS) {
+                    renderEffectPickerIcon(gg, stack, sx, sy);
+                } else if (pickerMode == PickerMode.MOBS && at < mobIds.size()) {
+                    renderMobPreview(gg, mobIds.get(at), sx, sy);
+                } else {
+                    gg.renderItem(stack, sx, sy);
+                }
+                if (cellHover) {
+                    hovered = stack;
+                    hoveredIndex = at;
+                }
             }
         }
-        if (!hovered.isEmpty()) gg.renderTooltip(font, hovered, mouseX, mouseY);
+        if (!hovered.isEmpty()) {
+            if (pickerMode == PickerMode.MOBS && hoveredIndex >= 0 && hoveredIndex < items.size()) {
+                String mobId = hoveredIndex < mobIds.size() ? mobIds.get(hoveredIndex) : "";
+                Component mobName = mobDisplayNameForMobId(mobId);
+                gg.renderTooltip(font, mobName, mouseX, mouseY);
+            } else if (pickerMode == PickerMode.EFFECTS) {
+                gg.renderTooltip(font, effectDisplayNameForPickerItem(hovered), mouseX, mouseY);
+            } else {
+                gg.renderTooltip(font, hovered, mouseX, mouseY);
+            }
+        }
         if (itemPickerSearchBox != null) {
             itemPickerSearchBox.render(gg, mouseX, mouseY, 0f);
         }
@@ -5343,30 +5512,201 @@ public final class QuestEditorScreen extends Screen {
         return out;
     }
 
+    private List<ItemStack> itemPickerDisplayItems() {
+        if (pickerMode == PickerMode.ITEMS) return itemPickerItems();
+        String query = safe(itemPickerSearchBox == null ? "" : itemPickerSearchBox.getValue()).trim().toLowerCase(Locale.ROOT);
+        List<ItemStack> out = new ArrayList<>();
+        switch (pickerMode) {
+            case EFFECTS -> {
+                ensureEffectIdCache();
+                for (String effectId : effectIdCache) {
+                    if (!query.isBlank() && !effectId.toLowerCase(Locale.ROOT).contains(query)) continue;
+                    out.add(effectIconStack(effectId));
+                }
+            }
+            case MOBS -> {
+                for (String ignored : mobPickerIds()) out.add(new ItemStack(net.minecraft.world.item.Items.EGG));
+            }
+            default -> {
+            }
+        }
+        return out;
+    }
+
+    private List<String> mobPickerIds() {
+        ensureEntityIdCache();
+        String query = safe(itemPickerSearchBox == null ? "" : itemPickerSearchBox.getValue()).trim().toLowerCase(Locale.ROOT);
+        List<String> out = new ArrayList<>();
+        for (String entityId : entityIdCache) {
+            if (!isSelectableMobEntityId(entityId)) continue;
+            if (!query.isBlank() && !entityId.toLowerCase(Locale.ROOT).contains(query)) continue;
+            out.add(entityId);
+        }
+        return out;
+    }
+
+    private boolean isSelectableMobEntityId(String entityId) {
+        ResourceLocation rl = ResourceLocation.tryParse(safe(entityId).trim());
+        if (rl == null || !BuiltInRegistries.ENTITY_TYPE.containsKey(rl)) return false;
+        if ("minecraft".equals(rl.getNamespace()) && "giant".equals(rl.getPath())) return false;
+        MobCategory category = BuiltInRegistries.ENTITY_TYPE.get(rl).getCategory();
+        return category != MobCategory.MISC;
+    }
+
     private void applyPickedItem(ItemStack picked) {
         if (!isItemPickerOpen()) return;
         List<ScaledMultiLineEditBox> rows = entryRows(itemPickerKind);
         if (itemPickerRow < 0 || itemPickerRow >= rows.size() || picked == null || picked.isEmpty()) return;
         ScaledMultiLineEditBox box = rows.get(itemPickerRow);
-        String id = BuiltInRegistries.ITEM.getKey(picked.getItem()).toString();
+        String id;
+        if (pickerMode == PickerMode.EFFECTS) {
+            id = effectIdFromStack(picked);
+        } else if (pickerMode == PickerMode.MOBS) {
+            id = mobIdFromStack(picked);
+        } else {
+            id = BuiltInRegistries.ITEM.getKey(picked.getItem()).toString();
+        }
+        if (id == null || id.isBlank()) return;
         selectedItemIdByBox.put(box, id);
+        if (pickerMode == PickerMode.ITEMS && itemPickerTab == ItemPickerTab.INVENTORY) {
+            String components = safe(describeStackComponents(picked)).trim();
+            if (components.isBlank() || "{}".equals(components)) selectedItemComponentsByBox.remove(box);
+            else selectedItemComponentsByBox.put(box, components);
+        } else {
+            selectedItemComponentsByBox.remove(box);
+        }
         String itemName = picked.getHoverName().getString();
-        String value = itemName + " " + Math.max(1, picked.getCount());
+        String value = switch (pickerMode) {
+            case MOBS -> itemName + " 1";
+            case EFFECTS -> itemName;
+            default -> itemName
+                    + (safe(selectedItemComponentsByBox.get(box)).isBlank() ? "" : " " + safe(selectedItemComponentsByBox.get(box)).trim())
+                    + " " + Math.max(1, picked.getCount());
+        };
         box.setValue(value);
         box.setFocused(true);
         entryRowsDirty = true;
         syncEntryBackingValues();
     }
 
+    private void applyPickedMob(String mobId) {
+        if (!isItemPickerOpen()) return;
+        List<ScaledMultiLineEditBox> rows = entryRows(itemPickerKind);
+        if (itemPickerRow < 0 || itemPickerRow >= rows.size()) return;
+        if (mobId == null || mobId.isBlank()) return;
+        ScaledMultiLineEditBox box = rows.get(itemPickerRow);
+        selectedItemIdByBox.put(box, mobId);
+        selectedItemComponentsByBox.remove(box);
+        box.setValue(mobDisplayNameForMobId(mobId).getString() + " 1");
+        box.setFocused(true);
+        entryRowsDirty = true;
+        syncEntryBackingValues();
+    }
+
+    private void renderEffectPickerIcon(GuiGraphics gg, ItemStack stack, int x, int y) {
+        String effectId = effectIdFromStack(stack);
+        ResourceLocation rl = ResourceLocation.tryParse(effectId);
+        if (rl != null) {
+            ResourceLocation tex = ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/effects/" + rl.getPath() + ".png");
+            if (Minecraft.getInstance().getResourceManager().getResource(tex).isPresent()) {
+                gg.blit(tex, x, y, 0, 0, 16, 16, 16, 16);
+                return;
+            }
+        }
+        gg.renderItem(new ItemStack(net.minecraft.world.item.Items.POTION), x, y);
+    }
+
+    private ItemStack effectIconStack(String effectId) {
+        ResourceLocation rl = ResourceLocation.tryParse(effectId);
+        if (rl != null) {
+            ResourceLocation tex = ResourceLocation.fromNamespaceAndPath(
+                    "boundless",
+                    "textures/gui/effects/" + rl.getPath() + ".png");
+            if (Minecraft.getInstance().getResourceManager().getResource(tex).isPresent()) {
+                ItemStack stack = new ItemStack(net.minecraft.world.item.Items.POTION);
+                stack.set(net.minecraft.core.component.DataComponents.ITEM_NAME, Component.literal(effectId));
+                return stack;
+            }
+        }
+        return new ItemStack(net.minecraft.world.item.Items.POTION);
+    }
+
+    private ItemStack mobEggIconStack(String entityId) {
+        ResourceLocation entityRl = ResourceLocation.tryParse(entityId);
+        if (entityRl == null) return ItemStack.EMPTY;
+        ResourceLocation eggRl = ResourceLocation.fromNamespaceAndPath(entityRl.getNamespace(), entityRl.getPath() + "_spawn_egg");
+        if (BuiltInRegistries.ITEM.containsKey(eggRl)) {
+            return new ItemStack(BuiltInRegistries.ITEM.get(eggRl));
+        }
+        for (Item item : BuiltInRegistries.ITEM) {
+            if (!(item instanceof SpawnEggItem)) continue;
+            ResourceLocation key = BuiltInRegistries.ITEM.getKey(item);
+            if (key != null && key.getPath().contains(entityRl.getPath())) {
+                return new ItemStack(item);
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private Component mobDisplayNameForMobId(String id) {
+        ResourceLocation rl = ResourceLocation.tryParse(id);
+        if (rl != null && BuiltInRegistries.ENTITY_TYPE.containsKey(rl)) {
+            return BuiltInRegistries.ENTITY_TYPE.get(rl).getDescription();
+        }
+        return Component.literal(id);
+    }
+
+    private Component effectDisplayNameForPickerItem(ItemStack stack) {
+        String id = effectIdFromStack(stack);
+        ResourceLocation rl = ResourceLocation.tryParse(id);
+        if (rl != null && BuiltInRegistries.MOB_EFFECT.containsKey(rl)) {
+            return BuiltInRegistries.MOB_EFFECT.get(rl).getDisplayName();
+        }
+        return Component.literal(id);
+    }
+
+    private String effectIdFromStack(ItemStack stack) {
+        String name = stack.getHoverName().getString();
+        if (name == null || name.isBlank()) return "";
+        for (String effectId : effectIdCache) {
+            if (effectId.equals(name)) return effectId;
+        }
+        return "";
+    }
+
+    private String mobIdFromStack(ItemStack stack) {
+        Item item = stack.getItem();
+        ResourceLocation key = BuiltInRegistries.ITEM.getKey(item);
+        if (key == null) return "";
+        String path = key.getPath();
+        if (!path.endsWith("_spawn_egg")) return "";
+        String entityPath = path.substring(0, path.length() - "_spawn_egg".length());
+        String id = key.getNamespace() + ":" + entityPath;
+        return entityIdCache.contains(id) ? id : "";
+    }
+
+    private void renderMobPreview(GuiGraphics gg, String mobId, int x, int y) {
+        if (minecraft == null || minecraft.level == null) return;
+        ResourceLocation rl = ResourceLocation.tryParse(mobId);
+        if (rl == null || !BuiltInRegistries.ENTITY_TYPE.containsKey(rl)) return;
+        Entity entity = BuiltInRegistries.ENTITY_TYPE.get(rl).create(minecraft.level);
+        if (!(entity instanceof LivingEntity living)) return;
+        InventoryScreen.renderEntityInInventoryFollowsMouse(gg, x, y, x + 16, y + 16, 8, 0f, 0f, 0f, living);
+    }
+
     private ItemStack selectedItemForRow(EntryRowKind kind, int row) {
         List<ScaledMultiLineEditBox> rows = entryRows(kind);
         if (row < 0 || row >= rows.size()) return ItemStack.EMPTY;
-        String idPart = safe(selectedItemIdByBox.get(rows.get(row))).trim();
+        ScaledMultiLineEditBox box = rows.get(row);
+        String type = effectiveRowType(kind, box);
+        String idPart = safe(selectedItemIdByBox.get(box)).trim();
         if (idPart.isBlank()) {
-            ParsedEntry parsed = parseEntry(composeEntryRowLine(kind, rows.get(row)));
+            ParsedEntry parsed = parseEntry(composeEntryRowLine(kind, box));
             if (parsed == null || parsed.id.isBlank()) return ItemStack.EMPTY;
             idPart = parsed.id.trim().split("\\s+")[0];
         }
+        if ("effect".equals(type)) return effectIconStack(idPart);
+        if ("kill".equals(type) || "entity".equals(type)) return mobEggIconStack(idPart);
         String normalized = normalizeNamespacedId(idPart, false);
         ResourceLocation rl = ResourceLocation.tryParse(normalized);
         if (rl == null) return ItemStack.EMPTY;
@@ -6917,6 +7257,13 @@ public final class QuestEditorScreen extends Screen {
         INVENTORY
     }
 
+    private enum PickerMode {
+        NONE,
+        ITEMS,
+        EFFECTS,
+        MOBS
+    }
+
     private static final class ParsedEntry {
         final String type;
         final String id;
@@ -7525,11 +7872,13 @@ public final class QuestEditorScreen extends Screen {
 
     private static final class IconButton extends AbstractButton {
         private ResourceLocation texture;
+        private ResourceLocation hoverTexture;
         private final Runnable onPress;
 
-        public IconButton(int x, int y, int size, ResourceLocation texture, Runnable onPress) {
+        public IconButton(int x, int y, int size, ResourceLocation texture, ResourceLocation hoverTexture, Runnable onPress) {
             super(x, y, size, size, Component.empty());
             this.texture = texture;
+            this.hoverTexture = hoverTexture == null ? texture : hoverTexture;
             this.onPress = onPress;
         }
 
@@ -7544,12 +7893,18 @@ public final class QuestEditorScreen extends Screen {
             }
         }
 
+        public void setTextures(ResourceLocation texture, ResourceLocation hoverTexture) {
+            if (texture != null) this.texture = texture;
+            this.hoverTexture = hoverTexture == null ? this.texture : hoverTexture;
+        }
+
         @Override
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
             float alpha = this.active ? 1.0f : 0.5f;
+            ResourceLocation tex = this.isMouseOver(mouseX, mouseY) ? (hoverTexture == null ? texture : hoverTexture) : texture;
             RenderSystem.enableBlend();
             RenderSystem.setShaderColor(1f, 1f, 1f, alpha);
-            gg.blit(texture, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
+            gg.blit(tex, getX(), getY(), 0, 0, this.width, this.height, this.width, this.height);
             RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
         }
 
@@ -7612,11 +7967,15 @@ public final class QuestEditorScreen extends Screen {
             List<ScaledMultiLineEditBox> rows = entryRows(kind);
             if (row < 0 || row >= rows.size()) return;
             String text = effectiveRowType(kind, rows.get(row));
-            gg.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), 0xFF000000);
-            gg.fill(getX(), getY(), getX() + getWidth(), getY() + 1, 0xFFFFFFFF);
-            gg.fill(getX(), getY() + getHeight() - 1, getX() + getWidth(), getY() + getHeight(), 0xFFFFFFFF);
-            gg.fill(getX(), getY(), getX() + 1, getY() + getHeight(), 0xFFFFFFFF);
-            gg.fill(getX() + getWidth() - 1, getY(), getX() + getWidth(), getY() + getHeight(), 0xFFFFFFFF);
+            boolean hovered = this.isMouseOver(mouseX, mouseY);
+            boolean focused = this.isFocused();
+            int bg = hovered || focused ? 0xFF101010 : 0xFF000000;
+            int border = hovered || focused ? 0xFFFFFFFF : 0xFF8A8A8A;
+            gg.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), bg);
+            gg.fill(getX(), getY(), getX() + getWidth(), getY() + 1, border);
+            gg.fill(getX(), getY() + getHeight() - 1, getX() + getWidth(), getY() + getHeight(), border);
+            gg.fill(getX(), getY(), getX() + 1, getY() + getHeight(), border);
+            gg.fill(getX() + getWidth() - 1, getY(), getX() + getWidth(), getY() + getHeight(), border);
             int textW = Math.round(font.width(text) * ENTRY_TYPE_TEXT_SCALE);
             int tx = getX() + (getWidth() - textW) / 2;
             gg.pose().pushPose();
@@ -7652,17 +8011,27 @@ public final class QuestEditorScreen extends Screen {
 
         @Override
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-            gg.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), 0xFF3A3A3A);
-            gg.fill(getX(), getY(), getX() + getWidth(), getY() + 1, 0xFFFFFFFF);
-            gg.fill(getX(), getY() + getHeight() - 1, getX() + getWidth(), getY() + getHeight(), 0xFFFFFFFF);
-            gg.fill(getX(), getY(), getX() + 1, getY() + getHeight(), 0xFFFFFFFF);
-            gg.fill(getX() + getWidth() - 1, getY(), getX() + getWidth(), getY() + getHeight(), 0xFFFFFFFF);
+            boolean hovered = this.isMouseOver(mouseX, mouseY);
+            boolean focused = this.isFocused();
+            int bg = hovered || focused ? 0xFF404040 : 0xFF3A3A3A;
+            int border = hovered || focused ? 0xFFFFFFFF : 0xFF8A8A8A;
+            gg.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), bg);
+            gg.fill(getX(), getY(), getX() + getWidth(), getY() + 1, border);
+            gg.fill(getX(), getY() + getHeight() - 1, getX() + getWidth(), getY() + getHeight(), border);
+            gg.fill(getX(), getY(), getX() + 1, getY() + getHeight(), border);
+            gg.fill(getX() + getWidth() - 1, getY(), getX() + getWidth(), getY() + getHeight(), border);
             ItemStack stack = selectedItemForRow(kind, row);
             if (!stack.isEmpty()) {
+                List<ScaledMultiLineEditBox> rows = entryRows(kind);
+                String type = row >= 0 && row < rows.size() ? effectiveRowType(kind, rows.get(row)) : "";
                 gg.pose().pushPose();
-                gg.pose().translate(getX() + 3.0f, getY() + 2.0f, 0f);
+                gg.pose().translate(getX() + 2.0f, getY() + 2.0f, 0f);
                 gg.pose().scale(0.5f, 0.5f, 1f);
-                gg.renderItem(stack, 0, 0);
+                if ("effect".equals(type)) {
+                    renderEffectPickerIcon(gg, stack, 0, 0);
+                } else {
+                    gg.renderItem(stack, 0, 0);
+                }
                 gg.pose().popPose();
                 return;
             }
@@ -7702,7 +8071,7 @@ public final class QuestEditorScreen extends Screen {
 
         @Override
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-            ResourceLocation tex = on ? TOGGLE_TEX_ON : TOGGLE_TEX_OFF;
+            ResourceLocation tex = on ? TOGGLE_TEX_ON : (this.isMouseOver(mouseX, mouseY) ? TOGGLE_TEX_OFF_HOVER : TOGGLE_TEX_OFF);
             gg.blit(tex, getX(), getY(), 0, 0, TOGGLE_SIZE, TOGGLE_SIZE, TOGGLE_SIZE, TOGGLE_SIZE);
         }
 

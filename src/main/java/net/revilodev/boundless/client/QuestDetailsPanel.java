@@ -50,8 +50,12 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
     private static final ResourceLocation TEX_PIN =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/pin.png");
+    private static final ResourceLocation TEX_PIN_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/pin-hovered.png");
     private static final ResourceLocation TEX_UNPIN =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/unpin.png");
+    private static final ResourceLocation TEX_UNPIN_HOVER =
+            ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/unpin-hovered.png");
     private static final ResourceLocation TEX_SCROLL =
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/sprites/scroll-icon.png");
 
@@ -1195,7 +1199,11 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         @Override
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-            ResourceLocation tex = PinnedQuestHud.isPinnedCurrentQuest() ? TEX_UNPIN : TEX_PIN;
+            boolean pinned = PinnedQuestHud.isPinnedCurrentQuest();
+            boolean hovered = this.isMouseOver(mouseX, mouseY);
+            ResourceLocation tex = pinned
+                    ? (hovered ? TEX_UNPIN_HOVER : TEX_UNPIN)
+                    : (hovered ? TEX_PIN_HOVER : TEX_PIN);
 
             gg.pose().pushPose();
             gg.pose().translate(getX(), getY(), 0);
