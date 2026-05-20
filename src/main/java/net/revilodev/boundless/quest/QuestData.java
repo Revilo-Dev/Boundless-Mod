@@ -470,6 +470,8 @@ public final class QuestData {
     }
 
     private static void loadSingleModQuestPack(Path packRoot) {
+        if (loadSingleFileModQuestPack(packRoot)) return;
+
         Path dataRoot = packRoot.resolve("data");
         if (!Files.isDirectory(dataRoot)) return;
 
@@ -491,6 +493,98 @@ public final class QuestData {
             }
         } catch (Exception ignored) {
         }
+    }
+
+    private static boolean loadSingleFileModQuestPack(Path packRoot) {
+        if (packRoot == null || !Files.isDirectory(packRoot)) return false;
+        Path boundlessRoot = packRoot.resolve("boundless");
+        if (!Files.isDirectory(boundlessRoot)) return false;
+
+        boolean loaded = false;
+        try (DirectoryStream<Path> packDirs = Files.newDirectoryStream(boundlessRoot)) {
+            for (Path packDir : packDirs) {
+                if (!Files.isDirectory(packDir)) continue;
+                String namespace = packDir.getFileName() == null ? "" : packDir.getFileName().toString().trim().toLowerCase(Locale.ROOT);
+                if (namespace.isBlank()) namespace = "boundless";
+                if (shouldSkipNamespace(namespace)) continue;
+                loadCategoriesFromSingleFile(packDir.resolve("categories.json"));
+                loadSubCategoriesFromSingleFile(packDir.resolve("sub-categories.json"));
+                loadQuestsFromSingleFile(packDir.resolve("quests.json"), namespace);
+                loaded = true;
+            }
+        } catch (Exception ignored) {
+        }
+        return loaded;
+    }
+
+    private static void loadCategoriesFromSingleFile(Path file) {
+        for (JsonObject obj : readJsonObjectsArray(file)) {
+            try {
+                String id = optString(obj, "id");
+                if (id == null || id.isBlank()) continue;
+                String icon = optString(obj, "icon");
+                String cname = optString(obj, "name");
+                int order = parseIntFlexible(obj, "order", 0);
+                boolean excludeFromAll = parseBoolFlexible(obj, "exclude_from_all", false);
+                String dependency = optString(obj, "dependency");
+                boolean autoComplete = parseBoolFlexible(obj, "auto_complete",
+                        parseBoolFlexible(obj, "autoComplete", false));
+                CATEGORIES.put(id, new Category(id, icon, cname, order, excludeFromAll, dependency, autoComplete));
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private static void loadSubCategoriesFromSingleFile(Path file) {
+        for (JsonObject obj : readJsonObjectsArray(file)) {
+            try {
+                readSubCategoryObject(obj, "quests/sub-categories/" + safeId(optString(obj, "id")) + ".json");
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private static void loadQuestsFromSingleFile(Path file, String namespace) {
+        for (JsonObject obj : readJsonObjectsArray(file)) {
+            try {
+                String id = optString(obj, "id");
+                if (id == null || id.isBlank()) continue;
+                ResourceLocation loc = ResourceLocation.fromNamespaceAndPath(namespace, "quests/" + safeId(id) + ".json");
+                if (shouldIgnoreQuestJson(loc)) continue;
+                Quest q = parseQuestObject(obj, loc);
+                if (q != null && !isQuestDisabled(q)) QUESTS.put(q.id, q);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private static List<JsonObject> readJsonObjectsArray(Path file) {
+        List<JsonObject> out = new ArrayList<>();
+        if (file == null || !Files.exists(file)) return out;
+        try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            JsonElement parsed = JsonParser.parseReader(reader);
+            if (parsed != null && parsed.isJsonArray()) {
+                for (JsonElement el : parsed.getAsJsonArray()) {
+                    if (el != null && el.isJsonObject()) out.add(el.getAsJsonObject());
+                }
+                return out;
+            }
+            if (parsed != null && parsed.isJsonObject()) {
+                JsonObject obj = parsed.getAsJsonObject();
+                if (obj.has("entries") && obj.get("entries").isJsonArray()) {
+                    for (JsonElement el : obj.getAsJsonArray("entries")) {
+                        if (el != null && el.isJsonObject()) out.add(el.getAsJsonObject());
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    private static String safeId(String raw) {
+        if (raw == null) return "";
+        return raw.replace('\\', '_').replace('/', '_').trim();
     }
 
     private static void loadCategoriesFromPath(Path categoriesDir, String namespace) {

@@ -1010,6 +1010,14 @@ public final class QuestEditorScreen extends Screen {
                 && !refreshedNamespace.equals(currentPack.namespace)) {
         currentPack = new QuestPack(currentPack.name, refreshedNamespace, currentPack.root, currentPack.legacy, currentPack.enabled);
         }
+        if (usesSingleFilePack(currentPack)) {
+            try {
+                initializeSingleFilePack(currentPack);
+            } catch (IOException e) {
+                setError("Failed to initialize single-file pack");
+                return;
+            }
+        }
         setMode(Mode.CATEGORY_LIST);
     }
 
@@ -1274,13 +1282,14 @@ public final class QuestEditorScreen extends Screen {
         try {
             Files.createDirectories(root.getParent());
             Files.createDirectories(root);
-        writePackMeta(root, name, "Boundless Quest Pack: " + name, "", true);
+            writePackMeta(root, name, "Boundless Quest Pack: " + name, "", true);
             try {
                 writePackIcon(root, "");
             } catch (IOException ignored) {
             }
             QuestPack pack = new QuestPack(name, namespace, root, false, true);
             pack.ensureDirs();
+            initializeSingleFilePack(pack);
             currentPack = pack;
             setMode(Mode.PACK_MENU);
             stagePackChange(pack, "Pack staged");
@@ -1346,6 +1355,10 @@ public final class QuestEditorScreen extends Screen {
         selectedEntryId = id;
         JsonObject obj = buildCategoryJson(id);
         if (obj == null) return;
+        if (usesSingleFilePack(currentPack)) {
+            saveSingleFileEntry(currentPack.categoriesFile, id, obj);
+            return;
+        }
         Path target = currentPack.categoriesDir.resolve(id + ".json");
         saveJson(obj, target, editingPath);
     }
@@ -1359,6 +1372,10 @@ public final class QuestEditorScreen extends Screen {
         selectedEntryId = id;
         JsonObject obj = buildSubCategoryJson(id);
         if (obj == null) return;
+        if (usesSingleFilePack(currentPack)) {
+            saveSingleFileEntry(currentPack.subCategoriesFile, id, obj);
+            return;
+        }
 
         Path target = currentPack.subCategoriesDir.resolve(id + ".json");
         saveJson(obj, target, editingPath);
@@ -1427,6 +1444,10 @@ public final class QuestEditorScreen extends Screen {
         selectedEntryId = id;
         JsonObject obj = buildQuestJson(id);
         if (obj == null) return;
+        if (usesSingleFilePack(currentPack)) {
+            saveSingleFileEntry(currentPack.questsFile, id, obj);
+            return;
+        }
 
         String orderToken = questOrderTokenForSave(id);
         Path target = currentPack.questsDir.resolve(questFileBaseName(id, orderToken) + ".json");
@@ -1516,6 +1537,31 @@ public final class QuestEditorScreen extends Screen {
         }
     }
 
+    private void saveSingleFileEntry(Path file, String id, JsonObject obj) {
+        if (currentPack == null || file == null || obj == null) return;
+        try {
+            List<JsonObject> entries = readSingleFileObjects(file);
+            boolean replaced = false;
+            for (int i = 0; i < entries.size(); i++) {
+                JsonObject existing = entries.get(i);
+                String existingId = safe(optString(existing, "id", "")).trim();
+                if (!existingId.equals(id)) continue;
+                entries.set(i, obj);
+                replaced = true;
+                break;
+            }
+            if (!replaced) entries.add(obj);
+            writeSingleFileObjects(file, entries);
+            editingPath = file;
+            markCurrentEditorSaved();
+            stageCurrentPackChange("Saved to staging");
+            refreshLeftList();
+            QuestPanelClient.applyConfigChanges();
+        } catch (IOException e) {
+            setError("Save failed: " + safe(e.getMessage()));
+        }
+    }
+
     private void duplicateCurrentPackAsIs() {
         if (currentPack == null) return;
         try {
@@ -1580,13 +1626,17 @@ public final class QuestEditorScreen extends Screen {
         JsonObject obj = buildQuestJson(newId);
         if (obj == null) return;
 
-        String orderToken = nextQuestOrderToken();
-        Path target = currentPack.questsDir.resolve(questFileBaseName(newId, orderToken) + ".json");
         selectedEntryId = newId;
-        saveJson(obj, target, null);
+        if (usesSingleFilePack(currentPack)) {
+            saveSingleFileEntry(currentPack.questsFile, newId, obj);
+        } else {
+            String orderToken = nextQuestOrderToken();
+            Path target = currentPack.questsDir.resolve(questFileBaseName(newId, orderToken) + ".json");
+            saveJson(obj, target, null);
+        }
         QuestEntryData data = loadQuest(currentPack, newId);
         if (data != null) {
-            showQuestEditor(data, target);
+            showQuestEditor(data, data.path);
         }
     }
 
@@ -1597,14 +1647,14 @@ public final class QuestEditorScreen extends Screen {
             setError("Category id required");
             return;
         }
-        String newId = nextAvailableId(baseId, currentPack.categoriesDir);
+        String newId = nextAvailableCategoryId(baseId);
         JsonObject obj = buildCategoryJson(newId);
         if (obj == null) return;
-        Path target = currentPack.categoriesDir.resolve(newId + ".json");
         selectedEntryId = newId;
-        saveJson(obj, target, null);
+        if (usesSingleFilePack(currentPack)) saveSingleFileEntry(currentPack.categoriesFile, newId, obj);
+        else saveJson(obj, currentPack.categoriesDir.resolve(newId + ".json"), null);
         CategoryData data = loadCategory(currentPack, newId);
-        if (data != null) showCategoryEditor(data, target);
+        if (data != null) showCategoryEditor(data, data.path);
     }
 
     private void duplicateSubCategory() {
@@ -1614,14 +1664,14 @@ public final class QuestEditorScreen extends Screen {
             setError("Sub-category id required");
             return;
         }
-        String newId = nextAvailableId(baseId, currentPack.subCategoriesDir);
+        String newId = nextAvailableSubCategoryId(baseId);
         JsonObject obj = buildSubCategoryJson(newId);
         if (obj == null) return;
-        Path target = currentPack.subCategoriesDir.resolve(newId + ".json");
         selectedEntryId = newId;
-        saveJson(obj, target, null);
+        if (usesSingleFilePack(currentPack)) saveSingleFileEntry(currentPack.subCategoriesFile, newId, obj);
+        else saveJson(obj, currentPack.subCategoriesDir.resolve(newId + ".json"), null);
         SubCategoryData data = loadSubCategory(currentPack, newId);
-        if (data != null) showSubCategoryEditor(data, target);
+        if (data != null) showSubCategoryEditor(data, data.path);
     }
 
     private void duplicateCurrent() {
@@ -1646,6 +1696,10 @@ public final class QuestEditorScreen extends Screen {
             return;
         }
 
+        if (usesSingleFilePack(currentPack)) {
+            deleteSingleFileEntry(currentPack.questsFile, id);
+            return;
+        }
         Path target = editingPath != null ? editingPath : currentPack.questsDir.resolve(id + ".json");
         try {
             boolean deleted = Files.deleteIfExists(target);
@@ -1672,6 +1726,10 @@ public final class QuestEditorScreen extends Screen {
             return;
         }
 
+        if (usesSingleFilePack(currentPack)) {
+            deleteSingleFileEntry(currentPack.categoriesFile, id);
+            return;
+        }
         Path target = editingPath != null ? editingPath : currentPack.categoriesDir.resolve(id + ".json");
         try {
             boolean deleted = Files.deleteIfExists(target);
@@ -1698,6 +1756,10 @@ public final class QuestEditorScreen extends Screen {
             return;
         }
 
+        if (usesSingleFilePack(currentPack)) {
+            deleteSingleFileEntry(currentPack.subCategoriesFile, id);
+            return;
+        }
         Path target = editingPath != null ? editingPath : currentPack.subCategoriesDir.resolve(id + ".json");
         try {
             boolean deleted = Files.deleteIfExists(target);
@@ -1770,8 +1832,36 @@ public final class QuestEditorScreen extends Screen {
         if (currentPack == null) return baseId;
         String base = safe(baseId).trim();
         if (base.isBlank()) return baseId;
-
+        if (usesSingleFilePack(currentPack)) {
+            Set<String> ids = new HashSet<>();
+            for (NamedEntry entry : listQuestEntries(currentPack)) ids.add(safe(entry.id));
+            return nextAvailableId(base, ids);
+        }
         return nextAvailableId(base, currentPack.questsDir);
+    }
+
+    private String nextAvailableCategoryId(String baseId) {
+        if (currentPack == null) return baseId;
+        String base = safe(baseId).trim();
+        if (base.isBlank()) return baseId;
+        if (usesSingleFilePack(currentPack)) {
+            Set<String> ids = new HashSet<>();
+            for (NamedEntry entry : listCategoryEntries(currentPack)) ids.add(safe(entry.id));
+            return nextAvailableId(base, ids);
+        }
+        return nextAvailableId(base, currentPack.categoriesDir);
+    }
+
+    private String nextAvailableSubCategoryId(String baseId) {
+        if (currentPack == null) return baseId;
+        String base = safe(baseId).trim();
+        if (base.isBlank()) return baseId;
+        if (usesSingleFilePack(currentPack)) {
+            Set<String> ids = new HashSet<>();
+            for (NamedEntry entry : listSubCategoryEntries(currentPack)) ids.add(safe(entry.id));
+            return nextAvailableId(base, ids);
+        }
+        return nextAvailableId(base, currentPack.subCategoriesDir);
     }
 
     private String nextAvailablePackName(String baseName) {
@@ -1806,6 +1896,19 @@ public final class QuestEditorScreen extends Screen {
         String candidate = base + "_copy";
         int counter = 2;
         while (Files.exists(dir.resolve(candidate + ".json"))) {
+            candidate = base + "_copy" + counter;
+            counter++;
+        }
+        return candidate;
+    }
+
+    private String nextAvailableId(String baseId, Set<String> existingIds) {
+        String base = safe(baseId).trim();
+        if (base.isBlank()) return baseId;
+        Set<String> existing = existingIds == null ? Set.of() : existingIds;
+        String candidate = base + "_copy";
+        int counter = 2;
+        while (existing.contains(candidate)) {
             candidate = base + "_copy" + counter;
             counter++;
         }
@@ -2375,6 +2478,11 @@ public final class QuestEditorScreen extends Screen {
         if (currentPack == null || currentPack.root == null) return false;
         try {
             Path targetRoot = packsRoot().resolve(currentPack.name);
+            Path sourceReal = currentPack.root.toRealPath();
+            Path targetReal = Files.exists(targetRoot) ? targetRoot.toRealPath() : targetRoot.toAbsolutePath().normalize();
+            if (sourceReal.equals(targetReal)) {
+                return false;
+            }
             mirrorDirectory(currentPack.root, targetRoot);
             return true;
         } catch (IOException ignored) {
@@ -2385,6 +2493,11 @@ public final class QuestEditorScreen extends Screen {
     private void mirrorDirectory(Path sourceRoot, Path targetRoot) throws IOException {
         if (sourceRoot == null || targetRoot == null) return;
         if (!Files.isDirectory(sourceRoot)) throw new IOException("Source pack folder missing");
+        Path sourceReal = sourceRoot.toRealPath();
+        Path targetReal = Files.exists(targetRoot) ? targetRoot.toRealPath() : targetRoot.toAbsolutePath().normalize();
+        if (sourceReal.equals(targetReal)) {
+            return;
+        }
         if (Files.exists(targetRoot) && !Files.isDirectory(targetRoot)) {
             Files.deleteIfExists(targetRoot);
         }
@@ -3724,20 +3837,40 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private List<NamedEntry> listCategoryEntries(QuestPack pack) {
-        List<NamedEntry> entries = listEntries(pack.categoriesDir);
+        List<NamedEntry> entries = usesSingleFilePack(pack)
+                ? listSingleFileEntries(pack.categoriesFile)
+                : listEntries(pack.categoriesDir);
         entries.sort(Comparator.comparing(a -> safe(a.sortKey).toLowerCase(Locale.ROOT)));
         return entries;
     }
 
     private List<NamedEntry> listSubCategoryEntries(QuestPack pack) {
-        List<NamedEntry> entries = listEntries(pack.subCategoriesDir);
+        List<NamedEntry> entries = usesSingleFilePack(pack)
+                ? listSingleFileEntries(pack.subCategoriesFile)
+                : listEntries(pack.subCategoriesDir);
         entries.sort(Comparator.comparing(a -> safe(a.sortKey).toLowerCase(Locale.ROOT)));
         return entries;
     }
 
     private List<NamedEntry> listQuestEntries(QuestPack pack) {
-        List<NamedEntry> entries = listEntries(pack.questsDir);
+        List<NamedEntry> entries = usesSingleFilePack(pack)
+                ? listSingleFileEntries(pack.questsFile)
+                : listEntries(pack.questsDir);
         entries.sort(Comparator.comparing(a -> safe(a.sortKey).toLowerCase(Locale.ROOT)));
+        return entries;
+    }
+
+    private List<NamedEntry> listSingleFileEntries(Path file) {
+        List<NamedEntry> entries = new ArrayList<>();
+        for (JsonObject obj : readSingleFileObjects(file)) {
+            String id = optString(obj, "id", "");
+            if (id.isBlank()) continue;
+            String name = optString(obj, "name", id);
+            String icon = optString(obj, "icon", "");
+            int order = parseIntFlexible(obj, "order", 0);
+            String sortKey = String.format(Locale.ROOT, "%06d_%s", order, id);
+            entries.add(new NamedEntry(id, name, icon, file, sortKey));
+        }
         return entries;
     }
 
@@ -3761,6 +3894,20 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private CategoryData loadCategory(QuestPack pack, String id) {
+        if (usesSingleFilePack(pack)) {
+            JsonObject obj = findSingleFileObject(pack.categoriesFile, id);
+            if (obj == null) return null;
+            CategoryData data = new CategoryData();
+            data.path = pack.categoriesFile;
+            data.id = optString(obj, "id", id);
+            data.name = optString(obj, "name", "");
+            data.icon = optString(obj, "icon", "");
+            data.order = optStringFlexible(obj, "order", "");
+            data.dependency = optString(obj, "dependency", "");
+            data.autoComplete = optStringFlexible(obj, "auto_complete",
+                    optStringFlexible(obj, "autoComplete", ""));
+            return data;
+        }
         Path path = pack.categoriesDir.resolve(id + ".json");
         if (!Files.exists(path)) {
             for (NamedEntry entry : listCategoryEntries(pack)) {
@@ -3786,6 +3933,19 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private SubCategoryData loadSubCategory(QuestPack pack, String id) {
+        if (usesSingleFilePack(pack)) {
+            JsonObject obj = findSingleFileObject(pack.subCategoriesFile, id);
+            if (obj == null) return null;
+            SubCategoryData data = new SubCategoryData();
+            data.path = pack.subCategoriesFile;
+            data.id = optString(obj, "id", id);
+            data.category = optString(obj, "category", "");
+            data.name = optString(obj, "name", "");
+            data.icon = optString(obj, "icon", "");
+            data.order = optStringFlexible(obj, "order", "");
+            data.defaultOpen = optStringFlexible(obj, "default_open", "");
+            return data;
+        }
         Path path = pack.subCategoriesDir.resolve(id + ".json");
         if (!Files.exists(path)) {
             for (NamedEntry entry : listSubCategoryEntries(pack)) {
@@ -3810,6 +3970,31 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private QuestEntryData loadQuest(QuestPack pack, String id) {
+        if (usesSingleFilePack(pack)) {
+            JsonObject obj = findSingleFileObject(pack.questsFile, id);
+            if (obj == null) return null;
+            QuestEntryData data = new QuestEntryData();
+            data.path = pack.questsFile;
+            data.id = optString(obj, "id", id);
+            data.name = optString(obj, "name", "");
+            data.icon = optString(obj, "icon", "");
+            data.description = optString(obj, "description", "");
+            data.category = optString(obj, "category", "");
+            data.subCategory = optString(obj, "sub-category", optString(obj, "subCategory", ""));
+            data.dependencies = formatDependenciesLines(obj.get("dependencies"));
+            data.lockAfterDependency = optStringFlexible(obj, "lock_after_dependency",
+                    optStringFlexible(obj, "lockAfterDependency", ""));
+            data.optional = optStringFlexible(obj, "optional", "");
+            data.repeatable = optStringFlexible(obj, "repeatable", "");
+            data.autoComplete = optStringFlexible(obj, "auto_complete",
+                    optStringFlexible(obj, "autoComplete", ""));
+            data.hiddenUnderDependency = optStringFlexible(obj, "hiddenUnderDependency",
+                    optStringFlexible(obj, "hidden_under_dependency", ""));
+            data.type = optString(obj, "type", "");
+            data.completionJson = obj.has("completion") ? gson.toJson(obj.get("completion")) : "";
+            data.rewardJson = obj.has("reward") ? gson.toJson(obj.get("reward")) : "";
+            return data;
+        }
         Path path = pack.questsDir.resolve(id + ".json");
         if (!Files.exists(path)) {
             for (NamedEntry entry : listQuestEntries(pack)) {
@@ -3877,6 +4062,98 @@ public final class QuestEditorScreen extends Screen {
         } catch (Exception ignored) {
         }
         return null;
+    }
+
+    private List<JsonObject> readSingleFileObjects(Path path) {
+        List<JsonObject> out = new ArrayList<>();
+        if (path == null || !Files.exists(path)) return out;
+        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            JsonElement parsed = JsonParser.parseReader(reader);
+            if (parsed != null && parsed.isJsonArray()) {
+                for (JsonElement el : parsed.getAsJsonArray()) {
+                    if (el != null && el.isJsonObject()) out.add(el.getAsJsonObject());
+                }
+                return out;
+            }
+            if (parsed != null && parsed.isJsonObject()) {
+                JsonObject obj = parsed.getAsJsonObject();
+                if (obj.has("entries") && obj.get("entries").isJsonArray()) {
+                    for (JsonElement el : obj.getAsJsonArray("entries")) {
+                        if (el != null && el.isJsonObject()) out.add(el.getAsJsonObject());
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    private void writeSingleFileObjects(Path path, List<JsonObject> entries) throws IOException {
+        if (path == null) return;
+        Files.createDirectories(path.getParent());
+        com.google.gson.JsonArray array = new com.google.gson.JsonArray();
+        for (JsonObject entry : entries) {
+            if (entry != null) array.add(entry);
+        }
+        try (BufferedWriter writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8)) {
+            gson.toJson(array, writer);
+        }
+    }
+
+    private JsonObject findSingleFileObject(Path file, String id) {
+        String key = safe(id).trim();
+        if (key.isBlank()) return null;
+        for (JsonObject obj : readSingleFileObjects(file)) {
+            String objId = safe(optString(obj, "id", "")).trim();
+            if (key.equals(objId)) return obj;
+        }
+        return null;
+    }
+
+    private void deleteSingleFileEntry(Path file, String id) {
+        String key = safe(id).trim();
+        if (key.isBlank()) {
+            setError("Id required");
+            return;
+        }
+        try {
+            List<JsonObject> entries = readSingleFileObjects(file);
+            int before = entries.size();
+            entries.removeIf(obj -> key.equals(safe(optString(obj, "id", "")).trim()));
+            if (entries.size() == before) {
+                statusMessage = "Nothing to delete";
+                statusColor = 0xA0A0A0;
+                return;
+            }
+            writeSingleFileObjects(file, entries);
+            disarmDeleteConfirm();
+            selectedEntryId = "";
+            clearEditor();
+            refreshLeftList();
+            stageCurrentPackChange("Deletion staged");
+            QuestPanelClient.applyConfigChanges();
+        } catch (IOException e) {
+            setError("Delete failed");
+        }
+    }
+
+    private boolean isSingleFilePack(QuestPack pack) {
+        if (pack == null) return false;
+        return Files.exists(pack.categoriesFile) || Files.exists(pack.subCategoriesFile) || Files.exists(pack.questsFile);
+    }
+
+    private boolean usesSingleFilePack(QuestPack pack) {
+        if (pack == null) return false;
+        if (isSingleFilePack(pack)) return true;
+        return safe(pack.namespace).trim().isBlank();
+    }
+
+    private void initializeSingleFilePack(QuestPack pack) throws IOException {
+        if (pack == null) return;
+        Files.createDirectories(pack.singleRoot);
+        if (!Files.exists(pack.categoriesFile)) writeSingleFileObjects(pack.categoriesFile, List.of());
+        if (!Files.exists(pack.subCategoriesFile)) writeSingleFileObjects(pack.subCategoriesFile, List.of());
+        if (!Files.exists(pack.questsFile)) writeSingleFileObjects(pack.questsFile, List.of());
     }
 
     private int readOrderFromPath(Path path, int fallback) {
@@ -7385,6 +7662,10 @@ public final class QuestEditorScreen extends Screen {
         final Path questsDir;
         final Path categoriesDir;
         final Path subCategoriesDir;
+        final Path singleRoot;
+        final Path categoriesFile;
+        final Path subCategoriesFile;
+        final Path questsFile;
 
         QuestPack(String name, String namespace, Path root) {
             this(name, namespace, root, false, true);
@@ -7404,12 +7685,17 @@ public final class QuestEditorScreen extends Screen {
             this.questsDir = dataDir.resolve("quests");
             this.categoriesDir = questsDir.resolve("categories");
             this.subCategoriesDir = questsDir.resolve("sub-category");
+            this.singleRoot = root.resolve("boundless").resolve(this.name);
+            this.categoriesFile = singleRoot.resolve("categories.json");
+            this.subCategoriesFile = singleRoot.resolve("sub-categories.json");
+            this.questsFile = singleRoot.resolve("quests.json");
         }
 
         void ensureDirs() throws IOException {
             Files.createDirectories(categoriesDir);
             Files.createDirectories(subCategoriesDir);
             Files.createDirectories(questsDir);
+            Files.createDirectories(singleRoot);
         }
     }
 
