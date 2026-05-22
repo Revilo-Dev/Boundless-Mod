@@ -73,8 +73,8 @@ public final class QuestPanelClient {
         st.list.setCategory(st.selectedCategory);
         e.addListener(st.list);
 
-        st.searchBox = new EditBox(Minecraft.getInstance().font, 0, 0, 127, 16, Component.literal("Search quests"));
-        st.searchBox.setHint(Component.literal("Search"));
+        st.searchBox = new EditBox(Minecraft.getInstance().font, 0, 0, 127, 16, Component.translatable("ui.boundless.questbook.search_quests"));
+        st.searchBox.setHint(Component.translatable("ui.boundless.questbook.search"));
         st.searchBox.setMaxLength(64);
         st.searchBox.setValue(st.searchQuery);
         st.searchBox.setResponder(value -> {

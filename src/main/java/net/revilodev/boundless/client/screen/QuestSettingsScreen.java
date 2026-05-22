@@ -651,7 +651,7 @@ public final class QuestSettingsScreen extends Screen {
             int valueX = getX() + this.width - valueW - 6;
 
             String labelText = label;
-            int maxLabelW = valueX - labelX - 4;
+            int maxLabelW = valueX - labelX + 2;
             if (maxLabelW > 0 && font.width(labelText) > maxLabelW) {
                 int ellipsisW = font.width("...");
                 int allowed = Math.max(0, maxLabelW - ellipsisW);

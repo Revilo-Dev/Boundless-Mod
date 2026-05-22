@@ -47,7 +47,7 @@ public final class StandaloneQuestBookScreen extends Screen {
     private String selectedCategory = "all";
 
     public StandaloneQuestBookScreen() {
-        super(Component.literal("Quests"));
+        super(Component.translatable("ui.boundless.questbook.title"));
     }
 
     @Override
@@ -92,8 +92,8 @@ public final class StandaloneQuestBookScreen extends Screen {
             lastSelectedCategory = "all";
         }
 
-        searchBox = new EditBox(font, pxLeft, py, pw, 16, Component.literal("Search quests"));
-        searchBox.setHint(Component.literal("Search"));
+        searchBox = new EditBox(font, pxLeft, py, pw, 16, Component.translatable("ui.boundless.questbook.search_quests"));
+        searchBox.setHint(Component.translatable("ui.boundless.questbook.search"));
         searchBox.setMaxLength(64);
         searchBox.setValue(searchQuery);
         searchBox.setResponder(value -> {
@@ -152,7 +152,7 @@ public final class StandaloneQuestBookScreen extends Screen {
         list.active = true;
 
         if (searchBox != null) {
-            boolean showSearch = !showingDetails && Config.enableQuestSearchBox();
+            boolean showSearch = Config.enableQuestSearchBox();
             searchBox.visible = showSearch;
             searchBox.active = showSearch;
         }

@@ -265,11 +265,11 @@ public final class CategoryTabsWidget extends AbstractWidget {
         drawScaledString(gg, text, 0.8f, textX, textY, 0xFFFFFFFF);
 
         if (hoverUp && pageIndex > 0) {
-            pendingTooltip = Component.literal("Previous page");
+            pendingTooltip = Component.translatable("ui.boundless.pagination.previous");
             pendingTooltipX = mouseX;
             pendingTooltipY = mouseY;
         } else if (hoverDown && pageIndex < maxPageIndex()) {
-            pendingTooltip = Component.literal("Next page");
+            pendingTooltip = Component.translatable("ui.boundless.pagination.next");
             pendingTooltipX = mouseX;
             pendingTooltipY = mouseY;
         }

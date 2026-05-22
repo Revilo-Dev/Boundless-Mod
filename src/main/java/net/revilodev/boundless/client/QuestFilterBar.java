@@ -126,35 +126,35 @@ public final class QuestFilterBar extends AbstractWidget {
         int by = getY();
 
         drawButton(gg, bx, by, showCompleted, TEX_COMPLETE, TEX_COMPLETE_HOVER, TEX_COMPLETE_SELECTED,
-                "Show redeemed quests", mouseX, mouseY);
+                Component.translatable("ui.boundless.filter.show_redeemed"), mouseX, mouseY);
         bx += TAB_W + GAP;
 
         drawButton(gg, bx, by, showRejected, TEX_REJECT, TEX_REJECT_HOVER, TEX_REJECT_SELECTED,
-                "Show rejected quests", mouseX, mouseY);
+                Component.translatable("ui.boundless.filter.show_rejected"), mouseX, mouseY);
         bx += TAB_W + GAP;
 
         drawButton(gg, bx, by, showLocked, TEX_LOCKED, TEX_LOCKED_HOVER, TEX_LOCKED_SELECTED,
-                "Show locked quests", mouseX, mouseY);
+                Component.translatable("ui.boundless.filter.show_locked"), mouseX, mouseY);
         bx += TAB_W + GAP;
 
         if (showSettingsButton()) {
             drawHoverButton(gg, bx, by, TEX_SETTINGS, TEX_SETTINGS_HOVER,
-                    "Settings", mouseX, mouseY);
+                    Component.translatable("ui.boundless.settings"), mouseX, mouseY);
         }
     }
 
     private void renderAsButtons(GuiGraphics gg, int mouseX, int mouseY) {
         int x = getX();
         int y = getY();
-        drawSquareButton(gg, x, y, showCompleted, BTN_COMPLETE, BTN_COMPLETE_HOVER, BTN_COMPLETE_DISABLED, "Show redeemed quests", mouseX, mouseY);
+        drawSquareButton(gg, x, y, showCompleted, BTN_COMPLETE, BTN_COMPLETE_HOVER, BTN_COMPLETE_DISABLED, Component.translatable("ui.boundless.filter.show_redeemed"), mouseX, mouseY);
         x += BTN_W + BTN_GAP;
-        drawSquareButton(gg, x, y, showRejected, BTN_REJECT, BTN_REJECT_HOVER, BTN_REJECT_DISABLED, "Show rejected quests", mouseX, mouseY);
+        drawSquareButton(gg, x, y, showRejected, BTN_REJECT, BTN_REJECT_HOVER, BTN_REJECT_DISABLED, Component.translatable("ui.boundless.filter.show_rejected"), mouseX, mouseY);
         x += BTN_W + BTN_GAP;
-        drawSquareButton(gg, x, y, showLocked, BTN_LOCKED, BTN_LOCKED_HOVER, BTN_LOCKED_DISABLED, "Show locked quests", mouseX, mouseY);
+        drawSquareButton(gg, x, y, showLocked, BTN_LOCKED, BTN_LOCKED_HOVER, BTN_LOCKED_DISABLED, Component.translatable("ui.boundless.filter.show_locked"), mouseX, mouseY);
     }
 
     private void drawButton(GuiGraphics gg, int x, int y, boolean state,
-                            ResourceLocation normal, ResourceLocation pulled, ResourceLocation selected, String tooltip,
+                            ResourceLocation normal, ResourceLocation pulled, ResourceLocation selected, Component tooltip,
                             int mouseX, int mouseY) {
         boolean hover = mouseX >= x && mouseX < x + TAB_W && mouseY >= y && mouseY < y + BAR_H;
 
@@ -165,14 +165,14 @@ public final class QuestFilterBar extends AbstractWidget {
 
         if (hover) {
             gg.renderTooltip(Minecraft.getInstance().font,
-                    Component.literal(tooltip),
+                    tooltip,
                     mouseX, mouseY);
         }
     }
 
     private void drawHoverButton(GuiGraphics gg, int x, int y,
                                  ResourceLocation normal, ResourceLocation hoverTex,
-                                 String tooltip, int mouseX, int mouseY) {
+                                 Component tooltip, int mouseX, int mouseY) {
         boolean hover = mouseX >= x && mouseX < x + TAB_W && mouseY >= y && mouseY < y + BAR_H;
         ResourceLocation tex = hover ? hoverTex : normal;
         int drawY = y + BAR_H - TAB_H;
@@ -180,19 +180,19 @@ public final class QuestFilterBar extends AbstractWidget {
 
         if (hover) {
             gg.renderTooltip(Minecraft.getInstance().font,
-                    Component.literal(tooltip),
+                    tooltip,
                     mouseX, mouseY);
         }
     }
 
     private void drawSquareButton(GuiGraphics gg, int x, int y, boolean state,
                                   ResourceLocation enabled, ResourceLocation hovered, ResourceLocation disabled,
-                                  String tooltip, int mouseX, int mouseY) {
+                                  Component tooltip, int mouseX, int mouseY) {
         boolean hover = mouseX >= x && mouseX < x + BTN_W && mouseY >= y && mouseY < y + BTN_H;
         ResourceLocation tex = state ? (hover ? hovered : enabled) : disabled;
         gg.blit(tex, x, y, 0, 0, BTN_W, BTN_H, BTN_W, BTN_H);
         if (hover) {
-            gg.renderTooltip(Minecraft.getInstance().font, Component.literal(tooltip), mouseX, mouseY);
+            gg.renderTooltip(Minecraft.getInstance().font, tooltip, mouseX, mouseY);
         }
     }
 

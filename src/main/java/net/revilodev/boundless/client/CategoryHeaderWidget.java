@@ -44,7 +44,7 @@ public final class CategoryHeaderWidget extends AbstractWidget {
     @Override
     protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
         String title = titleSupplier == null ? "" : titleSupplier.get();
-        if (title == null || title.isBlank()) title = "Categories";
+        if (title == null || title.isBlank()) title = Component.translatable("ui.boundless.categories").getString();
 
         var font = Minecraft.getInstance().font;
         int textW = font.width(title);

@@ -961,14 +961,32 @@ public final class QuestTracker {
             try {
                 var mc = net.minecraft.client.Minecraft.getInstance();
                 if (mc != null && mc.player != null) {
-                    int idx = key.indexOf(':');
-                    if (idx > 0) {
-                        String questId = key.substring(0, idx);
+                    String questId = resolveQuestIdFromProgressKey(key);
+                    if (!questId.isBlank()) {
                         if (getStatus(questId, mc.player) == Status.INCOMPLETE) return Math.min(current, required);
                     }
                 }
             } catch (Throwable ignored) {}
             return now;
+        }
+
+        private static String resolveQuestIdFromProgressKey(String key) {
+            if (key == null || key.isBlank()) return "";
+            try {
+                QuestData.loadClient(false);
+                String best = "";
+                for (QuestData.Quest quest : QuestData.all()) {
+                    if (quest == null || quest.id == null || quest.id.isBlank()) continue;
+                    String prefix = quest.id + ":";
+                    if (!key.startsWith(prefix)) continue;
+                    if (quest.id.length() > best.length()) best = quest.id;
+                }
+                if (!best.isBlank()) return best;
+            } catch (Throwable ignored) {}
+
+            int idx = key.indexOf(':');
+            if (idx > 0) return key.substring(0, idx);
+            return "";
         }
 
         private static String computeClientKey() {
