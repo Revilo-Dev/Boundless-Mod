@@ -723,9 +723,10 @@ public final class QuestEditorScreen extends Screen {
                 if (subCollapsed) continue;
                 for (NamedEntry quest : subEntry.getValue()) {
                     QuestEntryData questData = loadQuest(currentPack, quest.id);
-                    boolean invalid = isQuestEntryInvalid(questData);
+                    String invalidReason = questEntryInvalidReason(questData);
+                    boolean invalid = invalidReason != null;
                     out.add(invalid
-                            ? EditorEntry.quest(quest.id, quest.name, quest.id, quest.icon, PACK_ACTION_NEEDED_TEX, "Quest has invalid field(s)")
+                            ? EditorEntry.quest(quest.id, quest.name, quest.id, quest.icon, PACK_ACTION_NEEDED_TEX, invalidReason)
                             : EditorEntry.quest(quest.id, quest.name, quest.id, quest.icon));
                 }
             }
@@ -734,21 +735,31 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private boolean isQuestEntryInvalid(QuestEntryData data) {
-        if (data == null) return false;
+        return questEntryInvalidReason(data) != null;
+    }
+
+    private String questEntryInvalidReason(QuestEntryData data) {
+        if (data == null) return null;
+        String id = safe(data.id).trim();
+        if (id.isBlank()) return "Missing quest id";
+        if (isDuplicateQuestIdAcrossPack(id)) return "Duplicate quest id";
+        String name = safe(data.name).trim();
+        if (name.isBlank()) return "Missing quest name";
         String category = safe(data.category).trim();
-        if (!category.isBlank() && !categoryIdCache.contains(category)) return true;
+        if (category.isBlank()) return "Missing quest category";
+        if (!categoryIdCache.contains(category)) return "Invalid quest category";
 
         String subCategory = safe(data.subCategory).trim();
         if (!subCategory.isBlank()) {
             boolean hasExact = subCategoryIdCache.contains(category + "::" + subCategory);
             boolean hasWildcard = subCategoryIdCache.contains("::" + subCategory);
-            if (!hasExact && !hasWildcard) return true;
+            if (!hasExact && !hasWildcard) return "Invalid quest sub-category";
         }
 
         for (String dep : extractEntryLines(safe(data.dependencies))) {
-            if (!questIdCache.contains(dep)) return true;
+            if (!questIdCache.contains(dep)) return "Invalid quest dependency";
         }
-        return false;
+        return null;
     }
 
     private boolean matchesQuestSearch(NamedEntry entry) {
@@ -1481,6 +1492,10 @@ public final class QuestEditorScreen extends Screen {
         String questId = safe(id).trim();
         if (questId.isBlank()) {
             setError("Quest id required");
+            return null;
+        }
+        if (isDuplicateQuestId(questId)) {
+            setError("Quest id already exists");
             return null;
         }
         String nameRaw = safe(questNameBox.getValue()).trim();
@@ -2723,6 +2738,14 @@ public final class QuestEditorScreen extends Screen {
             button.active = false;
         }
         for (EntryRemoveButton button : rewardEntryRemoveButtons) {
+            button.visible = false;
+            button.active = false;
+        }
+        for (EntryTypeButton button : completionEntryTypeButtons) {
+            button.visible = false;
+            button.active = false;
+        }
+        for (EntryTypeButton button : rewardEntryTypeButtons) {
             button.visible = false;
             button.active = false;
         }
@@ -4393,8 +4416,8 @@ public final class QuestEditorScreen extends Screen {
         if (createPackButton != null && createPackButton.visible) createPackButton.render(gg, mouseX, mouseY, partialTick);
         if (importQuestPackButton != null && importQuestPackButton.visible) importQuestPackButton.render(gg, mouseX, mouseY, partialTick);
         renderIconOverlays(gg);
-        if (leftList != null) leftList.renderHoverTooltipOnTop(gg);
-        renderTabTooltip(gg, mouseX, mouseY);
+        if (!isItemPickerOpen() && leftList != null) leftList.renderHoverTooltipOnTop(gg);
+        if (!isItemPickerOpen()) renderTabTooltip(gg, mouseX, mouseY);
         renderTypeMenu(gg, mouseX, mouseY);
         renderDropdownMenu(gg, mouseX, mouseY);
         renderItemPicker(gg, mouseX, mouseY);
@@ -5029,7 +5052,7 @@ public final class QuestEditorScreen extends Screen {
                             && mouseY >= labelY && mouseY <= labelY + font.lineHeight;
                     boolean hoverWidget = mouseX >= boxX && mouseX <= boxX + (pw - 4)
                             && mouseY >= boxY && mouseY <= boxY + widgetHeight;
-                    if (hoverLabel || hoverWidget) {
+                    if (!isItemPickerOpen() && (hoverLabel || hoverWidget)) {
                         gg.renderTooltip(font, Component.literal(tooltip), mouseX, mouseY);
                     }
                 }
@@ -5041,7 +5064,7 @@ public final class QuestEditorScreen extends Screen {
                     String lockTooltip = dependencyLockState()
                             ? "Quest is locked after dependency completed"
                             : "quest is locked until dependency completed";
-                    gg.renderTooltip(font, Component.literal(lockTooltip), mouseX, mouseY);
+                    if (!isItemPickerOpen()) gg.renderTooltip(font, Component.literal(lockTooltip), mouseX, mouseY);
                     break;
                 }
             }
@@ -5194,6 +5217,8 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private void updateInvalidFieldStyles() {
+        setIdFieldColor(questIdBox, isInvalidQuestIdField());
+        setIdFieldColor(questNameBox, isInvalidQuestNameField());
         setIdFieldColor(catDependencyBox, isInvalidCategoryDependency());
         setIdFieldColor(subCategoryBox, isInvalidParentCategory());
         setIdFieldColor(questCategoryBox, isInvalidQuestCategory());
@@ -5226,12 +5251,29 @@ public final class QuestEditorScreen extends Screen {
 
     private String tooltipForField(FormField field) {
         if (field == null || field.widget == null) return "";
+        if (field.widget == questIdBox && isInvalidQuestIdField()) {
+            return isDuplicateQuestId(safe(questIdBox.getValue()).trim()) ? "Quest ID already exists" : "Quest ID required";
+        }
+        if (field.widget == questNameBox && isInvalidQuestNameField()) return "Quest name required";
         if (field.widget == catDependencyBox && isInvalidCategoryDependency()) return INVALID_ID_TOOLTIP;
         if (field.widget == subCategoryBox && isInvalidParentCategory()) return INVALID_ID_TOOLTIP;
-        if (field.widget == questCategoryBox && isInvalidQuestCategory()) return INVALID_ID_TOOLTIP;
+        if (field.widget == questCategoryBox && isInvalidQuestCategory()) {
+            return dropdownBoxValue(questCategoryBox).isBlank() ? "Quest category required" : INVALID_ID_TOOLTIP;
+        }
         if (field.widget == questSubCategoryBox && isInvalidQuestSubCategory()) return INVALID_ID_TOOLTIP;
         if (field.widget == questDependenciesBox && isInvalidQuestDependencies()) return INVALID_ID_TOOLTIP;
         return field.tooltip == null ? "" : field.tooltip;
+    }
+
+    private boolean isInvalidQuestIdField() {
+        if (editorType != EditorType.QUEST) return false;
+        String questId = safe(questIdBox == null ? "" : questIdBox.getValue()).trim();
+        return questId.isBlank() || isDuplicateQuestId(questId);
+    }
+
+    private boolean isInvalidQuestNameField() {
+        if (editorType != EditorType.QUEST) return false;
+        return safe(questNameBox == null ? "" : questNameBox.getValue()).trim().isBlank();
     }
 
     private int renderInlineQuestFlags(GuiGraphics gg, int mouseX, int mouseY, int x, int y, int width, int clipTop, int clipBottom) {
@@ -5273,7 +5315,7 @@ public final class QuestEditorScreen extends Screen {
 
             boolean hovered = mouseX >= segmentX && mouseX <= segmentX + segmentWidth
                     && mouseY >= y && mouseY <= y + totalHeight;
-            if (hovered) {
+            if (!isItemPickerOpen() && hovered) {
                 int tooltipY = Math.max(py + 2, y - 10);
                 gg.renderComponentTooltip(font, List.of(Component.literal(tooltips[i][0]), Component.literal(tooltips[i][1])), mouseX, tooltipY);
             }
@@ -5290,7 +5332,8 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private boolean isInvalidQuestCategory() {
-        return isMissingCategoryId(dropdownBoxValue(questCategoryBox));
+        String value = dropdownBoxValue(questCategoryBox);
+        return value.isBlank() || isMissingCategoryId(value);
     }
 
     private boolean isInvalidQuestSubCategory() {
@@ -5356,7 +5399,43 @@ public final class QuestEditorScreen extends Screen {
         if (currentPack == null) return false;
         String id = raw == null ? "" : raw.trim();
         if (id.isBlank()) return false;
+        String category = dropdownBoxValue(questCategoryBox);
+        if (!category.isBlank()) {
+            boolean hasExact = subCategoryIdCache.contains(category + "::" + id);
+            boolean hasWildcard = subCategoryIdCache.contains("::" + id);
+            if (hasExact || hasWildcard) return false;
+        }
         return !subCategoryIdCache.contains(id);
+    }
+
+    private boolean isDuplicateQuestId(String questIdRaw) {
+        if (currentPack == null) return false;
+        String questId = safe(questIdRaw).trim();
+        if (questId.isBlank()) return false;
+        int matches = 0;
+        boolean matchedEditingPath = false;
+        for (NamedEntry entry : listQuestEntries(currentPack)) {
+            if (entry == null || entry.id == null || !questId.equals(entry.id)) continue;
+            matches++;
+            if (editingPath != null && entry.path != null && editingPath.equals(entry.path)) {
+                matchedEditingPath = true;
+            }
+        }
+        if (editingPath != null && matchedEditingPath) return matches > 1;
+        return matches > 0;
+    }
+
+    private boolean isDuplicateQuestIdAcrossPack(String questIdRaw) {
+        if (currentPack == null) return false;
+        String questId = safe(questIdRaw).trim();
+        if (questId.isBlank()) return false;
+        int matches = 0;
+        for (NamedEntry entry : listQuestEntries(currentPack)) {
+            if (entry == null || entry.id == null || !questId.equals(entry.id)) continue;
+            matches++;
+            if (matches > 1) return true;
+        }
+        return false;
     }
 
     private void refreshPackIdCaches() {
@@ -5378,7 +5457,13 @@ public final class QuestEditorScreen extends Screen {
                 if (entry != null && entry.id != null && !entry.id.isBlank()) categoryIdCache.add(entry.id);
             }
             for (NamedEntry entry : listSubCategoryEntries(currentPack)) {
-                if (entry != null && entry.id != null && !entry.id.isBlank()) subCategoryIdCache.add(entry.id);
+                if (entry == null || entry.id == null || entry.id.isBlank()) continue;
+                subCategoryIdCache.add(entry.id);
+                SubCategoryData data = loadSubCategory(currentPack, entry.id);
+                String category = data == null ? "" : safe(data.category).trim();
+                if (!category.isBlank()) {
+                    subCategoryIdCache.add(category + "::" + entry.id);
+                }
             }
             for (NamedEntry entry : listQuestEntries(currentPack)) {
                 if (entry != null && entry.id != null && !entry.id.isBlank()) {
@@ -5881,9 +5966,14 @@ public final class QuestEditorScreen extends Screen {
         if (options.isEmpty()) return;
         openDropdownTarget = target;
         openDropdownX = box.getX();
-        openDropdownY = box.getY() + box.getHeight();
         openDropdownW = Math.max(70, box.getWidth());
         openDropdownH = Math.min(5, options.size()) * ENTRY_ROW_H;
+        int preferredBelowY = box.getY() + box.getHeight();
+        int preferredAboveY = box.getY() - openDropdownH;
+        openDropdownY = preferredBelowY;
+        if (preferredBelowY + openDropdownH > py + ph && preferredAboveY >= py) {
+            openDropdownY = preferredAboveY;
+        }
         int maxStart = Math.max(0, options.size() - Math.min(5, options.size()));
         openDropdownScroll = Mth.clamp(savedDropdownScroll(target), 0, maxStart);
     }
@@ -6202,16 +6292,20 @@ public final class QuestEditorScreen extends Screen {
         if (itemPickerTab == ItemPickerTab.CREATIVE) {
             ensureItemIdCache();
             for (String id : itemIdCache) {
+                if ("minecraft:air".equals(id)) continue;
                 if (!query.isBlank() && !id.contains(query)) continue;
                 ResourceLocation rl = ResourceLocation.tryParse(id);
                 if (rl == null) continue;
-                out.add(new ItemStack(BuiltInRegistries.ITEM.get(rl)));
+                Item item = BuiltInRegistries.ITEM.get(rl);
+                if (item == null || item == net.minecraft.world.item.Items.AIR) continue;
+                out.add(new ItemStack(item));
             }
             return out;
         }
         if (minecraft.player == null) return out;
         for (ItemStack stack : minecraft.player.getInventory().items) {
             if (stack == null || stack.isEmpty()) continue;
+            if (stack.getItem() == net.minecraft.world.item.Items.AIR) continue;
             String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
             if (!query.isBlank() && !id.contains(query)) continue;
             out.add(stack.copy());
