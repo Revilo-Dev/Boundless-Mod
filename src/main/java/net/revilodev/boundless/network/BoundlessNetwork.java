@@ -63,6 +63,7 @@ public final class BoundlessNetwork {
 
         r.playToServer(Redeem.TYPE, Redeem.CODEC, BoundlessNetwork::handleRedeem);
         r.playToServer(Reject.TYPE, Reject.CODEC, BoundlessNetwork::handleReject);
+        r.playToServer(UndoReject.TYPE, UndoReject.CODEC, BoundlessNetwork::handleUndoReject);
         r.playToServer(CreateScroll.TYPE, CreateScroll.CODEC, BoundlessNetwork::handleCreateScroll);
         r.playToServer(RestartRepeatable.TYPE, RestartRepeatable.CODEC, BoundlessNetwork::handleRestartRepeatable);
         r.playToServer(UpdateFieldInput.TYPE, UpdateFieldInput.CODEC, BoundlessNetwork::handleUpdateFieldInput);
@@ -95,6 +96,16 @@ public final class BoundlessNetwork {
                 buf -> new Reject(buf.readUtf())
         );
         @Override public Type<Reject> type() { return TYPE; }
+    }
+
+    public record UndoReject(String questId) implements CustomPacketPayload {
+        public static final Type<UndoReject> TYPE =
+                new Type<>(ResourceLocation.fromNamespaceAndPath("boundless", "undo_reject"));
+        public static final StreamCodec<FriendlyByteBuf, UndoReject> CODEC = StreamCodec.of(
+                (buf, p) -> buf.writeUtf(p.questId),
+                buf -> new UndoReject(buf.readUtf())
+        );
+        @Override public Type<UndoReject> type() { return TYPE; }
     }
 
     public record CreateScroll(String questId) implements CustomPacketPayload {
@@ -553,6 +564,17 @@ public final class BoundlessNetwork {
                     sp.drop(stack, false);
                 }
                 sendProgressMeta(sp, q.id);
+            });
+        });
+    }
+
+    private static void handleUndoReject(UndoReject p, IPayloadContext ctx) {
+        ctx.enqueueWork(() -> {
+            ServerPlayer sp = (ServerPlayer) ctx.player();
+            QuestData.byIdServer(sp.server, p.questId()).ifPresent(q -> {
+                if (QuestTracker.serverUndoReject(q, sp)) {
+                    sendStatus(sp, q.id, QuestTracker.Status.INCOMPLETE.name());
+                }
             });
         });
     }

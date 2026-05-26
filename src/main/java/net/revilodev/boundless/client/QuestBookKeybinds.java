@@ -23,7 +23,7 @@ public final class QuestBookKeybinds {
         if (registered) return;
         registered = true;
         if (openQuestBook == null) {
-            openQuestBook = new KeyMapping(KEY_OPEN, InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_BRACKET, CATEGORY);
+            openQuestBook = new KeyMapping(KEY_OPEN, InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_BRACKET, CATEGORY);
         }
         event.register(openQuestBook);
     }

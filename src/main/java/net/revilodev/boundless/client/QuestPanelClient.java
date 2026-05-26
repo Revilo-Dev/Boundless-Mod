@@ -41,6 +41,10 @@ public final class QuestPanelClient {
             ResourceLocation.fromNamespaceAndPath("boundless", "textures/gui/quest_panel.png");
     private static final int PANEL_W = 147;
     private static final int PANEL_H = 166;
+    private static final int BTN_X_BESIDE_RECIPE = 125;
+    private static final int BTN_Y_BESIDE_RECIPE = 61;
+    private static final int BTN_X_ABOVE_OFFHAND = 76;
+    private static final int BTN_Y_ABOVE_OFFHAND = 43;
     private static final Map<Screen, State> STATES = new WeakHashMap<>();
     private static Field LEFT_FIELD;
     private static boolean lastQuestOpen = false;
@@ -58,8 +62,8 @@ public final class QuestPanelClient {
         STATES.put(s, st);
 
         if (shouldShowInventoryQuestButton()) {
-            int btnX = inv.getGuiLeft() + 125;
-            int btnY = inv.getGuiTop() + 61;
+            int btnX = computeQuestButtonX(inv);
+            int btnY = computeQuestButtonY(inv);
             QuestToggleButton btn = new QuestToggleButton(btnX, btnY, BTN_TEX, BTN_TEX_HOVER, () -> toggle(st));
             st.btn = btn;
             e.addListener(btn);
@@ -127,8 +131,10 @@ public final class QuestPanelClient {
 
         if (lastQuestOpen && isQuestBookEnabled()) {
             st.open = true;
-            st.originalLeft = getLeft(inv);
-            setLeft(inv, computeCenteredLeft(inv));
+            if (Config.centerInventoryWithQuestPanel()) {
+                st.originalLeft = getLeft(inv);
+                setLeft(inv, computeCenteredLeft(inv));
+            }
             updateVisibility(st);
         }
     }
@@ -159,7 +165,7 @@ public final class QuestPanelClient {
                 st.btn.setTextures(BTN_TEX, BTN_TEX_HOVER);
             }
         }
-        if (st.open) {
+        if (st.open && Config.centerInventoryWithQuestPanel()) {
             setLeft(inv, computeCenteredLeft(inv));
         }
         reposition(inv, st);
@@ -236,8 +242,10 @@ public final class QuestPanelClient {
         st.open = !st.open;
         lastQuestOpen = st.open;
         if (st.open) {
-            if (st.originalLeft == null) st.originalLeft = getLeft(st.inv);
-            setLeft(st.inv, computeCenteredLeft(st.inv));
+            if (Config.centerInventoryWithQuestPanel()) {
+                if (st.originalLeft == null) st.originalLeft = getLeft(st.inv);
+                setLeft(st.inv, computeCenteredLeft(st.inv));
+            }
             applySelectedCategory(st);
             st.showingDetails = false;
         } else if (st.originalLeft != null) {
@@ -308,8 +316,8 @@ public final class QuestPanelClient {
 
     private static void reposition(InventoryScreen inv, State st) {
         if (st.btn != null) {
-            int x = inv.getGuiLeft() + 125;
-            int y = inv.getGuiTop() + 61;
+            int x = computeQuestButtonX(inv);
+            int y = computeQuestButtonY(inv);
             st.btn.setPosition(x, y);
         }
         if (st.settingsButton != null) {
@@ -472,6 +480,18 @@ public final class QuestPanelClient {
 
     private static boolean shouldShowInventoryQuestButton() {
         return isQuestBookEnabled() && !Config.hideQuestBookInInventory();
+    }
+
+    private static int computeQuestButtonX(InventoryScreen inv) {
+        String mode = Config.questBookInventoryButtonPosition();
+        int offset = "above_offhand_slot".equals(mode) ? BTN_X_ABOVE_OFFHAND : BTN_X_BESIDE_RECIPE;
+        return inv.getGuiLeft() + offset;
+    }
+
+    private static int computeQuestButtonY(InventoryScreen inv) {
+        String mode = Config.questBookInventoryButtonPosition();
+        int offset = "above_offhand_slot".equals(mode) ? BTN_Y_ABOVE_OFFHAND : BTN_Y_BESIDE_RECIPE;
+        return inv.getGuiTop() + offset;
     }
 
     private static void openSettings(InventoryScreen inv) {

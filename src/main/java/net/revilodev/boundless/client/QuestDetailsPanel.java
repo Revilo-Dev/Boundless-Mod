@@ -117,7 +117,10 @@ public final class QuestDetailsPanel extends AbstractWidget {
 
         this.complete = new CompleteButton(getX(), getY(), () -> {
             if (quest != null && mc.player != null) {
-                if (QuestTracker.canRestartRepeatable(quest, mc.player)) {
+                QuestTracker.Status status = QuestTracker.getStatus(quest, mc.player);
+                if (status == QuestTracker.Status.REJECTED && quest.optional) {
+                    PacketDistributor.sendToServer(new BoundlessNetwork.UndoReject(quest.id));
+                } else if (QuestTracker.canRestartRepeatable(quest, mc.player)) {
                     PacketDistributor.sendToServer(new BoundlessNetwork.RestartRepeatable(quest.id));
                 } else {
                     PacketDistributor.sendToServer(new BoundlessNetwork.Redeem(quest.id));
@@ -784,10 +787,13 @@ public final class QuestDetailsPanel extends AbstractWidget {
         boolean done = red || rej;
         boolean ready = depsMet && !done
                 && (status == QuestTracker.Status.COMPLETED || QuestTracker.isReady(quest, mc.player));
+        boolean canUndoReject = rej && quest.optional;
 
-        complete.setMessage(Component.translatable(canRepeat ? "ui.boundless.questbook.repeat" : "quest.boundless.complete"));
-        complete.active = canRepeat || ready;
-        complete.visible = !rej && (canRepeat || !red);
+        complete.setMessage(canUndoReject
+                ? Component.literal("Undo Reject")
+                : Component.translatable(canRepeat ? "ui.boundless.questbook.repeat" : "quest.boundless.complete"));
+        complete.active = canUndoReject || canRepeat || ready;
+        complete.visible = canUndoReject || (!rej && (canRepeat || !red));
 
         reject.setOptionalAllowed(quest.optional);
         reject.active = !done && !canRepeat && quest.optional;

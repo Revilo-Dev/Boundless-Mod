@@ -143,8 +143,8 @@ public final class QuestEditorScreen extends Screen {
     private static final int TOGGLE_SIZE = 20;
     private static final int SMALL_BTN_SIZE = 20;
     private static final int SMALL_BTN_GAP = 4;
-    private static final int TAB_W = 30;
-    private static final int TAB_H = 23;
+    private static final int TAB_W = 35;
+    private static final int TAB_H = 27;
     private static final int TAB_GAP = 3;
     private static final int TOP_ACTION_GAP = 3;
     private static final int BOTTOM_CREATE_GAP = 3;
@@ -262,7 +262,7 @@ public final class QuestEditorScreen extends Screen {
 
     private EditorListWidget leftList;
     private ActionButton saveButton;
-    private ActionButton exportPackButton;
+    private Button exportPackButton;
     private IconButton duplicateButton;
     private IconButton deleteQuestButton;
 
@@ -323,7 +323,7 @@ public final class QuestEditorScreen extends Screen {
     private final Map<ScaledMultiLineEditBox, String> entryTypeByBox = new HashMap<>();
     private final Map<ScaledMultiLineEditBox, String> selectedItemIdByBox = new HashMap<>();
     private final Map<ScaledMultiLineEditBox, String> selectedItemComponentsByBox = new HashMap<>();
-    private static final String LEGACY_PACK_TOOLTIP = "Downgrade to update 8 to convert this pack to a questpack, resource / data packs are no longer supported!";
+    private static final String LEGACY_PACK_TOOLTIP = "Incompatible pack";
     private boolean syncingEntryRows = false;
     private boolean entryRowsDirty = false;
     private final List<TextInsertButton> descriptionFormatButtons = new ArrayList<>();
@@ -411,8 +411,9 @@ public final class QuestEditorScreen extends Screen {
         saveButton = new ActionButton(saveX, barY, 68, 20,
                 tr("save"), this::saveCurrent);
         addRenderableWidget(saveButton);
-        exportPackButton = new ActionButton(saveX - 70, barY, 68, 20,
-                tr("export"), this::exportCurrentPack);
+        exportPackButton = Button.builder(tr("export"), button -> exportCurrentPack())
+                .bounds(saveX - 70, barY, 68, 20)
+                .build();
         exportPackButton.visible = false;
         exportPackButton.active = false;
         addRenderableWidget(exportPackButton);
@@ -801,11 +802,6 @@ public final class QuestEditorScreen extends Screen {
             statusColor = 0xFF8080;
             return;
         }
-        if (pack.legacy) {
-            statusMessage = LEGACY_PACK_TOOLTIP;
-            statusColor = 0xFFD080;
-            return;
-        }
         currentPack = pack;
         selectedEntryId = pack.name;
         leftList.setSelectedId(selectedEntryId);
@@ -828,8 +824,6 @@ public final class QuestEditorScreen extends Screen {
         QuestPack pack = findPackByName(entry.id);
         if (pack == null) return;
         if (pack.legacy) {
-            statusMessage = LEGACY_PACK_TOOLTIP;
-            statusColor = 0xFFD080;
             return;
         }
         boolean next = !pack.enabled;
@@ -926,6 +920,10 @@ public final class QuestEditorScreen extends Screen {
 
     private void applyQuestOrder(List<QuestMoveEntry> orderedEntries) throws IOException {
         if (currentPack == null || orderedEntries == null || orderedEntries.isEmpty()) return;
+        if (usesSingleFilePack(currentPack)) {
+            applySingleFileOrder(currentPack.questsFile, orderedEntries.stream().map(e -> e.id).toList(), "order");
+            return;
+        }
 
         Map<Path, Path> stagedMoves = new LinkedHashMap<>();
         for (int i = 0; i < orderedEntries.size(); i++) {
@@ -986,6 +984,11 @@ public final class QuestEditorScreen extends Screen {
 
     private void applyExplicitOrder(List<NamedEntry> orderedEntries, String key) throws IOException {
         if (orderedEntries == null || orderedEntries.isEmpty() || key == null || key.isBlank()) return;
+        if (currentPack != null && usesSingleFilePack(currentPack)) {
+            Path file = mode == Mode.CATEGORY_LIST ? currentPack.categoriesFile : currentPack.subCategoriesFile;
+            applySingleFileOrder(file, orderedEntries.stream().map(e -> e.id).toList(), key);
+            return;
+        }
         for (int i = 0; i < orderedEntries.size(); i++) {
             NamedEntry entry = orderedEntries.get(i);
             if (entry == null || entry.path == null) continue;
@@ -1017,8 +1020,6 @@ public final class QuestEditorScreen extends Screen {
             return;
         }
         if (currentPack.legacy) {
-            statusMessage = LEGACY_PACK_TOOLTIP;
-            statusColor = 0xFFD080;
             return;
         }
         if (!ensurePackWorkspace(currentPack)) {
@@ -1307,7 +1308,6 @@ public final class QuestEditorScreen extends Screen {
             String iconPath = normalizePackIconId(packIconPathBox.getValue());
             writePackMeta(root, name, "Boundless Quest Pack: " + name, iconPath, true);
             QuestPack pack = new QuestPack(name, namespace, root, false, true);
-            pack.ensureDirs();
             initializeSingleFilePack(pack);
             currentPack = pack;
             setMode(Mode.PACK_MENU);
@@ -1447,26 +1447,51 @@ public final class QuestEditorScreen extends Screen {
     }
 
     private int resolveCategoryOrder(String categoryId) {
+        if (currentPack != null && usesSingleFilePack(currentPack)) {
+            int existingSingle = readOrderFromSingleFileEntry(currentPack.categoriesFile, categoryId, -1);
+            if (existingSingle >= 0) return existingSingle;
+        }
         int existing = readOrderFromPath(editingPath, -1);
         if (existing >= 0) return existing;
         if (currentPack == null) return 0;
         int max = -1;
         for (NamedEntry entry : listCategoryEntries(currentPack)) {
             if (entry == null || entry.id == null || entry.id.equals(categoryId)) continue;
-            int order = readOrderFromPath(entry.path, -1);
+            int order = usesSingleFilePack(currentPack)
+                    ? readOrderFromSingleFileEntry(currentPack.categoriesFile, entry.id, -1)
+                    : readOrderFromPath(entry.path, -1);
             if (order > max) max = order;
         }
         return Math.max(0, max + 1);
     }
 
     private int resolveSubCategoryOrder(String subCategoryId) {
+        if (currentPack != null && usesSingleFilePack(currentPack)) {
+            int existingSingle = readOrderFromSingleFileEntry(currentPack.subCategoriesFile, subCategoryId, -1);
+            if (existingSingle >= 0) return existingSingle;
+        }
         int existing = readOrderFromPath(editingPath, -1);
         if (existing >= 0) return existing;
         if (currentPack == null) return 0;
         int max = -1;
         for (NamedEntry entry : listSubCategoryEntries(currentPack)) {
             if (entry == null || entry.id == null || entry.id.equals(subCategoryId)) continue;
-            int order = readOrderFromPath(entry.path, -1);
+            int order = usesSingleFilePack(currentPack)
+                    ? readOrderFromSingleFileEntry(currentPack.subCategoriesFile, entry.id, -1)
+                    : readOrderFromPath(entry.path, -1);
+            if (order > max) max = order;
+        }
+        return Math.max(0, max + 1);
+    }
+
+    private int resolveQuestOrder(String questId) {
+        if (currentPack == null || !usesSingleFilePack(currentPack)) return 0;
+        int existing = readOrderFromSingleFileEntry(currentPack.questsFile, questId, -1);
+        if (existing >= 0) return existing;
+        int max = -1;
+        for (NamedEntry entry : listQuestEntries(currentPack)) {
+            if (entry == null || entry.id == null || entry.id.equals(questId)) continue;
+            int order = readOrderFromSingleFileEntry(currentPack.questsFile, entry.id, -1);
             if (order > max) max = order;
         }
         return Math.max(0, max + 1);
@@ -1516,6 +1541,9 @@ public final class QuestEditorScreen extends Screen {
         addOptional(obj, "description", questDescriptionBox.getValue());
         addOptional(obj, "category", categoryRaw);
         addOptional(obj, "sub-category", dropdownBoxValue(questSubCategoryBox));
+        if (currentPack != null && usesSingleFilePack(currentPack)) {
+            obj.addProperty("order", resolveQuestOrder(questId));
+        }
         obj.addProperty("optional", questOptionalToggle.isOn());
         obj.addProperty("repeatable", questRepeatableToggle.isOn());
         obj.addProperty("auto_complete", questAutoCompleteToggle.isOn());
@@ -3712,9 +3740,11 @@ public final class QuestEditorScreen extends Screen {
         meta.description = "Boundless Quest Pack: " + safe(fallbackName);
         meta.enabled = true;
         if (root == null) return meta;
-        Path packMeta = root.resolve("pack.mcmeta");
-        if (!Files.exists(packMeta)) return meta;
-        try (BufferedReader reader = Files.newBufferedReader(packMeta, StandardCharsets.UTF_8)) {
+        Path packMeta = packMetaPath(root);
+        Path legacyPackMeta = root.resolve("pack.mcmeta");
+        Path source = Files.exists(packMeta) ? packMeta : legacyPackMeta;
+        if (!Files.exists(source)) return meta;
+        try (BufferedReader reader = Files.newBufferedReader(source, StandardCharsets.UTF_8)) {
             JsonElement parsed = JsonParser.parseReader(reader);
             if (!(parsed instanceof JsonObject obj)) return meta;
             JsonObject pack = obj.has("pack") && obj.get("pack").isJsonObject() ? obj.getAsJsonObject("pack") : null;
@@ -3791,10 +3821,16 @@ public final class QuestEditorScreen extends Screen {
         boundless.addProperty("enabled", enabled);
         pack.add("boundless", boundless);
 
-        Path meta = root.resolve("pack.mcmeta");
+        Path meta = packMetaPath(root);
+        Files.createDirectories(meta.getParent());
         try (BufferedWriter writer = Files.newBufferedWriter(meta, StandardCharsets.UTF_8)) {
             gson.toJson(pack, writer);
         }
+        Files.deleteIfExists(root.resolve("pack.mcmeta"));
+    }
+
+    private Path packMetaPath(Path root) {
+        return root.resolve("boundless").resolve("pack.json");
     }
 
     private void writePackIcon(Path root, String sourcePath) throws IOException {
@@ -4319,6 +4355,32 @@ public final class QuestEditorScreen extends Screen {
     private int readOrderFromPath(Path path, int fallback) {
         JsonObject obj = readJson(path);
         return parseIntFlexible(obj, "order", fallback);
+    }
+
+    private int readOrderFromSingleFileEntry(Path file, String id, int fallback) {
+        JsonObject obj = findSingleFileObject(file, id);
+        return parseIntFlexible(obj, "order", fallback);
+    }
+
+    private void applySingleFileOrder(Path file, List<String> orderedIds, String key) throws IOException {
+        if (file == null || orderedIds == null || orderedIds.isEmpty()) return;
+        List<JsonObject> entries = readSingleFileObjects(file);
+        if (entries.isEmpty()) return;
+        Map<String, Integer> orderById = new LinkedHashMap<>();
+        for (int i = 0; i < orderedIds.size(); i++) {
+            String id = safe(orderedIds.get(i)).trim();
+            if (!id.isBlank()) orderById.put(id, i);
+        }
+        boolean changed = false;
+        for (JsonObject obj : entries) {
+            if (obj == null) continue;
+            String id = safe(optString(obj, "id", "")).trim();
+            Integer idx = orderById.get(id);
+            if (idx == null) continue;
+            obj.addProperty(key, idx);
+            changed = true;
+        }
+        if (changed) writeSingleFileObjects(file, entries);
     }
 
     private String optString(JsonObject obj, String key, String def) {
@@ -7946,9 +8008,7 @@ public final class QuestEditorScreen extends Screen {
         }
 
         void ensureDirs() throws IOException {
-            Files.createDirectories(categoriesDir);
-            Files.createDirectories(subCategoriesDir);
-            Files.createDirectories(questsDir);
+            Files.createDirectories(root);
             Files.createDirectories(singleRoot);
         }
     }
@@ -8578,8 +8638,9 @@ public final class QuestEditorScreen extends Screen {
         @Override
         protected void renderWidget(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
             boolean selected = mode == targetMode;
-            gg.blit(selected ? TAB_SELECTED_TEX : TAB_TEX, getX(), getY(), 0, 0, this.width, this.height, TAB_W, TAB_H);
-            int iconX = getX() + (this.width - 16) / 2;
+            int renderX = getX() + (selected ? 2 : 0);
+            gg.blit(selected ? TAB_SELECTED_TEX : TAB_TEX, renderX, getY(), 0, 0, this.width, this.height, TAB_W, TAB_H);
+            int iconX = renderX + (this.width - 16) / 2;
             int iconY = getY() + 5;
             if (iconTexture != null) {
                 gg.blit(iconTexture, iconX, iconY, 0, 0, 16, 16, 16, 16);

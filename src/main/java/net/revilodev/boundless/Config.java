@@ -27,6 +27,16 @@ public final class Config {
     public static final ModConfigSpec.ConfigValue<Boolean> HIDE_QUEST_BOOK_IN_INVENTORY =
             BUILDER.comment("If true, hides the quest book button in the inventory screen.")
                     .define("hideQuestBookInInventory", false);
+    public static final ModConfigSpec.ConfigValue<String> QUEST_BOOK_INVENTORY_BUTTON_POSITION =
+            BUILDER.comment("Quest book button position in inventory: beside_recipe_book, above_offhand_slot")
+                    .define("questBookInventoryButtonPosition", "beside_recipe_book", o -> {
+                        if (!(o instanceof String s)) return false;
+                        s = s.trim().toLowerCase();
+                        return s.equals("beside_recipe_book") || s.equals("above_offhand_slot");
+                    });
+    public static final ModConfigSpec.ConfigValue<Boolean> CENTER_INVENTORY_WITH_QUEST_PANEL =
+            BUILDER.comment("If true, centers inventory and quest panel together when the quest panel is open.")
+                    .define("centerInventoryWithQuestPanel", true);
     public static final ModConfigSpec.ConfigValue<Boolean> HIDE_CATEGORY_HEADER =
             BUILDER.comment("If true, hides the category header bar.")
                     .define("hideCategoryHeader", false);
@@ -103,6 +113,17 @@ public final class Config {
         return HIDE_QUEST_BOOK_IN_INVENTORY.get();
     }
 
+    public static String questBookInventoryButtonPosition() {
+        String s = QUEST_BOOK_INVENTORY_BUTTON_POSITION.get();
+        if (s == null) return "beside_recipe_book";
+        s = s.trim().toLowerCase();
+        return (s.equals("beside_recipe_book") || s.equals("above_offhand_slot")) ? s : "beside_recipe_book";
+    }
+
+    public static boolean centerInventoryWithQuestPanel() {
+        return CENTER_INVENTORY_WITH_QUEST_PANEL.get();
+    }
+
     public static boolean hideCategoryHeader() {
         return HIDE_CATEGORY_HEADER.get();
     }
@@ -174,10 +195,12 @@ public final class Config {
     @SubscribeEvent
     public static void onLoad(ModConfigEvent.Loading e) {
         if (e.getConfig().getSpec() == SPEC)
-            BoundlessMod.LOGGER.info("[Boundless] Config loaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, filterMode={}, disableCategories={}, builtinPack={}, hideWidgetIcons={}, searchBox={}, descColors={}, questToasts={}, disablePinning={}, autoClaim={}, questScrolls={}, disableBook={}, spawnBook={}",
+            BoundlessMod.LOGGER.info("[Boundless] Config loaded: categories={}, pos={}, hideInvBtn={}, invBtnPos={}, centerInv={}, hideHeader={}, filterMode={}, disableCategories={}, builtinPack={}, hideWidgetIcons={}, searchBox={}, descColors={}, questToasts={}, disablePinning={}, autoClaim={}, questScrolls={}, disableBook={}, spawnBook={}",
                     disabledCategories(),
                     pinnedQuestHudPosition(),
                     hideQuestBookInInventory(),
+                    questBookInventoryButtonPosition(),
+                    centerInventoryWithQuestPanel(),
                     hideCategoryHeader(),
                     filterDisplayMode(),
                     disableCategories(),
@@ -196,10 +219,12 @@ public final class Config {
     @SubscribeEvent
     public static void onReload(ModConfigEvent.Reloading e) {
         if (e.getConfig().getSpec() == SPEC)
-            BoundlessMod.LOGGER.info("[Boundless] Config reloaded: categories={}, pos={}, hideInvBtn={}, hideHeader={}, filterMode={}, disableCategories={}, builtinPack={}, hideWidgetIcons={}, searchBox={}, descColors={}, questToasts={}, disablePinning={}, autoClaim={}, questScrolls={}, disableBook={}, spawnBook={}",
+            BoundlessMod.LOGGER.info("[Boundless] Config reloaded: categories={}, pos={}, hideInvBtn={}, invBtnPos={}, centerInv={}, hideHeader={}, filterMode={}, disableCategories={}, builtinPack={}, hideWidgetIcons={}, searchBox={}, descColors={}, questToasts={}, disablePinning={}, autoClaim={}, questScrolls={}, disableBook={}, spawnBook={}",
                     disabledCategories(),
                     pinnedQuestHudPosition(),
                     hideQuestBookInInventory(),
+                    questBookInventoryButtonPosition(),
+                    centerInventoryWithQuestPanel(),
                     hideCategoryHeader(),
                     filterDisplayMode(),
                     disableCategories(),

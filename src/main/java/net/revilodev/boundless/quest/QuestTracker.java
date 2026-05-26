@@ -802,6 +802,14 @@ public final class QuestTracker {
         return true;
     }
 
+    public static boolean serverUndoReject(QuestData.Quest q, ServerPlayer player) {
+        if (q == null || player == null) return false;
+        if (!q.optional) return false;
+        if (getServerStatus(player, q.id) != Status.REJECTED) return false;
+        setServerStatus(player, q.id, Status.INCOMPLETE);
+        return true;
+    }
+
     public static void reset(Player player) {
         if (player instanceof ServerPlayer sp) {
             QuestProgressState.get(sp.serverLevel()).clear(sp.getUUID());
