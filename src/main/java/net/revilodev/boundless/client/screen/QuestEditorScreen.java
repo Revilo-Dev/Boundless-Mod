@@ -1368,7 +1368,9 @@ public final class QuestEditorScreen extends Screen {
             selectedEntryId = currentPack.name;
             leftList.setSelectedId(selectedEntryId);
             if (!requestedName.equals(oldName)) {
-            stagePackDeletion(new QuestPack(oldName, oldNamespace, oldRoot, currentPack.legacy, currentPack.enabled), "Pack options saved");
+                stagedPacks.remove(oldName);
+                stagedDeletedPackNames.remove(oldName);
+                deleteAppliedPackArtifactsSafe(oldName);
             }
             stagePackChange(currentPack, "Pack options saved");
             refreshLeftList();
@@ -3708,9 +3710,15 @@ public final class QuestEditorScreen extends Screen {
         Path data = root.resolve("data");
         if (!Files.isDirectory(data)) return "";
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(data)) {
+            String fallback = "";
             for (Path p : stream) {
-                if (Files.isDirectory(p)) return p.getFileName().toString();
+                if (!Files.isDirectory(p)) continue;
+                String namespace = p.getFileName().toString();
+                if (fallback.isBlank()) fallback = namespace;
+                Path questsDir = p.resolve("quests");
+                if (Files.isDirectory(questsDir)) return namespace;
             }
+            return fallback;
         } catch (IOException ignored) {
         }
         return "";
@@ -4340,8 +4348,7 @@ public final class QuestEditorScreen extends Screen {
 
     private boolean usesSingleFilePack(QuestPack pack) {
         if (pack == null) return false;
-        if (isSingleFilePack(pack)) return true;
-        return safe(pack.namespace).trim().isBlank();
+        return isSingleFilePack(pack);
     }
 
     private void initializeSingleFilePack(QuestPack pack) throws IOException {
@@ -7161,21 +7168,21 @@ public final class QuestEditorScreen extends Screen {
                 if (showCursor && cursorInText && cursor >= line.beginIndex() && cursor <= line.endIndex()) {
                     if (visible) {
                         int drawY = Math.round((float) (lineScreenY * invScale));
-                        FormattedRenderResult beforeCursor = drawFormattedString(guiGraphics, text.substring(line.beginIndex(), cursor), baseX, drawY, activeColor);
-                        drawX = beforeCursor.endX() - 1;
-                        activeColor = beforeCursor.finalColor();
+                        long beforeCursor = drawFormattedString(guiGraphics, text.substring(line.beginIndex(), cursor), baseX, drawY, activeColor);
+                        drawX = unpackEndX(beforeCursor) - 1;
+                        activeColor = unpackFinalColor(beforeCursor);
                         guiGraphics.fill(drawX, drawY - 1, drawX + 1, drawY + 1 + this.font.lineHeight, CURSOR_INSERT_COLOR);
-                        FormattedRenderResult afterCursor = drawFormattedString(guiGraphics, text.substring(cursor, line.endIndex()), drawX, drawY, activeColor);
-                        activeColor = afterCursor.finalColor();
+                        long afterCursor = drawFormattedString(guiGraphics, text.substring(cursor, line.endIndex()), drawX, drawY, activeColor);
+                        activeColor = unpackFinalColor(afterCursor);
                     }
                 } else {
                     if (visible) {
                         int drawY = Math.round((float) (lineScreenY * invScale));
-                        FormattedRenderResult lineRender = drawFormattedString(guiGraphics, text.substring(line.beginIndex(), line.endIndex()), baseX, drawY, activeColor);
-                        drawX = lineRender.endX() - 1;
-                        activeColor = lineRender.finalColor();
+                        long lineRender = drawFormattedString(guiGraphics, text.substring(line.beginIndex(), line.endIndex()), baseX, drawY, activeColor);
+                        drawX = unpackEndX(lineRender) - 1;
+                        activeColor = unpackFinalColor(lineRender);
                     } else {
-                        activeColor = drawFormattedString(null, text.substring(line.beginIndex(), line.endIndex()), baseX, 0, activeColor).finalColor();
+                        activeColor = unpackFinalColor(drawFormattedString(null, text.substring(line.beginIndex(), line.endIndex()), baseX, 0, activeColor));
                     }
                 }
 
@@ -7274,7 +7281,7 @@ public final class QuestEditorScreen extends Screen {
             return (double) (this.height - this.totalInnerPadding()) / this.lineHeight;
         }
 
-        private FormattedRenderResult drawFormattedString(GuiGraphics guiGraphics, String text, int x, int y, int initialColor) {
+        private long drawFormattedString(GuiGraphics guiGraphics, String text, int x, int y, int initialColor) {
             if (!this.allowColorFormatting) {
                 int drawX = x;
                 if (guiGraphics != null) {
@@ -7282,7 +7289,7 @@ public final class QuestEditorScreen extends Screen {
                 } else {
                     drawX += this.font.width(text);
                 }
-                return new FormattedRenderResult(drawX, initialColor);
+                return packRenderResult(drawX, initialColor);
             }
             int drawX = x;
             int color = initialColor;
@@ -7347,7 +7354,7 @@ public final class QuestEditorScreen extends Screen {
                     drawX += this.font.width(segment.toString());
                 }
             }
-            return new FormattedRenderResult(drawX, color);
+            return packRenderResult(drawX, color);
         }
 
         private boolean startsWithColorToken(String text, int index) {
@@ -7378,7 +7385,16 @@ public final class QuestEditorScreen extends Screen {
             };
         }
 
-        private record FormattedRenderResult(int endX, int finalColor) {
+        private long packRenderResult(int endX, int finalColor) {
+            return (((long) endX) << 32) | (finalColor & 0xFFFFFFFFL);
+        }
+
+        private int unpackEndX(long packed) {
+            return (int) (packed >> 32);
+        }
+
+        private int unpackFinalColor(long packed) {
+            return (int) packed;
         }
 
         private void seekCursorScreen(double mouseX, double mouseY) {

@@ -452,20 +452,26 @@ public final class QuestData {
 
     private static boolean isInstancePackEnabled(Path packRoot) {
         if (packRoot == null) return false;
-        Path packMeta = packRoot.resolve("pack.mcmeta");
-        if (!Files.exists(packMeta)) return true;
-        try (Reader reader = Files.newBufferedReader(packMeta, StandardCharsets.UTF_8)) {
+        Boolean enabledFromPackJson = readEnabledFlag(packRoot.resolve("boundless").resolve("pack.json"));
+        if (enabledFromPackJson != null) return enabledFromPackJson;
+        Boolean enabledFromMcmeta = readEnabledFlag(packRoot.resolve("pack.mcmeta"));
+        return enabledFromMcmeta == null ? true : enabledFromMcmeta;
+    }
+
+    private static Boolean readEnabledFlag(Path metaPath) {
+        if (metaPath == null || !Files.exists(metaPath)) return null;
+        try (Reader reader = Files.newBufferedReader(metaPath, StandardCharsets.UTF_8)) {
             JsonObject root = safeObject(reader);
-            if (root == null || !root.has("boundless") || !root.get("boundless").isJsonObject()) return true;
+            if (root == null || !root.has("boundless") || !root.get("boundless").isJsonObject()) return null;
             JsonObject boundless = root.getAsJsonObject("boundless");
-            if (!boundless.has("enabled")) return true;
+            if (!boundless.has("enabled")) return null;
             JsonElement enabled = boundless.get("enabled");
-            if (enabled == null || !enabled.isJsonPrimitive()) return true;
+            if (enabled == null || !enabled.isJsonPrimitive()) return null;
             JsonPrimitive p = enabled.getAsJsonPrimitive();
             if (p.isBoolean()) return p.getAsBoolean();
             return Boolean.parseBoolean(p.getAsString());
         } catch (Exception ignored) {
-            return true;
+            return null;
         }
     }
 

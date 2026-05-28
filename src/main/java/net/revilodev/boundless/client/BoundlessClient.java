@@ -13,5 +13,6 @@ public final class BoundlessClient {
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenClosing);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPre);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseScrolled);
+        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseButtonPressed);
     }
 }

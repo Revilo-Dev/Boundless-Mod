@@ -60,6 +60,12 @@ public final class QuestPanelClient {
         State st = new State(inv);
         st.selectedCategory = lastSelectedCategory;
         STATES.put(s, st);
+        ImageButton recipeAtInit = findRecipeButton(inv);
+        if (recipeAtInit != null) {
+            st.recipeOffsetX = recipeAtInit.getX() - inv.getGuiLeft();
+            st.recipeOffsetY = recipeAtInit.getY() - inv.getGuiTop();
+            st.hasRecipeOffset = true;
+        }
 
         if (shouldShowInventoryQuestButton()) {
             int btnX = computeQuestButtonX(inv);
@@ -205,6 +211,23 @@ public final class QuestPanelClient {
         if (used) e.setCanceled(true);
     }
 
+    public static void onMouseButtonPressed(ScreenEvent.MouseButtonPressed.Pre e) {
+        if (e.getButton() != 0) return;
+        Screen s = e.getScreen();
+        State st = STATES.get(s);
+        if (st == null || !(s instanceof InventoryScreen inv)) return;
+        if (!st.open) return;
+        ImageButton recipe = findRecipeButton(inv);
+        if (recipe == null || !recipe.visible || !recipe.active) return;
+        if (!recipe.isMouseOver(e.getMouseX(), e.getMouseY())) return;
+
+        st.open = false;
+        lastQuestOpen = false;
+        if (st.originalLeft != null) setLeft(inv, st.originalLeft);
+        reposition(inv, st);
+        updateVisibility(st);
+    }
+
     public static void applyConfigChanges() {
         QuestData.loadClient(true);
         for (State st : STATES.values()) {
@@ -242,6 +265,12 @@ public final class QuestPanelClient {
         st.open = !st.open;
         lastQuestOpen = st.open;
         if (st.open) {
+            if (isRecipePanelOpen(st.inv)) {
+                ImageButton recipe = findRecipeButton(st.inv);
+                if (recipe != null && recipe.visible && recipe.active) {
+                    recipe.onPress();
+                }
+            }
             if (Config.centerInventoryWithQuestPanel()) {
                 if (st.originalLeft == null) st.originalLeft = getLeft(st.inv);
                 setLeft(st.inv, computeCenteredLeft(st.inv));
@@ -315,6 +344,7 @@ public final class QuestPanelClient {
     }
 
     private static void reposition(InventoryScreen inv, State st) {
+        repositionRecipeButton(inv, st);
         if (st.btn != null) {
             int x = computeQuestButtonX(inv);
             int y = computeQuestButtonY(inv);
@@ -329,31 +359,31 @@ public final class QuestPanelClient {
     }
 
     private static void handleRecipeButtonRules(InventoryScreen inv, State st) {
-        if (!shouldShowInventoryQuestButton()) {
-            if (st.btn != null) st.btn.visible = false;
-            toggleRecipeButtonVisibility(inv, !st.open);
-            return;
-        }
-        if (st.open) {
-            if (st.btn != null) st.btn.visible = true;
-            toggleRecipeButtonVisibility(inv, false);
-        } else if (isRecipePanelOpen(inv)) {
-            if (st.btn != null) st.btn.visible = false;
-            toggleRecipeButtonVisibility(inv, true);
-        } else {
-            if (st.btn != null) st.btn.visible = true;
-            toggleRecipeButtonVisibility(inv, true);
+        if (st.btn != null) {
+            boolean show = shouldShowInventoryQuestButton();
+            st.btn.visible = show;
+            st.btn.active = show;
         }
     }
 
-    private static void toggleRecipeButtonVisibility(InventoryScreen inv, boolean visible) {
+    private static ImageButton findRecipeButton(InventoryScreen inv) {
         for (var child : inv.children()) {
-            if (child instanceof ImageButton btn) {
-                if (btn.getWidth() == 20 && btn.getHeight() == 18) {
-                    btn.visible = visible;
-                }
+            if (child instanceof ImageButton btn && btn.getWidth() == 20 && btn.getHeight() == 18) {
+                return btn;
             }
         }
+        return null;
+    }
+
+    private static void repositionRecipeButton(InventoryScreen inv, State st) {
+        ImageButton recipe = findRecipeButton(inv);
+        if (recipe == null) return;
+        if (!st.hasRecipeOffset) {
+            st.recipeOffsetX = recipe.getX() - inv.getGuiLeft();
+            st.recipeOffsetY = recipe.getY() - inv.getGuiTop();
+            st.hasRecipeOffset = true;
+        }
+        recipe.setPosition(inv.getGuiLeft() + st.recipeOffsetX, inv.getGuiTop() + st.recipeOffsetY);
     }
 
     private static boolean isRecipePanelOpen(InventoryScreen inv) {
@@ -562,6 +592,9 @@ public final class QuestPanelClient {
         Integer originalLeft;
         String selectedCategory = "all";
         String searchQuery = "";
+        int recipeOffsetX;
+        int recipeOffsetY;
+        boolean hasRecipeOffset;
 
         State(InventoryScreen inv) {
             this.inv = inv;

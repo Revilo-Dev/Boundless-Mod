@@ -68,6 +68,7 @@ public final class BoundlessMod {
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenClosing);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onScreenRenderPre);
         NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseScrolled);
+        NeoForge.EVENT_BUS.addListener(QuestPanelClient::onMouseButtonPressed);
         NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLogin);
         NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLogout);
         NeoForge.EVENT_BUS.addListener(ClientQuestEvents::onClientLevelUnload);

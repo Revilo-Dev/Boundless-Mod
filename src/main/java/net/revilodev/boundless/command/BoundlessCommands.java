@@ -312,47 +312,59 @@ public final class BoundlessCommands {
     }
 
     private static boolean readQuestPackEnabled(Path packRoot) {
-        Path metaPath = packRoot.resolve("pack.mcmeta");
-        if (!Files.exists(metaPath)) return true;
-        try (BufferedReader reader = Files.newBufferedReader(metaPath, StandardCharsets.UTF_8)) {
-            JsonElement parsed = JsonParser.parseReader(reader);
-            if (!(parsed instanceof JsonObject root)) return true;
-            if (!root.has("boundless") || !root.get("boundless").isJsonObject()) return true;
-            JsonObject boundless = root.getAsJsonObject("boundless");
-            if (!boundless.has("enabled")) return true;
-            JsonElement enabled = boundless.get("enabled");
-            if (enabled == null || !enabled.isJsonPrimitive()) return true;
-            if (enabled.getAsJsonPrimitive().isBoolean()) return enabled.getAsBoolean();
-            return Boolean.parseBoolean(enabled.getAsString());
-        } catch (Exception ignored) {
-            return true;
-        }
+        Boolean enabledFromPackJson = readEnabledFlag(packRoot.resolve("boundless").resolve("pack.json"));
+        if (enabledFromPackJson != null) return enabledFromPackJson;
+        Boolean enabledFromMcmeta = readEnabledFlag(packRoot.resolve("pack.mcmeta"));
+        return enabledFromMcmeta == null ? true : enabledFromMcmeta;
     }
 
     private static boolean writeQuestPackEnabled(Path packRoot, boolean enabled) {
-        Path metaPath = packRoot.resolve("pack.mcmeta");
         try {
-            JsonObject root;
-            if (Files.exists(metaPath)) {
-                try (BufferedReader reader = Files.newBufferedReader(metaPath, StandardCharsets.UTF_8)) {
-                    JsonElement parsed = JsonParser.parseReader(reader);
-                    root = parsed instanceof JsonObject obj ? obj : new JsonObject();
-                }
-            } else {
-                root = new JsonObject();
-            }
-            JsonObject boundless = root.has("boundless") && root.get("boundless").isJsonObject()
-                    ? root.getAsJsonObject("boundless")
-                    : new JsonObject();
-            boundless.addProperty("enabled", enabled);
-            root.add("boundless", boundless);
             Files.createDirectories(packRoot);
-            try (BufferedWriter writer = Files.newBufferedWriter(metaPath, StandardCharsets.UTF_8)) {
-                writer.write(root.toString());
-            }
+            writeEnabledFlag(packRoot.resolve("boundless").resolve("pack.json"), enabled);
+            writeEnabledFlag(packRoot.resolve("pack.mcmeta"), enabled);
             return true;
         } catch (Exception ignored) {
             return false;
+        }
+    }
+
+    private static Boolean readEnabledFlag(Path metaPath) {
+        if (metaPath == null || !Files.exists(metaPath)) return null;
+        try (BufferedReader reader = Files.newBufferedReader(metaPath, StandardCharsets.UTF_8)) {
+            JsonElement parsed = JsonParser.parseReader(reader);
+            if (!(parsed instanceof JsonObject root)) return null;
+            if (!root.has("boundless") || !root.get("boundless").isJsonObject()) return null;
+            JsonObject boundless = root.getAsJsonObject("boundless");
+            if (!boundless.has("enabled")) return null;
+            JsonElement enabled = boundless.get("enabled");
+            if (enabled == null || !enabled.isJsonPrimitive()) return null;
+            if (enabled.getAsJsonPrimitive().isBoolean()) return enabled.getAsBoolean();
+            return Boolean.parseBoolean(enabled.getAsString());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static void writeEnabledFlag(Path metaPath, boolean enabled) throws Exception {
+        JsonObject root;
+        if (Files.exists(metaPath)) {
+            try (BufferedReader reader = Files.newBufferedReader(metaPath, StandardCharsets.UTF_8)) {
+                JsonElement parsed = JsonParser.parseReader(reader);
+                root = parsed instanceof JsonObject obj ? obj : new JsonObject();
+            }
+        } else {
+            root = new JsonObject();
+        }
+        JsonObject boundless = root.has("boundless") && root.get("boundless").isJsonObject()
+                ? root.getAsJsonObject("boundless")
+                : new JsonObject();
+        boundless.addProperty("enabled", enabled);
+        root.add("boundless", boundless);
+        Path parent = metaPath.getParent();
+        if (parent != null) Files.createDirectories(parent);
+        try (BufferedWriter writer = Files.newBufferedWriter(metaPath, StandardCharsets.UTF_8)) {
+            writer.write(root.toString());
         }
     }
 }
