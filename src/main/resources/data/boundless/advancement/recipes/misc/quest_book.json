@@ -1,0 +1,29 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_book": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          { "items": ["minecraft:book"] }
+        ]
+      }
+    },
+    "has_lapis": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          { "items": ["minecraft:lapis_lazuli"] }
+        ]
+      }
+    }
+  },
+  "requirements": [
+    ["has_book", "has_lapis"]
+  ],
+  "rewards": {
+    "recipes": [
+      "boundless:quest_book"
+    ]
+  }
+}
